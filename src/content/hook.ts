@@ -5,8 +5,9 @@
  * - Tracks MediaSource/SourceBuffer objects so a non-encrypted adaptive player can be
  *   recorded ("capture mode") when the user explicitly asks for it.
  *
- * It never alters what the page plays and records nothing unless a capture is armed.
- * Messages go to the isolated content script through window.postMessage.
+ * To make short clips instant, the first appends of each player are kept in memory up to a
+ * small page-wide budget (nothing at all once DRM is seen). The data only leaves the page
+ * when the user starts a capture; it never alters what the page plays otherwise.
  */
 import { deepVideos, isInitSegment } from '../shared/dom';
 
@@ -19,6 +20,8 @@ type Up =
 
 type Down = { type: 'arm'; videoIndex: number } | { type: 'stop' };
 
+const LOG_BUDGET = 48 * 1024 * 1024;
+
 (() => {
   const w = window as Window & { __grabbyHook?: boolean };
   if (w.__grabbyHook) return;
@@ -26,13 +29,46 @@ type Down = { type: 'arm'; videoIndex: number } | { type: 'stop' };
 
   const post = (msg: Up, transfer: Transferable[] = []) => window.postMessage({ __grabby: 'up', ...msg }, '*', transfer);
 
+  /* ----------------------------------------------------------- MSE state */
+  interface LogEntry {
+    init: boolean;
+    data: ArrayBuffer;
+  }
+  interface SbInfo {
+    mime: string;
+    ms: MediaSource;
+    lastInit?: ArrayBuffer;
+    /** Every append since creation, while the page budget allows it. */
+    log: LogEntry[] | null;
+  }
+  const blobToMs = new Map<string, MediaSource>();
+  const msBuffers = new WeakMap<MediaSource, SourceBuffer[]>();
+  const sbInfo = new WeakMap<SourceBuffer, SbInfo>();
+  const logged = new Set<SbInfo>();
+  let logBytes = 0;
+  let drmSeen = false;
+
+  function dropLogs(ms?: MediaSource) {
+    for (const info of [...logged]) {
+      if (ms && info.ms !== ms) continue;
+      for (const e of info.log ?? []) logBytes -= e.data.byteLength;
+      info.log = null;
+      logged.delete(info);
+    }
+  }
+
   /* --------------------------------------------------------------- DRM */
   const protectedEls = new WeakSet<HTMLMediaElement>();
+  const onDrm = (keySystem: string) => {
+    drmSeen = true;
+    dropLogs();
+    post({ type: 'drm', keySystem });
+  };
   const nav = Navigator.prototype as Navigator & { requestMediaKeySystemAccess?: Navigator['requestMediaKeySystemAccess'] };
   const rmksa = nav.requestMediaKeySystemAccess;
   if (rmksa) {
     nav.requestMediaKeySystemAccess = function (this: Navigator, keySystem: string, configs: MediaKeySystemConfiguration[]) {
-      post({ type: 'drm', keySystem });
+      onDrm(keySystem);
       return rmksa.call(this, keySystem, configs);
     };
   }
@@ -41,22 +77,13 @@ type Down = { type: 'arm'; videoIndex: number } | { type: 'stop' };
     HTMLMediaElement.prototype.setMediaKeys = function (this: HTMLMediaElement, keys: MediaKeys | null) {
       if (keys) {
         protectedEls.add(this);
-        post({ type: 'drm', keySystem: 'setMediaKeys' });
+        onDrm('setMediaKeys');
       }
       return setMediaKeys.call(this, keys);
     };
   }
 
-  /* --------------------------------------------------------------- MSE */
-  interface SbInfo {
-    mime: string;
-    ms: MediaSource;
-    lastInit?: ArrayBuffer;
-  }
-  const blobToMs = new Map<string, MediaSource>();
-  const msBuffers = new WeakMap<MediaSource, SourceBuffer[]>();
-  const sbInfo = new WeakMap<SourceBuffer, SbInfo>();
-
+  /* ------------------------------------------------------------ MSE hooks */
   const createObjectURL = URL.createObjectURL;
   URL.createObjectURL = function (obj: Blob | MediaSource) {
     const url = createObjectURL.call(URL, obj);
@@ -68,7 +95,9 @@ type Down = { type: 'arm'; videoIndex: number } | { type: 'stop' };
     const addSourceBuffer = MediaSource.prototype.addSourceBuffer;
     MediaSource.prototype.addSourceBuffer = function (this: MediaSource, mime: string) {
       const sb = addSourceBuffer.call(this, mime);
-      sbInfo.set(sb, { mime, ms: this });
+      const info: SbInfo = { mime, ms: this, log: drmSeen ? null : [] };
+      sbInfo.set(sb, info);
+      if (info.log) logged.add(info);
       const list = msBuffers.get(this) ?? [];
       list.push(sb);
       msBuffers.set(this, list);
@@ -92,7 +121,7 @@ type Down = { type: 'arm'; videoIndex: number } | { type: 'stop' };
       : new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength);
   }
 
-  /* ----------------------------------------------------------- capture */
+  /* -------------------------------------------------------------- capture */
   interface Capture {
     ms: MediaSource;
     video: HTMLVideoElement;
@@ -110,11 +139,23 @@ type Down = { type: 'arm'; videoIndex: number } | { type: 'stop' };
     const bytes = bytesOf(data);
     const init = isInitSegment(bytes);
     if (init) info.lastInit = bytes.slice().buffer;
-    if (!capture || capture.ms !== info.ms) return;
-    const track = capture.tracks.get(sb);
-    if (track === undefined) return;
-    const copy = bytes.slice().buffer;
-    post({ type: 'chunk', track, mime: info.mime, init, data: copy }, [copy]);
+
+    if (capture && capture.ms === info.ms) {
+      const track = capture.tracks.get(sb);
+      if (track === undefined) return;
+      const copy = bytes.slice().buffer;
+      post({ type: 'chunk', track, mime: info.mime, init, data: copy }, [copy]);
+      return;
+    }
+
+    if (info.log && !drmSeen) {
+      if (logBytes + bytes.byteLength > LOG_BUDGET) {
+        dropLogs(info.ms);
+        return;
+      }
+      info.log.push({ init, data: bytes.slice().buffer });
+      logBytes += bytes.byteLength;
+    }
   }
 
   function stop(sendEnd: boolean) {
@@ -132,24 +173,46 @@ type Down = { type: 'arm'; videoIndex: number } | { type: 'stop' };
     if (sendEnd) post({ type: 'end' });
   }
 
+  /** True when every SourceBuffer holds data up to the end of the media. */
+  function fullyBuffered(video: HTMLVideoElement, buffers: SourceBuffer[]): boolean {
+    const d = video.duration;
+    if (!Number.isFinite(d) || d <= 0) return false;
+    return buffers.every((sb) => {
+      try {
+        const b = sb.buffered;
+        return b.length > 0 && b.start(0) <= 0.5 && b.end(b.length - 1) >= d - 0.5;
+      } catch {
+        return false;
+      }
+    });
+  }
+
+  function speedUp(c: Capture) {
+    c.video.muted = true;
+    for (const rate of [16, 8, 4, 2]) {
+      try {
+        c.video.playbackRate = rate;
+        c.rate = rate;
+        break;
+      } catch {
+        /* rate not supported, try lower */
+      }
+    }
+  }
+
   function arm(videoIndex: number) {
     stop(false);
     const video = deepVideos()[videoIndex];
     if (!video) return post({ type: 'error', error: 'capture_unavailable' });
-    if (protectedEls.has(video) || video.mediaKeys) return post({ type: 'error', error: 'protected' });
+    if (drmSeen || protectedEls.has(video) || video.mediaKeys) return post({ type: 'error', error: 'protected' });
     const ms = blobToMs.get(video.currentSrc || video.src);
     const buffers = ms ? msBuffers.get(ms) : undefined;
     if (!ms || !buffers?.length) return post({ type: 'error', error: 'capture_unavailable' });
 
     const tracks = new Map<SourceBuffer, number>();
-    buffers.forEach((sb, i) => {
-      tracks.set(sb, i);
-      const info = sbInfo.get(sb)!;
-      if (info.lastInit) {
-        const copy = info.lastInit.slice(0);
-        post({ type: 'chunk', track: i, mime: info.mime, init: true, data: copy }, [copy]);
-      }
-    });
+    buffers.forEach((sb, i) => tracks.set(sb, i));
+    const infos = buffers.map((sb) => sbInfo.get(sb)!);
+    const haveLog = infos.every((i) => i.log && i.log.length > 0);
 
     const c: Capture = {
       ms,
@@ -166,30 +229,47 @@ type Down = { type: 'arm'; videoIndex: number } | { type: 'stop' };
         if (capture === c && video.playbackRate < c.rate) video.playbackRate = c.rate;
       },
     };
-    capture = c;
 
-    // Flush what is already buffered so the player re-appends everything from the start.
-    for (const sb of buffers) {
-      try {
-        if (!sb.updating && sb.buffered.length) sb.remove(0, Infinity);
-      } catch {
-        /* some players lock buffers; capture still records what comes next */
+    if (haveLog) {
+      // Replay what the player already appended, from its very first byte.
+      infos.forEach((info, track) => {
+        for (const e of info.log!) {
+          logBytes -= e.data.byteLength;
+          post({ type: 'chunk', track, mime: info.mime, init: e.init, data: e.data }, [e.data]);
+        }
+        info.log = [];
+      });
+      dropLogs(ms);
+      if (fullyBuffered(video, buffers)) {
+        post({ type: 'progress', progress: 1 });
+        post({ type: 'end' });
+        return;
       }
-    }
-    video.muted = true;
-    for (const rate of [16, 8, 4, 2]) {
-      try {
-        video.playbackRate = rate;
-        c.rate = rate;
-        break;
-      } catch {
-        /* rate not supported, try lower */
+      capture = c;
+      speedUp(c);
+    } else {
+      // Log unavailable (long video): restart from zero so the player appends everything again.
+      infos.forEach((info, track) => {
+        if (info.lastInit) {
+          const copy = info.lastInit.slice(0);
+          post({ type: 'chunk', track, mime: info.mime, init: true, data: copy }, [copy]);
+        }
+      });
+      dropLogs(ms);
+      capture = c;
+      for (const sb of buffers) {
+        try {
+          if (!sb.updating && sb.buffered.length) sb.remove(0, Infinity);
+        } catch {
+          /* some players lock buffers; capture still records what comes next */
+        }
       }
+      speedUp(c);
+      video.currentTime = 0;
     }
     video.addEventListener('timeupdate', c.onTime);
     video.addEventListener('ended', c.onEnd);
     video.addEventListener('ratechange', c.onRate);
-    video.currentTime = 0;
     void video.play().catch(() => {});
   }
 

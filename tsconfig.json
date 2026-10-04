@@ -28,5 +28,9 @@
   "include": [
     "src",
     "test/unit"
+  ],
+  "exclude": [
+    "test/unit/i18n.test.ts",
+    "test/unit/store-bundle.test.ts"
   ]
 }

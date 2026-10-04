@@ -31,8 +31,14 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
   void (async () => {
     const prev = await tabUrl(tabId);
     rememberTabUrl(tabId, change.url!);
-    if (prev && !samePage(prev, change.url!)) await registry.clear(tabId);
-    else pushTab(tabId);
+    // Full navigations are reset by the detector on the main_frame response. In-page (SPA)
+    // navigations only change the URL: drop what was found before, keeping very recent
+    // detections that may belong to the new view (events can arrive slightly out of order).
+    if (prev && !samePage(prev, change.url!)) {
+      const cutoff = Date.now() - 2000;
+      await registry.removeWhere(tabId, (i) => i.detectedAt < cutoff);
+    }
+    pushTab(tabId);
   })();
 });
 

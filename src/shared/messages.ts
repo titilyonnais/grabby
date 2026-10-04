@@ -18,6 +18,8 @@ export interface PageInfo {
   title: string;
   thumbnail?: string;
   videos: PageVideo[];
+  /** HLS/DASH manifest URLs this frame has loaded (Performance API), a second detection path. */
+  streams?: string[];
   /** github build only: YouTube player metadata. */
   youtube?: { title: string; thumbnail?: string; duration?: number };
 }

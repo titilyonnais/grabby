@@ -15,6 +15,8 @@ type HookUp =
   | { type: 'error'; error: 'capture_unavailable' | 'protected' | 'capture_failed' };
 
 const send = (msg: ContentToBg) => chrome.runtime.sendMessage(msg).catch(() => {});
+const MANIFEST = /\.(m3u8|mpd)($|[?#])/i;
+const streams = new Set<string>();
 const isTop = window === window.top;
 
 /* ------------------------------------------------------------- scanning */
@@ -51,6 +53,7 @@ function collect(): PageInfo {
     title: (isTop && meta('og:title')) || document.title || '',
     videos,
   };
+  if (streams.size) info.streams = [...streams].slice(-20);
   const thumb = isTop ? absolute(meta('og:image')) : undefined;
   if (thumb) info.thumbnail = thumb;
   if (__TARGET__ === 'github' && isTop) {
@@ -63,7 +66,7 @@ function collect(): PageInfo {
 let lastSent = '';
 function report(force = false) {
   const info = collect();
-  if (!isTop && !info.videos.length) return;
+  if (!isTop && !info.videos.length && !info.streams) return;
   const sig = JSON.stringify(info);
   if (!force && sig === lastSent) return;
   lastSent = sig;
@@ -76,7 +79,28 @@ function scheduleReport(delay = 600) {
   timer = setTimeout(() => report(), delay);
 }
 
+/** Resource timing sees every manifest the page fetched, even if a network event was missed. */
+function watchResources() {
+  try {
+    const onEntries = (list: PerformanceEntryList) => {
+      let added = false;
+      for (const e of list) {
+        if (MANIFEST.test(e.name) && /^https?:/.test(e.name) && !streams.has(e.name)) {
+          streams.add(e.name);
+          added = true;
+        }
+      }
+      if (added) scheduleReport(150);
+    };
+    onEntries(performance.getEntriesByType('resource'));
+    new PerformanceObserver((l) => onEntries(l.getEntries())).observe({ type: 'resource', buffered: true });
+  } catch {
+    /* Performance API unavailable */
+  }
+}
+
 function startObserving() {
+  watchResources();
   report();
   new MutationObserver(() => scheduleReport()).observe(document.documentElement, {
     childList: true,

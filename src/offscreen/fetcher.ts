@@ -42,6 +42,29 @@ export async function fetchSegment(seg: SegRef, opts: Pick<FetchOptions, 'signal
   return buf;
 }
 
+/** Streams a whole resource into Blob parts, reporting (received, total) as it goes. */
+export async function fetchStream(
+  url: string,
+  opts: { signal?: AbortSignal; fetchImpl?: typeof fetch; onProgress?: (received: number, total: number) => void },
+): Promise<Uint8Array<ArrayBuffer>[]> {
+  const f = opts.fetchImpl ?? fetch;
+  const res = await f(url, { credentials: 'include', ...(opts.signal ? { signal: opts.signal } : {}) });
+  if (!res.ok) throw new HttpError(res.status);
+  const total = Number(res.headers.get('content-length')) || 0;
+  if (!res.body) return [new Uint8Array(await res.arrayBuffer())];
+  const reader = res.body.getReader();
+  const parts: Uint8Array<ArrayBuffer>[] = [];
+  let received = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value as Uint8Array<ArrayBuffer>);
+    received += value.length;
+    opts.onProgress?.(received, total);
+  }
+  return parts;
+}
+
 async function withRetry(seg: SegRef, o: FetchOptions): Promise<Uint8Array<ArrayBuffer>> {
   const retries = o.retries ?? 3;
   const delay = o.retryDelayMs ?? 500;

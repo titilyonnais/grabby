@@ -242,8 +242,27 @@ export class JobManager {
     const filename = this.filename(job, ext, settings);
     this.releases.set(job.id, await withPageHeaders(job.pageUrl, [url]));
     const downloadId = await chrome.downloads.download({ url, filename, saveAs: settings.saveAs, conflictAction: 'uniquify' });
-    this.update(job.id, { downloadId, filename });
+    this.update(job.id, { downloadId, filename, sourceUrl: url, ext });
     this.startPolling();
+  }
+
+  private async fetchFallback(job: Job) {
+    const url = job.sourceUrl!;
+    const { downloadId: _dropped, ...rest } = job;
+    this.jobs.set(job.id, { ...rest, viaFetch: true, status: 'downloading', progress: 0, bytes: 0, speed: 0 });
+    this.changed();
+    await this.releases.get(job.id)?.();
+    this.releases.set(job.id, await withPageHeaders(job.pageUrl, [url]));
+    this.blobJobs.add(job.id);
+    const plan: Plan = {
+      kind: 'file',
+      video: { segments: [{ url }], container: 'file' },
+      output: (job.ext ?? 'mp4') as OutputFormat,
+      raw: true,
+      audioOnly: false,
+      pageUrl: job.pageUrl,
+    };
+    await sendOffscreen({ target: 'offscreen', type: 'run', jobId: job.id, plan }).catch(() => this.fail(job.id, 'unknown'));
   }
 
   private async startCapture(job: Job, plan: Plan) {
@@ -338,7 +357,13 @@ export class JobManager {
       await this.cleanup(job.id);
       this.pump();
     } else if (d.state?.current === 'interrupted') {
-      this.fail(job.id, interruptCode(d.error?.current));
+      const code = interruptCode(d.error?.current);
+      // The download manager bypasses our Referer/Origin rules: retry through an extension fetch.
+      if (job.sourceUrl && !job.viaFetch && !this.blobJobs.has(job.id) && ['http_403', 'http_404', 'http_other'].includes(code)) {
+        await chrome.downloads.erase({ id: d.id }).catch(() => {});
+        return this.fetchFallback(job);
+      }
+      this.fail(job.id, code);
     }
   }
 

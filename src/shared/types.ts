@@ -80,6 +80,11 @@ export interface Job {
   raw?: boolean;
   startedAt: number;
   downloadId?: number;
+  /** Direct downloads: source URL and extension, for the fetch fallback. */
+  sourceUrl?: string;
+  ext?: string;
+  /** The browser download manager was refused; retried through an extension fetch. */
+  viaFetch?: boolean;
   /** Capture jobs: where the <video> lives. */
   frameId?: number;
   videoIndex?: number;

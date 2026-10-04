@@ -8,7 +8,7 @@ import type { JobStatus } from '../shared/types';
 import { deleteJob } from '../shared/idb';
 import { inputExt, muxAttempts } from './args';
 import { assembleCapture } from './capture';
-import { fetchInOrder, fetchSegment, HttpError } from './fetcher';
+import { fetchInOrder, fetchSegment, fetchStream, HttpError } from './fetcher';
 import { getFFmpeg } from './muxer';
 
 const controllers = new Map<string, AbortController>();
@@ -64,6 +64,20 @@ async function runRaw(jobId: string, plan: Plan, signal: AbortSignal) {
   const track = plan.video ?? plan.audio;
   if (!track) throw new Error('no track');
   const rep = reporter(jobId);
+  const type = MIME[plan.output] ?? 'application/octet-stream';
+  // A single file (direct-download fallback): stream it with byte-level progress.
+  if (track.segments.length === 1 && !track.init && !track.segments[0]!.range) {
+    let last = 0;
+    const parts = await fetchStream(track.segments[0]!.url, {
+      signal,
+      onProgress: (received, total) => {
+        rep.addBytes(received - last);
+        last = received;
+        rep.send('downloading', total ? received / total : 0);
+      },
+    });
+    return { blob: new Blob(parts, { type }), ext: plan.output };
+  }
   const parts: BlobPart[] = [];
   const total = segCount(track);
   let done = 0;
@@ -80,7 +94,7 @@ async function runRaw(jobId: string, plan: Plan, signal: AbortSignal) {
       rep.send('downloading', done / total);
     },
   });
-  return { blob: new Blob(parts, { type: MIME[plan.output] ?? 'application/octet-stream' }), ext: plan.output };
+  return { blob: new Blob(parts, { type }), ext: plan.output };
 }
 
 async function run(jobId: string, plan: Plan) {

@@ -13,7 +13,7 @@ const prefersDark = () => window.matchMedia('(prefers-color-scheme: dark)').matc
 function rank(items: MediaItem[]): MediaItem[] {
   const score = (i: MediaItem) =>
     (i.protection === 'none' && !i.live ? 1000 : 0) + (i.variants.length > 1 ? 100 : 0) + (i.kind !== 'capture' ? 10 : 0) + (i.audioOnly ? -50 : 0);
-  return [...items].sort((a, b) => score(b) - score(a) || (b.size ?? 0) - (a.size ?? 0) || a.detectedAt - b.detectedAt);
+  return [...items].sort((a, b) => score(b) - score(a) || (b.size ?? 0) - (a.size ?? 0) || b.detectedAt - a.detectedAt);
 }
 
 function latestJob(jobs: Job[], mediaId: string): Job | undefined {

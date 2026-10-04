@@ -12,6 +12,9 @@
   },
   "include": [
     "test/e2e",
-    "playwright.config.ts"
-  ]
+    "playwright.config.ts",
+    "test/unit/i18n.test.ts",
+    "test/unit/store-bundle.test.ts"
+  ],
+  "exclude": []
 }

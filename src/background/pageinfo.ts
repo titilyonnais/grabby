@@ -42,6 +42,12 @@ export async function handlePageInfo(registry: Registry, sender: chrome.runtime.
     await registry.setPageInfo(tabId, { title: info.title, ...(info.thumbnail ? { thumbnail: info.thumbnail } : {}) });
   }
 
+  for (const url of info.streams ?? []) {
+    if (typeof url === 'string' && /^https?:/i.test(url) && !blockedByPolicy(url)) {
+      await handleMediaUrl(registry, url, ctx, {});
+    }
+  }
+
   const keep = new Set<string>();
 
   if (__TARGET__ === 'github' && info.youtube) {

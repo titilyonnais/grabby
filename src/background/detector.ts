@@ -3,7 +3,7 @@ import { isYouTubeUrl, youtubeBlocked } from '../shared/policy';
 import { fetchTextAs } from './headers';
 import { fileItem, resolveDash, resolveHls, type DetectContext } from './manifests';
 import type { Registry } from './registry';
-import { tabUrl } from './tabs';
+import { rememberTabUrl, tabUrl } from './tabs';
 
 function header(headers: chrome.webRequest.HttpHeader[] | undefined, name: string): string | undefined {
   return headers?.find((h) => h.name.toLowerCase() === name)?.value;
@@ -54,6 +54,12 @@ export function startDetector(registry: Registry): void {
     (d): undefined => {
       if (d.tabId < 0) return;
       if (d.statusCode !== 200 && d.statusCode !== 206) return;
+      if (d.type === 'main_frame') {
+        // A new document always arrives before its own sub-resources: reset here, in order.
+        rememberTabUrl(d.tabId, d.url);
+        void registry.clear(d.tabId);
+        return;
+      }
       if (d.initiator === ownOrigin) return;
       const contentType = header(d.responseHeaders, 'content-type');
       const len = Number(header(d.responseHeaders, 'content-length') ?? 0) || undefined;
@@ -71,7 +77,7 @@ export function startDetector(registry: Registry): void {
         });
       })();
     },
-    { urls: ['<all_urls>'], types: ['media', 'xmlhttprequest', 'other', 'object'] },
+    { urls: ['<all_urls>'], types: ['main_frame', 'media', 'xmlhttprequest', 'other', 'object'] },
     ['responseHeaders'],
   );
 }
