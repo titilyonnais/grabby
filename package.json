@@ -16,7 +16,8 @@
     "test:e2e": "playwright test",
     "fixtures": "node scripts/make-fixtures.mjs",
     "icons": "node scripts/make-icons.mjs",
-    "release:check": "node scripts/release-check.mjs"
+    "release:check": "node scripts/release-check.mjs",
+    "store:assets": "node scripts/store-assets.mjs"
   },
   "engines": {
     "node": ">=20"

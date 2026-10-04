@@ -1,6 +1,6 @@
 # Grabby — Privacy policy / Politique de confidentialité
 
-_Last updated: 2026-10-04 (1.2.0)_
+_Last updated: 2026-10-04 (1.5.3)_
 
 ## English
 
@@ -11,8 +11,9 @@ Grabby does **not** collect, store on a server, sell or share any personal data.
   and manifests of the page you are viewing, and only to detect or download them at your
   request.
 - **What stays on your device:**
-  - your settings (theme, audio format, file name template, save options) in the browser's
-    extension storage;
+  - your settings (theme, video and audio formats, file name parts, save options) in the
+    browser's extension storage, and the theme again in the popup's own storage so it opens
+    without a flash;
   - the list of your last 50 downloads (file name, page address, size, date), which you can
     clear at any time from the History tab;
   - the media detected in your open tabs, kept in session memory and deleted when the tab
@@ -45,7 +46,9 @@ et ne la partage pas.
   vers les fichiers vidéo, playlists et manifestes de la page consultée, pour les détecter
   ou les télécharger à ta demande.
 - **Ce qui reste sur ton appareil :**
-  - tes réglages (thème, format audio, modèle de nom de fichier, options d'enregistrement) ;
+  - tes réglages (thème, formats vidéo et audio, composition du nom de fichier, options
+    d'enregistrement), et le thème une seconde fois dans la mémoire de la popup pour qu'elle
+    s'ouvre sans clignoter ;
   - la liste de tes 50 derniers téléchargements (nom du fichier, adresse de la page, taille,
     date), effaçable à tout moment depuis l'onglet Historique ;
   - les médias détectés dans tes onglets ouverts, gardés en mémoire de session et effacés à
