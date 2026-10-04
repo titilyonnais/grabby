@@ -354,7 +354,10 @@ test('settings open as a full page; the file name is built from checkboxes', asy
   // Tick "Site": the saved template gains {site}.
   await popup.getByRole('checkbox', { name: 'Site' }).click();
   await expect
-    .poll(async () => (await sw.evaluate(() => chrome.storage.local.get('settings'))).settings?.template)
+    .poll(async () => {
+      const got = (await sw.evaluate(() => chrome.storage.local.get('settings'))) as { settings?: { template?: string } };
+      return got.settings?.template;
+    })
     .toBe('{title} - {site}');
   // Back returns to the list, same popup size.
   await popup.getByRole('button', { name: 'Back' }).click();
