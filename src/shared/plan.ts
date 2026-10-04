@@ -5,7 +5,9 @@ export interface SegRef {
 }
 
 export type Container = 'ts' | 'fmp4' | 'file' | 'webm';
-export type OutputFormat = 'mp4' | 'm4a' | 'mp3' | 'webm' | 'ts';
+export type OutputFormat = 'mp4' | 'm4a' | 'mp3' | 'webm' | 'mkv' | 'ts';
+/** Containers the user can pick for a video. */
+export type VideoFormat = 'mp4' | 'webm' | 'mkv';
 
 export interface TrackPlan {
   init?: SegRef;
@@ -25,6 +27,8 @@ export interface Plan {
   audioOnly: boolean;
   estimatedSize?: number;
   pageUrl: string;
+  /** Capture: recorded tracks that belong to the video (others are ads or abandoned players). */
+  keepTracks?: number[];
 }
 
 export const RAW_THRESHOLD = 1.5e9;

@@ -3,15 +3,17 @@
  * Reports <video> elements and page metadata to the service worker, relays DRM signals
  * from the MAIN-world hook, and streams capture chunks into the extension's storage.
  */
-import { readYouTubeInfo } from '../features/youtube';
+import { hiddenJobFromUrl, readYouTubeInfo } from '../features/youtube';
 import { deepVideos } from '../shared/dom';
-import type { BgToContent, ContentToBg, PageInfo, PageVideo } from '../shared/messages';
+import type { BgToContent, ContentToBg, PageInfo, PageVideo, YtInfo } from '../shared/messages';
+import { cleanTitle } from '../shared/title';
 
 type HookUp =
   | { type: 'drm'; keySystem: string }
   | { type: 'chunk'; track: number; mime: string; init: boolean; data: ArrayBuffer }
   | { type: 'progress'; progress: number }
-  | { type: 'end' }
+  | { type: 'end'; keep?: number[] }
+  | { type: 'yt'; info: YtInfo }
   | { type: 'error'; error: 'capture_unavailable' | 'protected' | 'capture_failed' };
 
 const send = (msg: ContentToBg) => chrome.runtime.sendMessage(msg).catch(() => {});
@@ -35,9 +37,104 @@ function absolute(u: string | null | undefined): string | undefined {
   }
 }
 
-function meta(prop: string): string | undefined {
-  return document.querySelector<HTMLMetaElement>(`meta[property="${prop}"], meta[name="${prop}"]`)?.content || undefined;
+function meta(...props: string[]): string | undefined {
+  for (const prop of props) {
+    const v = document.querySelector<HTMLMetaElement>(`meta[property="${prop}"], meta[name="${prop}"]`)?.content;
+    if (v) return v;
+  }
+  return undefined;
 }
+
+/** schema.org VideoObject (JSON-LD): many sites describe their video there. */
+function videoObject(): { name?: string; thumbnail?: string } {
+  for (const s of document.querySelectorAll('script[type="application/ld+json"]')) {
+    try {
+      const found = findVideoObject(JSON.parse(s.textContent ?? ''));
+      if (found) {
+        const t = found.thumbnailUrl;
+        const thumb = Array.isArray(t) ? t[0] : typeof t === 'object' && t ? (t as { url?: string }).url : t;
+        return {
+          ...(typeof found.name === 'string' ? { name: found.name } : {}),
+          ...(typeof thumb === 'string' ? { thumbnail: thumb } : {}),
+        };
+      }
+    } catch {
+      /* invalid JSON-LD */
+    }
+  }
+  return {};
+}
+
+type Ld = { '@type'?: string | string[]; '@graph'?: unknown[]; name?: unknown; thumbnailUrl?: unknown };
+function findVideoObject(node: unknown, depth = 0): Ld | undefined {
+  if (!node || typeof node !== 'object' || depth > 4) return undefined;
+  if (Array.isArray(node)) {
+    for (const n of node) {
+      const f = findVideoObject(n, depth + 1);
+      if (f) return f;
+    }
+    return undefined;
+  }
+  const o = node as Ld;
+  const type = Array.isArray(o['@type']) ? o['@type'] : [o['@type']];
+  if (type.includes('VideoObject')) return o;
+  return findVideoObject(o['@graph'], depth + 1);
+}
+
+/**
+ * A still of the main player, for pages without a preview image. Players built on
+ * MediaSource are same-origin, so the frame can be read; DRM output is black and skipped.
+ */
+let snapKey = '';
+let snapData: string | undefined;
+function snapshot(): string | undefined {
+  const v = deepVideos()
+    .filter((x) => x.readyState >= 2 && x.videoWidth > 0 && !x.mediaKeys)
+    .sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0];
+  if (!v || v.clientWidth < 200) return snapData;
+  const key = v.currentSrc || v.src;
+  if (key === snapKey) return snapData;
+  try {
+    const w = 320;
+    const h = Math.max(1, Math.round((w * v.videoHeight) / v.videoWidth));
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const g = c.getContext('2d', { willReadFrequently: true })!;
+    g.drawImage(v, 0, 0, w, h);
+    const px = g.getImageData(0, 0, w, h).data;
+    let sum = 0;
+    for (let i = 0; i < px.length; i += 4 * 97) sum += px[i]! + px[i + 1]! + px[i + 2]!;
+    if (sum / (px.length / (4 * 97)) / 3 < 14) return snapData; // black frame (DRM, not started)
+    snapKey = key;
+    snapData = c.toDataURL('image/jpeg', 0.72);
+  } catch {
+    snapKey = key; // cross-origin file: can't be read, don't retry
+  }
+  return snapData;
+}
+
+/** Last resort: the biggest picture on screen (artwork, backdrop), when nothing else exists. */
+function largestImage(): string | undefined {
+  let best: { url: string; area: number } | undefined;
+  const consider = (url: string | undefined, el: Element) => {
+    if (!url || !/^(https?:|data:image\/)/.test(url)) return;
+    const r = el.getBoundingClientRect();
+    if (r.width < 240 || r.height < 120 || r.bottom < 0 || r.top > innerHeight * 1.5) return;
+    const ratio = r.width / r.height;
+    if (ratio < 1.1 || ratio > 2.6) return; // posters of other titles, banners
+    const area = r.width * r.height;
+    if (!best || area > best.area) best = { url, area };
+  };
+  for (const img of document.images) consider(img.currentSrc || img.src, img);
+  for (const el of document.querySelectorAll<HTMLElement>('[style*="background-image"]')) {
+    const m = /url\(["']?([^"')]+)["']?\)/.exec(el.style.backgroundImage);
+    consider(absolute(m?.[1]), el);
+  }
+  return best?.url;
+}
+
+let ytPlayer: YtInfo | undefined;
 
 function collect(): PageInfo {
   const videos: PageVideo[] = deepVideos().map((v, index) => {
@@ -51,19 +148,30 @@ function collect(): PageInfo {
       height: Math.round(rect.height || v.videoHeight),
       isMse: src.startsWith('blob:'),
       isProtected: !!v.mediaKeys,
+      muted: v.muted,
+      loop: v.loop,
+      autoplay: v.autoplay,
+      controls: v.controls,
       ...(v.poster ? { poster: absolute(v.poster)! } : {}),
     };
   });
-  const info: PageInfo = {
-    title: (isTop && meta('og:title')) || document.title || '',
-    videos,
-  };
+  const ld = isTop ? videoObject() : {};
+  const raw = (isTop && (meta('og:title', 'twitter:title') || ld.name)) || document.title || '';
+  const info: PageInfo = { title: cleanTitle(raw, location.hostname), videos };
   if (streams.size) info.streams = [...streams].slice(-20);
-  const thumb = isTop ? absolute(meta('og:image')) : undefined;
+  const thumb = isTop
+    ? absolute(meta('og:image', 'og:image:url', 'og:image:secure_url', 'twitter:image', 'twitter:image:src') ?? document.querySelector<HTMLLinkElement>('link[rel="image_src"]')?.href ?? ld.thumbnail)
+    : undefined;
   if (thumb) info.thumbnail = thumb;
+  else {
+    const still = videos.length ? snapshot() : undefined;
+    if (still) info.snapshot = still;
+    const image = isTop && !still ? largestImage() : undefined;
+    if (image) info.image = image;
+  }
   if (__TARGET__ === 'github' && isTop) {
     const yt = readYouTubeInfo(document, location.href);
-    if (yt) info.youtube = yt;
+    if (yt) info.youtube = { ...yt, ...(ytPlayer && yt.id === ytPlayer.id ? { player: ytPlayer } : {}) };
   }
   return info;
 }
@@ -119,8 +227,12 @@ function startObserving() {
   }
 }
 
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startObserving, { once: true });
-else startObserving();
+// github build: inside the hidden YouTube player this frame only records, it reports nothing.
+const hiddenJob = __TARGET__ === 'github' ? hiddenJobFromUrl(location.href) : null;
+if (!hiddenJob) {
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startObserving, { once: true });
+  else startObserving();
+}
 
 /* ------------------------------------------------------------- capture */
 
@@ -235,13 +347,41 @@ async function startCapture(jobId: string, videoIndex: number) {
   hook.postMessage({ type: 'arm', videoIndex });
 }
 
-async function finish(s: Session) {
+async function finish(s: Session, keep?: number[]) {
   await s.sink.flush();
   s.sink.close();
   if (session === s) session = null;
   const tracks = [...s.tracks].map(([track, mime]) => ({ track, mime }));
-  await send(tracks.length ? { type: 'capture-done', jobId: s.jobId, tracks } : { type: 'capture-error', jobId: s.jobId, error: 'capture_failed' });
+  await send(
+    tracks.length
+      ? { type: 'capture-done', jobId: s.jobId, tracks, ...(keep?.length ? { keep } : {}) }
+      : { type: 'capture-error', jobId: s.jobId, error: 'capture_failed' },
+  );
 }
+
+/** Starts storing chunks right away; they wait in memory until the sink is open. */
+function openSession(jobId: string): Session {
+  const ready = iframeSink(jobId).catch(() => portSink(jobId));
+  let sink: Sink | null = null;
+  const queue: Parameters<Sink['put']>[] = [];
+  void ready.then((s) => {
+    sink = s;
+    for (const args of queue.splice(0)) s.put(...args);
+  });
+  return {
+    jobId,
+    bytes: 0,
+    seq: new Map(),
+    tracks: new Map(),
+    sink: {
+      put: (...args) => (sink ? sink.put(...args) : void queue.push(args)),
+      flush: async () => (await ready).flush(),
+      close: () => void ready.then((s) => s.close()),
+    },
+  };
+}
+
+if (hiddenJob) session = openSession(hiddenJob);
 
 let lastProgress = 0;
 hook.onmessage = (e: MessageEvent) => {
@@ -271,7 +411,13 @@ hook.onmessage = (e: MessageEvent) => {
       break;
     }
     case 'end':
-      if (session) void finish(session);
+      if (session) void finish(session, Array.isArray(d.keep) ? d.keep.filter(Number.isInteger) : undefined);
+      break;
+    case 'yt':
+      if (__TARGET__ === 'github' && isTop && d.info && typeof d.info.id === 'string') {
+        ytPlayer = d.info;
+        scheduleReport(100);
+      }
       break;
     case 'error':
       if (session) {

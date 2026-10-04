@@ -9,14 +9,16 @@
  * small page-wide budget (nothing at all once DRM is seen). The data only leaves the page
  * when the user starts a capture; it never alters what the page plays otherwise.
  */
+import { youtubeHook } from '../features/youtube-hook';
 import { deepVideos, isInitSegment } from '../shared/dom';
 
 type Up =
   | { type: 'drm'; keySystem: string }
   | { type: 'chunk'; track: number; mime: string; init: boolean; data: ArrayBuffer }
   | { type: 'progress'; progress: number }
-  | { type: 'end' }
-  | { type: 'error'; error: 'capture_unavailable' | 'protected' | 'capture_failed' };
+  | { type: 'end'; keep?: number[] }
+  | { type: 'error'; error: 'capture_unavailable' | 'protected' | 'capture_failed' }
+  | { type: 'yt'; info: import('../shared/messages').YtInfo };
 
 type Down = { type: 'arm'; videoIndex: number } | { type: 'stop' };
 
@@ -66,6 +68,19 @@ const LOG_BUDGET = 48 * 1024 * 1024;
     log: LogEntry[] | null;
   }
   const blobToMs = new Map<string, MediaSource>();
+  /** "Record everything" mode (hidden players): appends of every player, per-player track ids. */
+  let recordAll = false;
+  /** Bumped when the stream changes under us (quality switch): older chunks are dropped. */
+  let generation = 0;
+  let onSwitch: (() => void) | null = null;
+  /** Something was recorded in the current generation. */
+  let recorded = false;
+  const recordedInit = new WeakMap<SourceBuffer, Uint8Array>();
+  const msSerial = new WeakMap<MediaSource, number>();
+  let nextSerial = 0;
+  const trackId = (ms: MediaSource, sb: SourceBuffer) =>
+    generation * 1024 + (msSerial.get(ms) ?? 0) * 16 + Math.max(0, msBuffers.get(ms)?.indexOf(sb) ?? 0);
+  const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((x, i) => x === b[i]);
   const msBuffers = new WeakMap<MediaSource, SourceBuffer[]>();
   const sbInfo = new WeakMap<SourceBuffer, SbInfo>();
   const logged = new Set<SbInfo>();
@@ -146,6 +161,9 @@ const LOG_BUDGET = 48 * 1024 * 1024;
       if (list) list.push(sb);
       else {
         msBuffers.set(this, [sb]);
+        msSerial.set(this, nextSerial++);
+        // Players also switch quality by rebuilding their MediaSource from the current position.
+        if (recordAll && recorded && onSwitch) queueMicrotask(onSwitch);
         this.addEventListener('sourceclose', () => forget(this), { once: true });
       }
       return sb;
@@ -186,6 +204,19 @@ const LOG_BUDGET = 48 * 1024 * 1024;
     const bytes = bytesOf(data);
     const init = isInitSegment(bytes);
     if (init) info.lastInit = bytes.slice().buffer;
+
+    if (recordAll) {
+      if (init) {
+        const prev = recordedInit.get(sb);
+        recordedInit.set(sb, bytes.slice());
+        // A different init on a buffer already recorded: the player switched quality.
+        if (prev && !sameBytes(prev, bytes) && onSwitch) onSwitch();
+      }
+      const copy = bytes.slice().buffer;
+      post({ type: 'chunk', track: trackId(info.ms, sb), mime: info.mime, init, data: copy }, [copy]);
+      recorded = true;
+      return;
+    }
 
     if (capture && capture.ms === info.ms) {
       const track = capture.tracks.get(sb);
@@ -320,4 +351,22 @@ const LOG_BUDGET = 48 * 1024 * 1024;
     void video.play().catch(() => {});
   }
 
+  if (__TARGET__ === 'github') {
+    youtubeHook({
+      post,
+      recordAll: (cb) => {
+        recordAll = true;
+        onSwitch = cb;
+        dropLogs();
+      },
+      restart: () => {
+        generation++;
+        recorded = false;
+      },
+      tracksOf: (video) => {
+        const ms = blobToMs.get(video.currentSrc || video.src);
+        return ms ? (msBuffers.get(ms) ?? []).map((sb) => trackId(ms, sb)) : [];
+      },
+    });
+  }
 })();

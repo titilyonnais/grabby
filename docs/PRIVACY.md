@@ -1,6 +1,6 @@
 # Grabby — Privacy policy / Politique de confidentialité
 
-_Last updated: 2026-10-04_
+_Last updated: 2026-10-04 (1.1.0)_
 
 ## English
 
@@ -20,8 +20,14 @@ Grabby does **not** collect, store on a server, sell or share any personal data.
   - temporary data recorded in capture mode, deleted as soon as the file is saved or the
     capture is canceled.
 - **Page access.** Grabby reads the network responses and `<video>` elements of the pages
-  you visit only to recognize video resources. It does not read the text of the page,
-  form contents, passwords or cookies' values.
+  you visit only to recognize video resources, and the page's title and video metadata
+  (Open Graph tags, schema.org `VideoObject`) to name the file. To check a detected file,
+  it reads its first 256 KB (format, duration, encryption). When a page has no preview
+  image, it takes a small still of the playing video to illustrate the list. All of this
+  stays in session memory on your device. It does not read form contents, passwords or
+  cookies' values.
+- **Notifications.** A system notification tells you when a download finishes; it can be
+  turned off in the settings.
 - **Downloads** are saved through the browser's own download manager to the location you
   choose.
 
@@ -45,8 +51,14 @@ et ne la partage pas.
   - les données temporaires du mode capture, supprimées dès que le fichier est enregistré
     ou la capture annulée.
 - **Accès aux pages.** Grabby lit les réponses réseau et les éléments `<video>` des pages
-  visitées uniquement pour reconnaître les ressources vidéo. Il ne lit ni le texte des pages,
-  ni les formulaires, ni les mots de passe, ni le contenu des cookies.
+  visitées uniquement pour reconnaître les ressources vidéo, ainsi que le titre de la page et
+  les métadonnées de la vidéo (balises Open Graph, `VideoObject` schema.org) pour nommer le
+  fichier. Pour vérifier un fichier détecté, il en lit les 256 premiers Ko (format, durée,
+  chiffrement). Quand une page n'a pas d'image d'aperçu, il prend une petite image de la
+  vidéo en cours pour illustrer la liste. Tout cela reste en mémoire de session sur ton
+  appareil. Il ne lit ni les formulaires, ni les mots de passe, ni le contenu des cookies.
+- **Notifications.** Une notification système te prévient quand un téléchargement est
+  terminé ; tu peux la désactiver dans les réglages.
 - **Les téléchargements** passent par le gestionnaire de téléchargements du navigateur,
   vers l'emplacement de ton choix.
 

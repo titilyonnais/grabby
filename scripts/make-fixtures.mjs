@@ -21,8 +21,12 @@ const SRC = (size) => [
 const H264 = ['-c:v', 'libx264', '-profile:v', 'main', '-level', '3.0', '-pix_fmt', 'yuv420p', '-preset', 'veryfast', '-g', '50', '-keyint_min', '50', '-sc_threshold', '0'];
 const AAC = ['-c:a', 'aac', '-b:a', '64k', '-ac', '2'];
 
+if (process.argv.includes('--extras')) {
+  await extras();
+  process.exit(0);
+}
 await rm(out, { recursive: true, force: true });
-for (const d of ['hls/360', 'hls/180', 'hls-fmp4', 'dash', 'hls-aes', 'mse', 'protected-referer']) {
+for (const d of ['hls/360', 'hls/180', 'hls-fmp4', 'dash', 'hls-aes', 'mse', 'mse-webm', 'protected-referer', 'encrypted', 'preview']) {
   await mkdir(join(out, d), { recursive: true });
 }
 
@@ -68,4 +72,25 @@ ff(...SRC('640x360'), '-map', '1:a', ...AAC, '-vn', '-movflags', 'frag_keyframe+
 const size = async (f) => (await stat(join(out, f))).size;
 await writeFile(join(out, 'mse/sizes.json'), JSON.stringify({ video: await size('mse/video.mp4'), audio: await size('mse/audio.mp4') }));
 
+await extras();
+
 console.log('✓ fixtures written to test/fixtures/media');
+
+/** Fixtures added in 1.1 (also runnable alone: `node scripts/make-fixtures.mjs --extras`). */
+async function extras() {
+  for (const d of ['mse-webm', 'encrypted', 'preview']) await mkdir(join(out, d), { recursive: true });
+  const VP9 = ['-c:v', 'libvpx-vp9', '-b:v', '300k', '-deadline', 'realtime', '-cpu-used', '8', '-g', '50'];
+  const OPUS = ['-c:a', 'libopus', '-b:a', '48k'];
+  // 7. WebM (VP9 + Opus): container detection and "record to MP4" without re-encoding.
+  ff(...SRC('640x360'), ...VP9, ...OPUS, join(out, 'sample.webm'));
+  ff(...SRC('640x360'), '-map', '0:v', ...VP9, '-an', '-dash', '1', join(out, 'mse-webm/video.webm'));
+  ff(...SRC('640x360'), '-map', '1:a', ...OPUS, '-vn', '-dash', '1', join(out, 'mse-webm/audio.webm'));
+  const bytes = async (f) => (await stat(join(out, f))).size;
+  await writeFile(join(out, 'mse-webm/sizes.json'), JSON.stringify({ video: await bytes('mse-webm/video.webm'), audio: await bytes('mse-webm/audio.webm') }));
+  // 8. Common-encryption MP4, as served by DRM platforms: must be shown as protected.
+  ff(...SRC('320x180'), ...H264, ...AAC, '-encryption_scheme', 'cenc-aes-ctr',
+    '-encryption_key', '00112233445566778899aabbccddeeff', '-encryption_kid', '0123456789abcdef0123456789abcdef',
+    '-movflags', '+faststart', join(out, 'encrypted/movie.mp4'));
+  // 9. Short muted loop, like hover previews on video portals: not a real video.
+  ff('-f', 'lavfi', '-i', 'testsrc2=size=426x240:rate=25', '-t', '4', ...H264, '-an', '-movflags', '+faststart', join(out, 'preview/teaser.mp4'));
+}

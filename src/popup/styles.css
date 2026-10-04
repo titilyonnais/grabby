@@ -244,11 +244,14 @@ p {
 .content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 0 14px 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   scrollbar-width: thin;
+  scrollbar-color: var(--surface-2) transparent;
+  scrollbar-gutter: stable;
 }
 
 .skeleton {
@@ -261,7 +264,7 @@ p {
 /* ------------------------------------------------------------------ cards */
 .card {
   display: grid;
-  grid-template-columns: 96px 1fr;
+  grid-template-columns: 96px minmax(0, 1fr);
   gap: 12px;
   padding: 10px;
   border-radius: var(--r-card);
@@ -269,7 +272,7 @@ p {
 }
 
 .card--hero {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   padding: 10px 10px 12px;
 }
@@ -411,9 +414,8 @@ p {
 /* ------------------------------------------------------------------ chips */
 .chips {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  overflow-x: auto;
-  scrollbar-width: none;
   padding: 0 1px;
 }
 
@@ -560,6 +562,7 @@ p {
 .job__actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 8px;
 }
 

@@ -186,6 +186,45 @@ test('MSE player without manifest: playback is recorded and assembled', async ({
   }
 });
 
+test('encrypted MP4 file (DRM) is shown as protected and never offered', async ({ context, sw, extId }) => {
+  const { tabId } = await openFixture(context, sw, 'encrypted.html');
+  const popup = await openPopup(context, extId, tabId);
+  await expect(popup.getByText(/encrypted by its publisher/)).toBeVisible();
+  await expect(popup.getByRole('button', { name: 'Download', exact: true })).toHaveCount(0);
+  expect(await badge(sw, tabId)).toBe('');
+});
+
+test('hover previews (short muted loops) are not listed', async ({ context, sw, extId }) => {
+  const { page, tabId } = await openFixture(context, sw, 'preview.html');
+  await page.waitForFunction(() => (document.getElementById('teaser') as HTMLVideoElement).currentTime > 0.5);
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  // Let the scanner report the preview, then check it never shows up.
+  await page.waitForTimeout(2500);
+  expect(await badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  await expect(popup.getByRole('button', { name: 'Download', exact: true })).toHaveCount(1);
+  await expect(popup.getByText('Other videos on this page')).toHaveCount(0);
+  const items = await sw.evaluate(async (id) => ((await chrome.storage.session.get(`tab:${id}`))[`tab:${id}`] as { items: { url: string }[] }).items.map((i) => i.url), tabId);
+  expect(items.some((u) => u.includes('teaser'))).toBe(false);
+});
+
+test('WebM (VP9/Opus) playback recorded and saved as MP4', async ({ context, sw, extId }) => {
+  const { page, tabId } = await openFixture(context, sw, 'mse-webm.html');
+  await page.waitForSelector('body[data-ready="1"]');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  await expect(popup.getByRole('radio', { name: 'MP4' })).toHaveAttribute('aria-checked', 'true');
+  await popup.getByRole('button', { name: 'Record playback' }).click();
+  await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
+  const { bytes, filename } = await lastDownload(sw);
+  expect(isMp4(bytes)).toBe(true);
+  const info = probe(filename);
+  if (info) {
+    expect(info.streams).toEqual(['audio', 'video']);
+    expect(info.duration).toBeGreaterThan(4);
+  }
+});
+
 test('restricted pages show an explanation instead of an empty list', async ({ context, sw, extId }) => {
   const page = await context.newPage();
   await page.goto('about:blank');

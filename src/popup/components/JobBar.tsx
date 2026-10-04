@@ -32,7 +32,7 @@ function MeterLabel({ text, speed }: { text: string; speed: string }) {
  * The download pill turned into its own progress bar: the coral fill grows inside
  * the button the user just pressed, so the result appears where the action happened.
  */
-export function JobBar({ job, send }: { job: Job; send: (m: PopupToBg) => void }) {
+export function JobBar({ job, send, canFinish = true }: { job: Job; send: (m: PopupToBg) => void; canFinish?: boolean }) {
   if (job.status === 'done') {
     return (
       <div class="job job--done" role="status">
@@ -41,12 +41,18 @@ export function JobBar({ job, send }: { job: Job; send: (m: PopupToBg) => void }
           {t('st_done')}
           {job.bytes ? <span class="muted">{size(job.bytes)}</span> : null}
         </span>
-        {job.downloadId !== undefined && (
-          <button class="pill pill--ghost" onClick={() => send({ type: 'show', downloadId: job.downloadId! })}>
-            <Icon name="folder" size={16} />
-            {t('showFile')}
+        <div class="job__actions">
+          {job.downloadId !== undefined && (
+            <button class="pill pill--ghost" onClick={() => send({ type: 'show', downloadId: job.downloadId! })}>
+              <Icon name="folder" size={16} />
+              {t('showFile')}
+            </button>
+          )}
+          {/* Back to the choices (quality, format) for another download. */}
+          <button class="icon-btn icon-btn--solid" title={t('redownload')} aria-label={t('redownload')} onClick={() => send({ type: 'dismiss', jobId: job.id })}>
+            <Icon name="retry" size={18} />
           </button>
-        )}
+        </div>
       </div>
     );
   }
@@ -89,7 +95,7 @@ export function JobBar({ job, send }: { job: Job; send: (m: PopupToBg) => void }
           <MeterLabel text={label(job)} speed={speed} />
         </span>
       </div>
-      {job.status === 'capturing' && (
+      {job.status === 'capturing' && canFinish && (
         <button class="icon-btn icon-btn--solid" title={t('finishCapture')} aria-label={t('finishCapture')} onClick={() => send({ type: 'finish-capture', jobId: job.id })}>
           <Icon name="stop" />
         </button>

@@ -1,4 +1,4 @@
-import type { Plan } from './plan';
+import type { Plan, VideoFormat } from './plan';
 
 export type MediaKind = 'file' | 'hls' | 'dash' | 'capture';
 export type Protection = 'none' | 'drm' | 'encrypted';
@@ -12,6 +12,8 @@ export interface Variant {
   codecs?: string;
   url: string;
   audioGroup?: string;
+  /** Expected file size per output format, when the source tells us (YouTube). */
+  sizes?: Partial<Record<VideoFormat, number>>;
 }
 
 export interface AudioTrack {
@@ -51,6 +53,10 @@ export interface MediaItem {
   audioOnly?: boolean;
   /** True when the item comes from the experimental YouTube feature (github build). */
   experimental?: boolean;
+  /** Containers offered for this video (none: saved as-is). */
+  formats?: VideoFormat[];
+  /** github build: YouTube video id, recorded by a hidden player. */
+  ytId?: string;
 }
 
 export type JobStatus =
@@ -92,6 +98,10 @@ export interface Job {
   /** Capture jobs: where the <video> lives. */
   frameId?: number;
   videoIndex?: number;
+  /** Container chosen for a video. */
+  format?: VideoFormat;
+  /** Recorded by a hidden player (YouTube), not the one the user watches. */
+  hidden?: boolean;
   /** Capture jobs: the assembly plan, kept (and persisted) until the recording ends. */
   capturePlan?: Plan;
   /** The final file is an offscreen Blob URL that must be released once saved. */

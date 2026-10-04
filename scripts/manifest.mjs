@@ -35,6 +35,7 @@ export function buildManifest(target, version) {
       'storage',
       'unlimitedStorage',
       'downloads',
+      'notifications',
       'webRequest',
       'offscreen',
       'declarativeNetRequestWithHostAccess',

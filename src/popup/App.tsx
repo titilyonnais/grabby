@@ -91,12 +91,12 @@ export function App() {
               <StateCard icon="film" title={t('emptyTitle')} body={t('emptyBody')} />
             ) : (
               <>
-                <MediaCard key={hero.id} item={hero} job={latestJob(state.jobs, hero.id)} hero send={send} />
+                <MediaCard key={hero.id} item={hero} job={latestJob(state.jobs, hero.id)} hero preferred={state.settings.videoFormat} send={send} />
                 {rest.length > 0 && (
                   <section class="more" aria-label={t('moreVideos')}>
                     <h3 class="more__title">{t('moreVideos')}</h3>
                     {rest.map((i) => (
-                      <MediaCard key={i.id} item={i} job={latestJob(state.jobs, i.id)} hero={false} send={send} />
+                      <MediaCard key={i.id} item={i} job={latestJob(state.jobs, i.id)} hero={false} preferred={state.settings.videoFormat} send={send} />
                     ))}
                   </section>
                 )}

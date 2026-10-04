@@ -84,5 +84,13 @@
   "set_privacy": { "message": "Grabby doesn't collect any data. Everything stays on your device." },
 
   "sizeUnitByte": { "message": "B" },
-  "justNow": { "message": "just now" }
+  "justNow": { "message": "just now" },
+  "formatLabel": { "message": "Format" },
+  "redownload": { "message": "Download again" },
+  "hiddenHint": { "message": "Grabby downloads this video in the background: keep watching as usual. You'll get a message when it's done." },
+  "notifyDone": { "message": "Download complete" },
+  "notifyFailed": { "message": "Download failed" },
+  "set_video": { "message": "Video format" },
+  "set_notify": { "message": "Notify me when done" },
+  "set_notify_hint": { "message": "Shows a notification when a download finishes." }
 }

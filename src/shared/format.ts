@@ -21,8 +21,10 @@ export function formatBytes(n: number): string {
   return `${rounded} ${UNITS[i]}`;
 }
 
-export function qualityLabel(height?: number, bandwidth?: number): string {
-  if (height) return `${height}p`;
+/** "720p" from a resolution; the short side counts, so a vertical 1080×1920 video is 1080p. */
+export function qualityLabel(height?: number, bandwidth?: number, width?: number): string {
+  const lines = height && width ? Math.min(height, width) : height;
+  if (lines) return `${lines}p`;
   if (bandwidth) {
     return bandwidth >= 1_000_000
       ? `${Math.round(bandwidth / 100_000) / 10} Mb/s`

@@ -8,6 +8,7 @@ const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '../fixtures'
 const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
   '.m4s': 'video/iso.segment',
   '.ts': 'video/mp2t',
   '.m3u8': 'application/vnd.apple.mpegurl',
@@ -52,7 +53,7 @@ export function startServer(port = 0): Promise<{ server: Server; origin: string 
         const m = /bytes=(\d+)-(\d*)/.exec(header);
         if (m) {
           const start = Number(m[1]);
-          const end = m[2] ? Number(m[2]) : body.length - 1;
+          const end = Math.min(m[2] ? Number(m[2]) : body.length - 1, body.length - 1);
           res.writeHead(206, {
             'Content-Type': type,
             'Content-Length': end - start + 1,

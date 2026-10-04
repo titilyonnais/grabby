@@ -10,6 +10,7 @@ import { inputExt, muxAttempts } from './args';
 import { assembleCapture } from './capture';
 import { fetchInOrder, fetchSegment, fetchStream, HttpError } from './fetcher';
 import { getFFmpeg } from './muxer';
+import { startHiddenPlayer, stopHiddenPlayer } from '../features/youtube-player';
 
 const controllers = new Map<string, AbortController>();
 const HEARTBEAT_MS = 10_000;
@@ -20,8 +21,8 @@ const MIME: Record<string, string> = {
   m4a: 'audio/mp4',
   mp3: 'audio/mpeg',
   webm: 'video/webm',
-  ts: 'video/mp2t',
   mkv: 'video/x-matroska',
+  ts: 'video/mp2t',
 };
 
 type NoTarget<T> = T extends unknown ? Omit<T, 'target'> : never;
@@ -127,7 +128,7 @@ async function run(jobId: string, plan: Plan) {
 
       if (plan.kind === 'capture') {
         rep.send('processing', 0, true);
-        const tracks = await assembleCapture(jobId);
+        const tracks = await assembleCapture(jobId, plan.keepTracks);
         if (!tracks.length) throw Object.assign(new Error('capture'), { code: 'capture_failed' });
         for (const t of tracks) {
           const ext = t.mime.includes('webm') ? 'webm' : 'mp4';
@@ -138,7 +139,6 @@ async function run(jobId: string, plan: Plan) {
           await f.append(inputs[key]!, t.data);
           rep.addBytes(t.data.byteLength);
         }
-        if (!plan.audioOnly && tracks.some((t) => t.mime.includes('webm'))) output = 'webm';
         if (!inputs.video && !plan.audioOnly) {
           inputs.video = inputs.audio;
           delete inputs.audio;
@@ -219,6 +219,12 @@ chrome.runtime.onMessage.addListener((msg: BgToOffscreen) => {
       void deleteJob(msg.jobId).catch(() => {});
       break;
     }
+    case 'yt-start':
+      if (__TARGET__ === 'github') startHiddenPlayer(msg.jobId, msg.src);
+      break;
+    case 'yt-stop':
+      if (__TARGET__ === 'github') stopHiddenPlayer(msg.jobId);
+      break;
     case 'ping':
       break;
   }

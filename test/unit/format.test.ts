@@ -21,6 +21,9 @@ describe('format', () => {
     expect(qualityLabel(undefined, 2_500_000)).toBe('2.5 Mb/s');
     expect(qualityLabel(undefined, 128_000)).toBe('128 kb/s');
     expect(qualityLabel()).toBe('');
+    // Vertical video: the short side names the quality.
+    expect(qualityLabel(1920, 0, 1080)).toBe('1080p');
+    expect(qualityLabel(720, 0, 1280)).toBe('720p');
   });
   it('hashId is stable and short', () => {
     expect(hashId('abc')).toBe(hashId('abc'));

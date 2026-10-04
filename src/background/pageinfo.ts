@@ -1,12 +1,53 @@
 import { classify } from '../parsers/classify';
 import { hashId } from '../shared/ids';
-import type { PageInfo } from '../shared/messages';
+import type { PageInfo, PageVideo } from '../shared/messages';
 import type { MediaItem } from '../shared/types';
 import { blockedByPolicy, handleMediaUrl } from './detector';
-import { fileItem, type DetectContext } from './manifests';
+import type { DetectContext } from './manifests';
 import type { Registry } from './registry';
 
 const MIN_CAPTURE_WIDTH = 120;
+
+/**
+ * Hover previews and decorative loops: short, muted, looping, without controls and small.
+ * (Full-width background loops and GIF-like posts stay listed: they can be wanted.)
+ */
+export function isPreview(v: PageVideo): boolean {
+  const short = !Number.isFinite(v.duration) || v.duration <= 60;
+  return !!v.loop && !!v.muted && !v.controls && short && v.width > 0 && v.width < 400;
+}
+
+const isYouTubeHost = (url: string) => /^https?:\/\/([\w-]+\.)*youtube\.com\//i.test(url);
+
+/** github build: the video of a YouTube watch page, with the player's qualities and sizes. */
+async function upsertYouTube(registry: Registry, ctx: DetectContext, frameId: number, info: PageInfo): Promise<string> {
+  const yt = info.youtube!;
+  const p = yt.player;
+  const main = info.videos.find((v) => v.isMse) ?? info.videos[0];
+  const variants = (p?.qualities ?? []).map((q) => ({
+    id: q.quality,
+    label: q.label,
+    height: q.height,
+    url: '',
+    sizes: q.sizes,
+    codecs: [q.avc && 'avc1', q.vp9 && 'vp9'].filter(Boolean).join(','),
+  }));
+  const item = captureItem(ctx, frameId, main?.index ?? 0, {
+    title: yt.title,
+    experimental: true,
+    formats: ['mp4', 'webm'],
+    variants,
+    ...(yt.thumbnail ? { thumbnail: yt.thumbnail } : {}),
+    ...((p?.duration ?? yt.duration) ? { duration: p?.duration ?? yt.duration } : {}),
+    // Recorded discreetly by a hidden player when YouTube allows embedding it.
+    ...(p?.embeddable ? { ytId: p.id } : {}),
+    ...(variants[0]?.sizes.mp4 ? { size: variants[0].sizes.mp4 } : {}),
+  });
+  // One item per YouTube video id (the page URL changes between videos).
+  item.id = hashId(`yt:${ctx.pageUrl}`);
+  await registry.upsert(ctx.tabId, item);
+  return item.id;
+}
 
 function captureItem(ctx: DetectContext, frameId: number, index: number, over: Partial<MediaItem>): MediaItem {
   return {
@@ -39,7 +80,11 @@ export async function handlePageInfo(registry: Registry, sender: chrome.runtime.
   const ctx: DetectContext = { tabId, frameUrl, pageUrl };
 
   if (frameId === 0) {
-    await registry.setPageInfo(tabId, { title: info.title, ...(info.thumbnail ? { thumbnail: info.thumbnail } : {}) });
+    await registry.setPageInfo(tabId, {
+      title: info.title,
+      ...(info.thumbnail ? { thumbnail: info.thumbnail } : {}),
+      ...(info.image ? { image: info.image } : {}),
+    });
   }
 
   for (const url of info.streams ?? []) {
@@ -50,38 +95,36 @@ export async function handlePageInfo(registry: Registry, sender: chrome.runtime.
 
   const keep = new Set<string>();
 
+  // Hover previews and decorative loops: remember them so their files stay unlisted.
+  const previews = info.videos.filter(isPreview);
+  if (previews.length) {
+    await registry.addPreviews(
+      tabId,
+      previews.map((v) => ({ url: v.src, frameUrl, ...(Number.isFinite(v.duration) ? { duration: v.duration } : {}) })),
+    );
+  }
+  if (info.snapshot) await registry.setFrameThumb(tabId, frameUrl, info.snapshot);
+
   if (__TARGET__ === 'github' && info.youtube) {
-    const main = info.videos.find((v) => v.isMse) ?? info.videos[0];
-    const item = captureItem(ctx, frameId, main?.index ?? 0, {
-      title: info.youtube.title,
-      experimental: true,
-      ...(info.youtube.thumbnail ? { thumbnail: info.youtube.thumbnail } : {}),
-      ...(info.youtube.duration ? { duration: info.youtube.duration } : {}),
-    });
-    // One item per YouTube video id (the page URL changes between videos).
-    item.id = hashId(`yt:${pageUrl}`);
-    keep.add(item.id);
-    await registry.upsert(tabId, item);
-  } else {
+    keep.add(await upsertYouTube(registry, ctx, frameId, info));
+  } else if (!(__TARGET__ === 'github' && isYouTubeHost(pageUrl))) {
     for (const v of info.videos) {
+      if (previews.includes(v)) continue;
       if (v.isMse) {
         if (v.width && v.width < MIN_CAPTURE_WIDTH) continue;
         const live = v.duration === Infinity;
         const item = captureItem(ctx, frameId, v.index, {
           live,
           protection: v.isProtected ? 'drm' : 'none',
+          formats: ['mp4', 'mkv'],
           ...(Number.isFinite(v.duration) && v.duration > 0 ? { duration: v.duration } : {}),
           ...(v.poster ? { thumbnail: v.poster } : {}),
         });
         keep.add(item.id);
         await registry.upsert(tabId, item);
       } else if (/^https?:/i.test(v.src)) {
-        const kind = classify({ url: v.src });
-        if (kind) {
-          await handleMediaUrl(registry, v.src, ctx, {});
-        } else {
-          await registry.upsert(tabId, fileItem(v.src, ctx, {}));
-        }
+        // A <video src> is a video even when its URL doesn't say so (".pmp4", no extension).
+        await handleMediaUrl(registry, v.src, ctx, classify({ url: v.src }) ? {} : { contentType: 'video/mp4' });
       }
     }
   }

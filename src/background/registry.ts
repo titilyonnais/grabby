@@ -1,5 +1,6 @@
 import type { MediaItem } from '../shared/types';
-import { normalizeMediaUrl } from '../parsers/url';
+import { hostOf, normalizeMediaUrl } from '../parsers/url';
+import { looksLikeId } from '../shared/title';
 
 export interface KV {
   get(key: string): Promise<unknown>;
@@ -12,8 +13,35 @@ interface TabState {
   drmFrames: string[];
   /** Frames that streamed from a host the policy blocks: no playback capture there. */
   blockedFrames?: string[];
+  /** Hover previews / background loops seen in the page: their files aren't listed. */
+  previews?: Preview[];
+  /** Still images grabbed from each frame's player, used when the page offers none. */
+  frameThumbs?: Record<string, string>;
   pageTitle?: string;
   thumbnail?: string;
+  /** Biggest picture of the page: used only when nothing better exists. */
+  image?: string;
+}
+
+export interface Preview {
+  url: string;
+  frameUrl: string;
+  duration?: number;
+}
+
+/** A file is a known preview: same URL, or (redirected CDN copy) same frame and length. */
+function isPreviewFile(item: MediaItem, previews: Preview[] | undefined): boolean {
+  if (item.kind !== 'file' || !previews?.length) return false;
+  const norm = normalizeMediaUrl(item.url);
+  return previews.some(
+    (p) =>
+      normalizeMediaUrl(p.url) === norm ||
+      (p.frameUrl === item.frameUrl &&
+        p.duration !== undefined &&
+        item.duration !== undefined &&
+        Math.abs(p.duration - item.duration) < 0.35 &&
+        (item.size ?? 0) < 50e6),
+  );
 }
 
 const MAX_ITEMS = 40;
@@ -29,12 +57,14 @@ export const sessionKV: KV = {
   remove: (k) => chrome.storage.session.remove(k),
 };
 
+/** A readable name from the URL's last path segment, or '' when it's just an id. */
 function titleFromUrl(url: string): string {
   try {
     const last = new URL(url).pathname.split('/').filter(Boolean).pop() ?? '';
-    return decodeURIComponent(last).replace(/\.[a-z0-9]{2,5}$/i, '') || new URL(url).hostname;
+    const name = decodeURIComponent(last).replace(/\.[a-z0-9]{2,5}$/i, '').replace(/[_+]+/g, ' ').trim();
+    return looksLikeId(name) ? '' : name;
   } catch {
-    return 'video';
+    return '';
   }
 }
 
@@ -84,14 +114,19 @@ export class Registry {
     return run;
   }
 
-  async get(tabId: number): Promise<MediaItem[]> {
+  /** Items with display fallbacks: page title (or `fallbackTitle`, the tab's), page image. */
+  async get(tabId: number, fallbackTitle?: string): Promise<MediaItem[]> {
     await (this.locks.get(tabId) ?? Promise.resolve());
     const s = await this.load(tabId);
-    return s.items.map((i) => ({
-      ...i,
-      title: i.title || s.pageTitle || titleFromUrl(i.url),
-      ...(i.thumbnail || s.thumbnail ? { thumbnail: i.thumbnail ?? s.thumbnail } : {}),
-    }));
+    const anyFrameThumb = Object.values(s.frameThumbs ?? {})[0];
+    return s.items.map((i) => {
+      const thumbnail = i.thumbnail ?? s.thumbnail ?? s.frameThumbs?.[i.frameUrl] ?? anyFrameThumb ?? s.image;
+      return {
+        ...i,
+        title: i.title || s.pageTitle || fallbackTitle || titleFromUrl(i.url) || hostOf(i.pageUrl) || 'video',
+        ...(thumbnail ? { thumbnail } : {}),
+      };
+    });
   }
 
   async find(tabId: number, id: string): Promise<MediaItem | undefined> {
@@ -107,9 +142,11 @@ export class Registry {
         // A media playlist already listed as a variant/audio of a master is absorbed.
         const absorbed = s.items.some((i) => i.id !== item.id && refsOf(i).has(norm));
         if (absorbed) return false;
+        if (isPreviewFile(item, s.previews)) return false;
 
         if (item.kind === 'capture' && s.blockedFrames?.includes(item.frameUrl)) return false;
-        if (item.kind === 'capture' && s.drmFrames.includes(item.frameUrl)) item = { ...item, protection: 'drm' };
+        // A frame that set up DRM plays protected media: whatever it loads is protected too.
+        if (s.drmFrames.includes(item.frameUrl)) item = { ...item, protection: 'drm' };
 
         // A master removes the media playlists it references.
         const refs = refsOf(item);
@@ -170,7 +207,7 @@ export class Registry {
           changed = true;
         }
         for (const i of s.items) {
-          if (i.kind === 'capture' && i.frameUrl === frameUrl && i.protection !== 'drm') {
+          if (i.frameUrl === frameUrl && i.protection !== 'drm') {
             i.protection = 'drm';
             changed = true;
           }
@@ -195,18 +232,64 @@ export class Registry {
     );
   }
 
+  /** Records preview videos of a frame and drops files already listed for them. */
+  addPreviews(tabId: number, previews: Preview[]): Promise<boolean> {
+    return this.mutate(
+      tabId,
+      (s) => {
+        const known = new Set((s.previews ?? []).map((p) => normalizeMediaUrl(p.url)));
+        const fresh = previews.filter((p) => !known.has(normalizeMediaUrl(p.url)));
+        if (!fresh.length) return false;
+        s.previews = [...(s.previews ?? []), ...fresh].slice(-60);
+        const before = s.items.length;
+        s.items = s.items.filter((i) => !isPreviewFile(i, s.previews));
+        return s.items.length !== before;
+      },
+      (r) => r,
+    );
+  }
+
+  resetPageInfo(tabId: number): Promise<boolean> {
+    return this.mutate(
+      tabId,
+      (s) => {
+        delete s.pageTitle;
+        delete s.thumbnail;
+        delete s.image;
+        s.frameThumbs = {};
+        return true;
+      },
+      () => true,
+    );
+  }
+
+  setFrameThumb(tabId: number, frameUrl: string, thumb: string): Promise<boolean> {
+    return this.mutate(
+      tabId,
+      (s) => {
+        if (s.frameThumbs?.[frameUrl] === thumb) return false;
+        // Keep a few: they are data URLs.
+        const entries = Object.entries(s.frameThumbs ?? {}).filter(([k]) => k !== frameUrl).slice(-3);
+        s.frameThumbs = Object.fromEntries([...entries, [frameUrl, thumb]]);
+        return true;
+      },
+      (r) => r,
+    );
+  }
+
   async isDrmFrame(tabId: number, frameUrl: string): Promise<boolean> {
     return (await this.load(tabId)).drmFrames.includes(frameUrl);
   }
 
-  setPageInfo(tabId: number, info: { title?: string; thumbnail?: string }): Promise<boolean> {
+  setPageInfo(tabId: number, info: { title?: string; thumbnail?: string; image?: string }): Promise<boolean> {
     return this.mutate(
       tabId,
       (s) => {
-        const before = `${s.pageTitle}|${s.thumbnail}`;
+        const before = `${s.pageTitle}|${s.thumbnail}|${s.image}`;
         if (info.title) s.pageTitle = info.title;
         if (info.thumbnail) s.thumbnail = info.thumbnail;
-        return before !== `${s.pageTitle}|${s.thumbnail}`;
+        if (info.image) s.image = info.image;
+        return before !== `${s.pageTitle}|${s.thumbnail}|${s.image}`;
       },
       (r) => r,
     );
@@ -219,7 +302,10 @@ export class Registry {
         s.items = [];
         s.drmFrames = [];
         s.blockedFrames = [];
+        s.previews = [];
+        s.frameThumbs = {};
         delete s.pageTitle;
+        delete s.image;
         delete s.thumbnail;
         return true;
       },

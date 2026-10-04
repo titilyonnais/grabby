@@ -84,5 +84,13 @@
   "set_privacy": { "message": "Grabby ne collecte aucune donnée. Tout reste sur ton appareil." },
 
   "sizeUnitByte": { "message": "o" },
-  "justNow": { "message": "à l'instant" }
+  "justNow": { "message": "à l'instant" },
+  "formatLabel": { "message": "Format" },
+  "redownload": { "message": "Télécharger à nouveau" },
+  "hiddenHint": { "message": "Grabby télécharge cette vidéo en arrière-plan : tu peux continuer à la regarder normalement. Un message te prévient quand c'est fini." },
+  "notifyDone": { "message": "Téléchargement terminé" },
+  "notifyFailed": { "message": "Échec du téléchargement" },
+  "set_video": { "message": "Format vidéo" },
+  "set_notify": { "message": "Me prévenir à la fin" },
+  "set_notify_hint": { "message": "Une notification s'affiche quand un téléchargement se termine." }
 }

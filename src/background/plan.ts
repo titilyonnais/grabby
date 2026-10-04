@@ -1,7 +1,7 @@
 import { parseDash, type DashRep } from '../parsers/dash';
 import { parseHls, type HlsMedia } from '../parsers/hls';
 import { extOf, reachableFrom } from '../parsers/url';
-import { RAW_THRESHOLD, type ErrorCode, type OutputFormat, type Plan, type TrackPlan } from '../shared/plan';
+import { RAW_THRESHOLD, type ErrorCode, type OutputFormat, type Plan, type TrackPlan, type VideoFormat } from '../shared/plan';
 import type { Settings } from '../shared/settings';
 import type { JobMode, MediaItem } from '../shared/types';
 
@@ -13,12 +13,15 @@ export class PlanError extends Error {
 
 export interface PlanOptions {
   mode: JobMode;
+  /** Container for a video; defaults to the user's preferred one. */
+  format?: VideoFormat;
   variantId?: string;
   settings: Settings;
   fetchText: (url: string) => Promise<string>;
 }
 
 const audioOut = (s: Settings): OutputFormat => s.audioFormat;
+const videoOut = (o: PlanOptions): OutputFormat => o.format ?? o.settings.videoFormat;
 
 async function hlsTrack(url: string, fetchText: PlanOptions['fetchText']): Promise<{ track: TrackPlan; media: HlsMedia }> {
   const parsed = parseHls(await fetchText(url), url);
@@ -71,7 +74,7 @@ async function planHls(item: MediaItem, o: PlanOptions): Promise<Plan> {
     ...common,
     video,
     ...(audio ? { audio } : {}),
-    output: raw ? (video.container === 'ts' ? 'ts' : 'mp4') : 'mp4',
+    output: raw ? (video.container === 'ts' ? 'ts' : 'mp4') : videoOut(o),
     raw,
     audioOnly: false,
     ...(estimatedSize ? { estimatedSize } : {}),
@@ -129,7 +132,7 @@ async function planDash(item: MediaItem, o: PlanOptions): Promise<Plan> {
     ...common,
     video,
     ...(audio ? { audio } : {}),
-    output: webm ? 'webm' : 'mp4',
+    output: raw && webm ? 'webm' : raw ? 'mp4' : videoOut(o),
     raw,
     audioOnly: false,
     ...(estimatedSize ? { estimatedSize } : {}),
@@ -149,7 +152,7 @@ export async function buildPlan(item: MediaItem, o: PlanOptions): Promise<Plan> 
     case 'capture':
       return {
         kind: 'capture',
-        output: o.mode === 'audio' ? audioOut(o.settings) : 'mp4',
+        output: o.mode === 'audio' ? audioOut(o.settings) : videoOut(o),
         raw: false,
         audioOnly: o.mode === 'audio',
         pageUrl: item.pageUrl,

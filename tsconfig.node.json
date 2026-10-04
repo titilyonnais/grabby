@@ -14,7 +14,8 @@
     "test/e2e",
     "playwright.config.ts",
     "test/unit/i18n.test.ts",
-    "test/unit/store-bundle.test.ts"
+    "test/unit/store-bundle.test.ts",
+    "test/unit/sniff.test.ts"
   ],
   "exclude": []
 }

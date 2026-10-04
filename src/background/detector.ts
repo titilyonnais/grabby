@@ -1,7 +1,9 @@
+import { isAdUrl } from '../parsers/adhosts';
 import { classify, isAudioResource } from '../parsers/classify';
 import { isYouTubeUrl, youtubeBlocked } from '../shared/policy';
 import { fetchTextAs } from './headers';
 import { fileItem, resolveDash, resolveHls, type DetectContext } from './manifests';
+import { probeFile } from './probe';
 import type { Registry } from './registry';
 import { rememberTabUrl, tabUrl } from './tabs';
 
@@ -30,6 +32,9 @@ export function blockedByPolicy(...urls: (string | undefined)[]): boolean {
   return youtubeBlocked() && urls.some((u) => !!u && isYouTubeUrl(u));
 }
 
+/** Shorter files are UI sounds, loaders or bumpers. */
+const MIN_FILE_SECONDS = 2;
+
 export async function handleMediaUrl(
   registry: Registry,
   url: string,
@@ -38,6 +43,8 @@ export async function handleMediaUrl(
 ): Promise<void> {
   const kind = classify({ url, ...info });
   if (!kind) return;
+  // Ad creatives (and anything inside an ad frame) are never the video being watched.
+  if (isAdUrl(url) || isAdUrl(ctx.frameUrl)) return;
   if (kind === 'hls') {
     const item = await resolveHls(url, ctx, fetchTextAs);
     if (item) await registry.upsert(ctx.tabId, item);
@@ -45,12 +52,19 @@ export async function handleMediaUrl(
     const item = await resolveDash(url, ctx, fetchTextAs);
     if (item) await registry.upsert(ctx.tabId, item);
   } else {
+    // Look inside before listing: error pages, encrypted (DRM) media and tiny clips are
+    // not downloadable videos.
+    const probe = await probeFile(url, ctx.pageUrl);
+    if (probe === null) return;
+    if (probe?.duration !== undefined && probe.duration < MIN_FILE_SECONDS) return;
     const size = info.totalSize ?? info.size;
     await registry.upsert(
       ctx.tabId,
       fileItem(url, ctx, {
         ...(info.contentType ? { mime: info.contentType.split(';')[0]!.trim() } : {}),
         ...(size ? { size } : {}),
+        ...(probe?.duration ? { duration: probe.duration } : {}),
+        ...(probe?.encrypted ? { protection: 'drm' as const } : {}),
         audioOnly: isAudioResource(url, info.contentType),
       }),
     );

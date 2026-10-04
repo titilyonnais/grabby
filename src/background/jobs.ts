@@ -2,13 +2,17 @@ import { extOf, hostOf } from '../parsers/url';
 import { buildFilename } from '../shared/filename';
 import { uid } from '../shared/ids';
 import type { BgToContent, ContentToBg, OffscreenToBg } from '../shared/messages';
-import type { ErrorCode, OutputFormat, Plan } from '../shared/plan';
+import type { ErrorCode, OutputFormat, Plan, VideoFormat } from '../shared/plan';
 import { getSettings, type Settings } from '../shared/settings';
-import type { Job, JobMode, JobStatus } from '../shared/types';
+import type { Job, JobMode, JobStatus, MediaItem } from '../shared/types';
 import { fetchTextAs, sweepHeaderRules, withPageHeaders } from './headers';
 import { addHistory } from './history';
+import { notifyFinished } from './notify';
 import { scheduleOffscreenClose, sendOffscreen } from './offscreen-client';
 import { buildPlan, PlanError } from './plan';
+import { hiddenPlayerUrl } from '../features/youtube';
+import { allowHiddenPlayer } from './headers';
+import { ensureOffscreen } from './offscreen-client';
 import type { Registry } from './registry';
 
 const STORE_KEY = 'jobs';
@@ -115,7 +119,7 @@ export class JobManager {
 
   /* -------------------------------------------------------------- commands */
 
-  async start(tabId: number, mediaId: string, variantId: string | undefined, mode: JobMode): Promise<Job | undefined> {
+  async start(tabId: number, mediaId: string, variantId: string | undefined, mode: JobMode, format?: VideoFormat): Promise<Job | undefined> {
     await this.ready;
     const item = await this.registry.find(tabId, mediaId);
     if (!item) return undefined;
@@ -143,6 +147,8 @@ export class JobManager {
       startedAt: Date.now(),
       ...(variantId ? { variantId } : {}),
       ...(mode === 'video' && variant ? { quality: variant.label } : {}),
+      ...(mode === 'video' && format && item.formats?.includes(format) ? { format } : {}),
+      ...(item.ytId ? { hidden: true } : {}),
       ...(item.frameId !== undefined ? { frameId: item.frameId } : {}),
       ...(item.videoIndex !== undefined ? { videoIndex: item.videoIndex } : {}),
     };
@@ -158,7 +164,7 @@ export class JobManager {
     const j = this.jobs.get(jobId);
     if (!j || !FINISHED.includes(j.status)) return;
     this.jobs.delete(jobId);
-    await this.start(j.tabId, j.mediaId, j.variantId, j.mode);
+    await this.start(j.tabId, j.mediaId, j.variantId, j.mode, j.format);
   }
 
   async dismiss(jobId: string): Promise<void> {
@@ -213,7 +219,8 @@ export class JobManager {
   }
 
   private fail(jobId: string, error: ErrorCode) {
-    this.update(jobId, { status: error === 'canceled' ? 'canceled' : 'error', error, speed: 0 });
+    const job = this.update(jobId, { status: error === 'canceled' ? 'canceled' : 'error', error, speed: 0 });
+    if (job && error !== 'canceled') void notifyFinished(job);
     void this.cleanup(jobId);
     this.pump();
   }
@@ -226,6 +233,7 @@ export class JobManager {
       const settings = await getSettings();
       const plan = await buildPlan(item, {
         mode: job.mode,
+        ...(job.format ? { format: job.format } : {}),
         settings,
         fetchText: (u) => fetchTextAs(u, item.pageUrl),
         ...(job.variantId ? { variantId: job.variantId } : {}),
@@ -237,7 +245,9 @@ export class JobManager {
         const ext = item.audioOnly ? extOf(item.url) || 'mp3' : plan.output;
         return await this.direct(job, item.url, ext, settings);
       }
-      if (plan.kind === 'capture') return await this.startCapture(job, plan);
+      if (plan.kind === 'capture') {
+        return __TARGET__ === 'github' && item.ytId ? await this.startHidden(job, plan, item) : await this.startCapture(job, plan);
+      }
 
       const urls = [plan.video, plan.audio].flatMap((t) => (t ? [...(t.init ? [t.init.url] : []), ...t.segments.map((s) => s.url)] : []));
       const perHost = [...new Map(urls.map((u) => [hostOf(u), u])).values()];
@@ -299,13 +309,47 @@ export class JobManager {
     this.pump();
   }
 
+  /**
+   * github build, YouTube: a hidden copy of the player records the video at high speed
+   * while the user keeps watching theirs. Codecs are chosen so the file needs no re-encoding.
+   */
+  private async startHidden(job: Job, plan: Plan, item: MediaItem) {
+    if (__TARGET__ !== 'github') return;
+    const v = item.variants.find((x) => x.id === job.variantId) ?? item.variants[0];
+    const codecs = v?.codecs ?? '';
+    const audio = job.mode === 'audio';
+    const webm = !audio && job.format === 'webm';
+    const vcodec = audio || (!webm && codecs.includes('avc1')) ? 'avc' : 'vp9';
+    this.update(job.id, { status: 'capturing', capturePlan: plan });
+    const src = hiddenPlayerUrl({
+      jobId: job.id,
+      videoId: item.ytId!,
+      // Audio only: the smallest picture, the audio track is the same.
+      quality: audio ? 'tiny' : (v?.id ?? 'hd1080'),
+      vcodec,
+      acodec: webm ? 'opus' : 'aac',
+    });
+    try {
+      await allowHiddenPlayer();
+      await ensureOffscreen();
+      if (this.gone(job.id)) return;
+      await sendOffscreen({ target: 'offscreen', type: 'yt-start', jobId: job.id, src });
+    } catch {
+      if (!this.gone(job.id)) this.fail(job.id, 'capture_unavailable');
+    }
+    this.pump();
+  }
+
   /** Ends a recording: hands the stored chunks to the offscreen assembler. */
-  private async assembleCapture(job: Job, hasTracks = job.bytes > 0) {
+  private async assembleCapture(job: Job, hasTracks = job.bytes > 0, keep?: number[]) {
     if (job.status !== 'capturing') return;
     const plan = job.capturePlan;
+    if (job.hidden) void sendOffscreen({ target: 'offscreen', type: 'yt-stop', jobId: job.id }).catch(() => {});
     if (!plan || !hasTracks) return this.fail(job.id, 'capture_failed');
-    this.update(job.id, { status: 'processing', progress: 0, blob: true });
-    await sendOffscreen({ target: 'offscreen', type: 'run', jobId: job.id, plan }).catch(() => this.fail(job.id, 'unknown'));
+    // A hidden player may also have recorded ads: keep only the tracks of the video itself.
+    const final: Plan = { ...plan, ...(keep?.length ? { keepTracks: keep } : {}) };
+    this.update(job.id, { status: 'processing', progress: 0, blob: true, capturePlan: final });
+    await sendOffscreen({ target: 'offscreen', type: 'run', jobId: job.id, plan: final }).catch(() => this.fail(job.id, 'unknown'));
   }
 
   private async toContent(job: Job, msg: BgToContent): Promise<boolean> {
@@ -322,6 +366,7 @@ export class JobManager {
     this.releases.delete(jobId);
     await release?.();
     const job = this.jobs.get(jobId);
+    if (job?.hidden) await sendOffscreen({ target: 'offscreen', type: 'yt-stop', jobId }).catch(() => {});
     if (job?.blob || job?.kind === 'capture') {
       await sendOffscreen({ target: 'offscreen', type: 'release', jobId }).catch(() => {});
     }
@@ -341,7 +386,7 @@ export class JobManager {
     } else if (msg.type === 'capture-error') {
       this.fail(job.id, msg.error);
     } else if (msg.type === 'capture-done') {
-      await this.assembleCapture(job, msg.tracks.length > 0);
+      await this.assembleCapture(job, msg.tracks.length > 0, msg.keep);
     }
   }
 
@@ -390,6 +435,7 @@ export class JobManager {
         date: Date.now(),
         downloadId: d.id,
       });
+      void notifyFinished(this.jobs.get(job.id) ?? job);
       await this.cleanup(job.id);
       this.pump();
     } else if (d.state?.current === 'interrupted') {

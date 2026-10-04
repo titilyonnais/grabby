@@ -46,10 +46,42 @@ export function resetHeaderRules(): Promise<void> {
 export function sweepHeaderRules(): Promise<void> {
   return serial(async () => {
     if (rules.size) return;
-    const existing = await chrome.declarativeNetRequest.getSessionRules();
+    const existing = (await chrome.declarativeNetRequest.getSessionRules()).filter((r) => r.id !== PLAYER_RULE_ID);
     if (existing.length) {
       await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: existing.map((r) => r.id) });
     }
+  });
+}
+
+/** Reserved id (far above the per-download ones). */
+const PLAYER_RULE_ID = 1_000_000;
+
+/**
+ * github build: YouTube's embedded player requires its host to identify itself with a
+ * Referer. Extension pages send none, so the hidden player (in the offscreen document)
+ * presents the extension's own identity, its chromiumapp.org address.
+ */
+export function allowHiddenPlayer(): Promise<void> {
+  return serial(async () => {
+    const id = chrome.runtime.id;
+    await chrome.declarativeNetRequest.updateSessionRules({
+      removeRuleIds: [PLAYER_RULE_ID],
+      addRules: [
+        {
+          id: PLAYER_RULE_ID,
+          priority: 2,
+          action: {
+            type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
+            requestHeaders: [{ header: 'referer', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: `https://${id}.chromiumapp.org/` }],
+          },
+          condition: {
+            requestDomains: ['www.youtube.com'],
+            resourceTypes: [chrome.declarativeNetRequest.ResourceType.SUB_FRAME],
+            initiatorDomains: [id],
+          },
+        },
+      ],
+    });
   });
 }
 

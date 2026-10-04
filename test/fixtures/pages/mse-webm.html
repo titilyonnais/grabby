@@ -1,0 +1,24 @@
+<!doctype html><html><head><meta charset="utf-8"><title>WebM MSE player test</title></head>
+<body><h1>MSE WebM</h1><video id="v" controls muted width="640"></video>
+<script>
+// Adaptive player fed with VP9 + Opus WebM chunks.
+const CHUNK = 64 * 1024;
+async function feed(sb, url, size) {
+  for (let off = 0; off < size; off += CHUNK) {
+    const end = Math.min(off + CHUNK, size) - 1;
+    const buf = await (await fetch(`${url}?range=${off}-${end}`)).arrayBuffer();
+    await new Promise((ok) => { sb.addEventListener('updateend', ok, { once: true }); sb.appendBuffer(buf); });
+  }
+}
+const ms = new MediaSource();
+const video = document.getElementById('v');
+video.src = URL.createObjectURL(ms);
+ms.addEventListener('sourceopen', async () => {
+  const vsb = ms.addSourceBuffer('video/webm; codecs="vp9"');
+  const asb = ms.addSourceBuffer('audio/webm; codecs="opus"');
+  const sizes = await (await fetch('/media/mse-webm/sizes.json')).json();
+  await Promise.all([feed(vsb, '/media/mse-webm/video.webm', sizes.video), feed(asb, '/media/mse-webm/audio.webm', sizes.audio)]);
+  ms.endOfStream();
+  document.body.dataset.ready = '1';
+}, { once: true });
+</script></body></html>

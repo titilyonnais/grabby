@@ -50,10 +50,13 @@ export function muxAttempts(inputs: MuxInputs, output: OutputFormat, audioOnly: 
   if (!inputs.video) throw new Error('no video input');
   const ins = ['-i', inputs.video, ...(inputs.audio ? ['-i', inputs.audio] : [])];
   const maps = inputs.audio ? ['-map', '0:v:0', '-map', '1:a:0'] : ['-map', '0:v:0?', '-map', '0:a:0?'];
+  if (output === 'mkv') return [mk('mkv', [...ins, ...maps, '-c', 'copy'])];
   const container = output === 'webm' ? 'webm' : 'mp4';
+  // MP4 holds H.264, VP9 and AV1 video, and AAC or Opus audio: a plain copy covers them.
+  const tag = container === 'mp4' ? ['-movflags', '+faststart'] : [];
   return [
-    mk(container, [...ins, ...maps, '-c', 'copy']),
-    mk(container, [...ins, ...maps, '-c:v', 'copy', '-c:a', container === 'webm' ? 'libopus' : 'aac', '-b:a', '192k']),
+    mk(container, [...ins, ...maps, '-c', 'copy', ...tag]),
+    mk(container, [...ins, ...maps, '-c:v', 'copy', '-c:a', container === 'webm' ? 'libopus' : 'aac', '-b:a', '192k', ...tag]),
     mk('mkv', [...ins, ...maps, '-c', 'copy']),
   ];
 }

@@ -70,6 +70,20 @@ export function Settings({ settings, onChange, onClose }: Props) {
         </div>
 
         <div class="setting">
+          <span class="setting__label">{t('set_video')}</span>
+          <Segmented
+            label={t('set_video')}
+            value={settings.videoFormat}
+            options={[
+              ['mp4', 'MP4'],
+              ['webm', 'WebM'],
+              ['mkv', 'MKV'],
+            ]}
+            onChange={(videoFormat) => onChange({ videoFormat })}
+          />
+        </div>
+
+        <div class="setting">
           <span class="setting__label">{t('set_audio')}</span>
           <Segmented
             label={t('set_audio')}
@@ -82,6 +96,7 @@ export function Settings({ settings, onChange, onClose }: Props) {
           />
         </div>
 
+        <Toggle label={t('set_notify')} hint={t('set_notify_hint')} checked={settings.notify} onChange={(notify) => onChange({ notify })} />
         <Toggle label={t('set_saveAs')} hint={t('set_saveAs_hint')} checked={settings.saveAs} onChange={(saveAs) => onChange({ saveAs })} />
         <Toggle label={t('set_subfolder')} hint={t('set_subfolder_hint')} checked={settings.subfolder} onChange={(subfolder) => onChange({ subfolder })} />
 

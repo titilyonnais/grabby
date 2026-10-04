@@ -1,11 +1,14 @@
 import type { BgToPopup, BlockedReason, ContentToBg, OffscreenToBg, PopupState, PopupToBg } from '../shared/messages';
 import { isYouTubeUrl, youtubeBlocked } from '../shared/policy';
 import { getSettings, setSettings } from '../shared/settings';
+import { cleanTitle } from '../shared/title';
+import { hostOf } from '../parsers/url';
 import { updateBadge } from './badge';
 import { startDetector } from './detector';
 import { resetHeaderRules } from './headers';
 import { clearHistory, getHistory } from './history';
 import { JobManager } from './jobs';
+import { listenNotificationClicks } from './notify';
 import { handlePageInfo } from './pageinfo';
 import { Registry, sessionKV } from './registry';
 import { forgetTab, rememberTabUrl, samePage, tabUrl } from './tabs';
@@ -17,6 +20,7 @@ const jobs = new JobManager(registry);
 
 // A new document replaced the page: recordings in that tab can't continue.
 startDetector(registry, (tabId) => void jobs.onTabGone(tabId));
+listenNotificationClicks();
 
 chrome.runtime.onStartup.addListener(() => {
   void resetHeaderRules();
@@ -38,6 +42,9 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
     if (prev && !samePage(prev, change.url!)) {
       const cutoff = Date.now() - 2000;
       await registry.removeWhere(tabId, (i) => i.detectedAt < cutoff);
+      // Title and pictures belonged to the previous view: forget them and rescan.
+      await registry.resetPageInfo(tabId);
+      void chrome.tabs.sendMessage(tabId, { type: 'scan' }).catch(() => {});
     }
     pushTab(tabId);
   })();
@@ -65,7 +72,10 @@ function restrictedReason(url: string): BlockedReason | undefined {
 async function buildState(tabId: number): Promise<PopupState> {
   const pageUrl = await tabUrl(tabId);
   const blocked = restrictedReason(pageUrl);
-  const [items, history, settings] = await Promise.all([registry.get(tabId), getHistory(), getSettings()]);
+  // An invalid id throws synchronously (not a rejected promise).
+  const tab = await (async () => chrome.tabs.get(tabId))().catch(() => undefined);
+  const tabTitle = tab?.title ? cleanTitle(tab.title, hostOf(tab.url ?? pageUrl)) : undefined;
+  const [items, history, settings] = await Promise.all([registry.get(tabId, tabTitle), getHistory(), getSettings()]);
   return {
     tabId,
     pageUrl,
@@ -124,11 +134,11 @@ async function onPopupMessage(port: chrome.runtime.Port, msg: PopupToBg) {
       ports.set(port, msg.tabId);
       schedulePush(port);
       // Ask every frame to report its <video> elements again (cheap, catches late players).
-      chrome.tabs.sendMessage(msg.tabId, { type: 'scan' }).catch(() => {});
+      if (msg.tabId >= 0) chrome.tabs.sendMessage(msg.tabId, { type: 'scan' }).catch(() => {});
       return;
     case 'download': {
       const tabId = ports.get(port);
-      if (tabId !== undefined) await jobs.start(tabId, msg.mediaId, msg.variantId, msg.mode);
+      if (tabId !== undefined) await jobs.start(tabId, msg.mediaId, msg.variantId, msg.mode, msg.format);
       return;
     }
     case 'cancel':
@@ -165,7 +175,12 @@ chrome.runtime.onMessage.addListener((msg: ContentToBg | OffscreenToBg, sender, 
     void jobs.onOffscreenMessage(msg);
     return;
   }
-  if (!sender.tab?.id) return;
+  if (!sender.tab?.id) {
+    // The hidden YouTube player (github build) lives in our offscreen document.
+    const fromOffscreen = __TARGET__ === 'github' && sender.id === chrome.runtime.id && !!sender.url?.startsWith('https://www.youtube.com/embed/');
+    if (fromOffscreen && 'jobId' in msg) void jobs.onContentMessage(msg);
+    return;
+  }
   const tabId = sender.tab.id;
   switch (msg.type) {
     case 'page-info':

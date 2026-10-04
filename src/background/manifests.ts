@@ -49,6 +49,7 @@ export function resolveHls(url: string, ctx: DetectContext, fetchText: FetchText
     const parsed = parseHls(await fetchText(url, ctx.pageUrl), url);
     const item = baseItem(url, ctx, 'hls');
     item.mime = 'application/vnd.apple.mpegurl';
+    item.formats = ['mp4', 'mkv'];
 
     if (parsed.type === 'master') {
       item.related = [...parsed.variants.map((v) => v.url), ...parsed.audio.flatMap((a) => (a.url ? [a.url] : []))];
@@ -57,7 +58,7 @@ export function resolveHls(url: string, ctx: DetectContext, fetchText: FetchText
       item.variants = sorted
         .map<Variant>((v) => ({
           id: hashId(v.url),
-          label: qualityLabel(v.height, v.bandwidth) || 'Auto',
+          label: qualityLabel(v.height, v.bandwidth, v.width) || 'Auto',
           url: v.url,
           bandwidth: v.bandwidth,
           ...(v.width ? { width: v.width } : {}),
@@ -107,12 +108,14 @@ export function resolveDash(url: string, ctx: DetectContext, fetchText: FetchTex
     item.duration = mpd.duration;
     item.live = mpd.dynamic;
     if (mpd.protected) item.protection = 'drm';
+    const webm = [...mpd.video, ...mpd.audio].some((r) => r.mimeType.includes('webm'));
+    item.formats = webm ? ['webm', 'mp4', 'mkv'] : ['mp4', 'mkv'];
     const seen = new Set<string>();
     item.variants = [...mpd.video]
       .sort((a, b) => (b.height ?? 0) - (a.height ?? 0) || b.bandwidth - a.bandwidth)
       .map<Variant>((r) => ({
         id: r.id,
-        label: qualityLabel(r.height, r.bandwidth) || r.id,
+        label: qualityLabel(r.height, r.bandwidth, r.width) || r.id,
         url,
         bandwidth: r.bandwidth,
         ...(r.width ? { width: r.width } : {}),
@@ -141,11 +144,13 @@ export function resolveDash(url: string, ctx: DetectContext, fetchText: FetchTex
 export function fileItem(
   url: string,
   ctx: DetectContext,
-  info: { mime?: string; size?: number; audioOnly?: boolean },
+  info: { mime?: string; size?: number; audioOnly?: boolean; duration?: number; protection?: MediaItem['protection'] },
 ): MediaItem {
   const item = baseItem(url, ctx, 'file');
   if (info.mime) item.mime = info.mime;
   if (info.size) item.size = info.size;
   if (info.audioOnly) item.audioOnly = true;
+  if (info.duration) item.duration = info.duration;
+  if (info.protection) item.protection = info.protection;
   return item;
 }

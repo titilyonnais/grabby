@@ -72,11 +72,11 @@ describe('Registry', () => {
     expect((await reg.get(1)).map((i) => i.id)).toEqual(['M']);
   });
 
-  it('marks capture items of DRM frames as protected, including later ones', async () => {
+  it('marks capture items of DRM frames as protected, including later ones and other frames untouched', async () => {
     await reg.upsert(1, item({ id: 'c1', kind: 'capture', frameUrl: 'https://player.com/' }));
     await reg.markFrameDrm(1, 'https://player.com/');
     await reg.upsert(1, item({ id: 'c2', kind: 'capture', frameUrl: 'https://player.com/' }));
-    await reg.upsert(1, item({ id: 'f', kind: 'file', frameUrl: 'https://player.com/' }));
+    await reg.upsert(1, item({ id: 'f', kind: 'file', frameUrl: 'https://other.com/' }));
     const byId = Object.fromEntries((await reg.get(1)).map((i) => [i.id, i.protection]));
     expect(byId).toEqual({ c1: 'drm', c2: 'drm', f: 'none' });
   });
@@ -104,6 +104,36 @@ describe('Registry', () => {
     await reg.clear(1);
     await reg.upsert(1, item({ id: 'c3', kind: 'capture', frameUrl: 'https://mirror.com/' }));
     expect((await reg.get(1)).map((i) => i.id)).toEqual(['c3']);
+  });
+
+  it('hides hover previews, including their redirected CDN copy (same frame, same length)', async () => {
+    await reg.upsert(1, item({ id: 'real', url: 'https://cdn.com/movie.mp4', duration: 600, size: 9e8 }));
+    await reg.upsert(1, item({ id: 'dom', url: 'https://director.com/teaser.mp4?sec=1' }));
+    await reg.addPreviews(1, [{ url: 'https://director.com/teaser.mp4?sec=1', frameUrl: 'https://site.com/', duration: 12 }]);
+    await reg.upsert(1, item({ id: 'net', url: 'https://vod.cdn.com/sec(x)/teaser.mp4', duration: 12.04, size: 1e6 }));
+    await reg.upsert(1, item({ id: 'other', url: 'https://vod.cdn.com/other.mp4', duration: 40, size: 5e6 }));
+    expect((await reg.get(1)).map((i) => i.id)).toEqual(['real', 'other']);
+  });
+
+  it('marks everything a DRM frame loads as protected (Prime Video style files)', async () => {
+    await reg.upsert(1, item({ id: 'v', kind: 'file', frameUrl: 'https://player.com/' }));
+    await reg.markFrameDrm(1, 'https://player.com/');
+    await reg.upsert(1, item({ id: 'a', kind: 'file', url: 'https://cdn.com/a.mp4', frameUrl: 'https://player.com/' }));
+    expect((await reg.get(1)).map((i) => i.protection)).toEqual(['drm', 'drm']);
+  });
+
+  it('never titles a video with an id-like file name', async () => {
+    await reg.upsert(1, item({ id: 'u', url: 'https://cdn.com/6009f11e-0ca6-419b-b944-4857d0ad452a_video_11.mp4' }));
+    expect((await reg.get(1, 'The Boys – S4E2'))[0]!.title).toBe('The Boys – S4E2');
+    expect((await reg.get(1))[0]!.title).toBe('site.com');
+  });
+
+  it('falls back to a still grabbed from the frame player', async () => {
+    await reg.upsert(1, item({ id: 'h', kind: 'hls', frameUrl: 'https://player.com/' }));
+    await reg.setFrameThumb(1, 'https://player.com/', 'data:image/jpeg;base64,AAA');
+    expect((await reg.get(1))[0]!.thumbnail).toBe('data:image/jpeg;base64,AAA');
+    await reg.setPageInfo(1, { thumbnail: 'https://site.com/og.jpg' });
+    expect((await reg.get(1))[0]!.thumbnail).toBe('https://site.com/og.jpg');
   });
 
   it('fills missing titles from page info and url', async () => {

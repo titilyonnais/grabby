@@ -42,8 +42,26 @@ function concat(chunks: StoredChunk[]): Uint8Array {
   return out;
 }
 
-export async function assembleCapture(jobId: string): Promise<CapturedTrack[]> {
-  const tracks = await readTracks(jobId);
+/** Rebuilds each recorded track; `keep` limits it to the tracks of the video itself. */
+export async function assembleCapture(jobId: string, keep?: number[]): Promise<CapturedTrack[]> {
+  const all = await readTracks(jobId);
+  const tracks = all.filter((t) => !keep?.length || keep.includes(t.track));
+  // Diagnostic summary (visible in the offscreen document's console).
+  console.debug(
+    '[grabby] capture',
+    JSON.stringify({
+      jobId,
+      keep,
+      tracks: all.map((t) => ({
+        track: t.track,
+        mime: t.mime,
+        chunks: t.chunks.length,
+        mb: Math.round(t.chunks.reduce((n, c) => n + c.data.byteLength, 0) / 1e6),
+        inits: t.chunks.filter((c) => c.init).length,
+        kept: bestRun(t.chunks).length,
+      })),
+    }),
+  );
   return tracks
     .map((t) => ({
       mime: t.mime,
