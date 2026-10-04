@@ -73,10 +73,16 @@ export interface Job {
   speed: number;
   filename: string;
   title: string;
+  pageUrl: string;
+  quality?: string;
+  kind: MediaKind;
   error?: string;
   raw?: boolean;
   startedAt: number;
   downloadId?: number;
+  /** Capture jobs: where the <video> lives. */
+  frameId?: number;
+  videoIndex?: number;
 }
 
 export interface HistoryEntry {
