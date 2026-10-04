@@ -2,16 +2,19 @@ import { normalizeMediaUrl } from '../parsers/url';
 import { sniffMedia, type Sniffed } from '../parsers/sniff';
 import { withPageHeaders } from './headers';
 
+/** What the first bytes told, plus the file's full size when the server says it. */
+export type Probed = Sniffed & { size?: number };
+
 const PROBE_BYTES = 256 * 1024;
 const CACHE_MS = 60_000;
-const cache = new Map<string, { at: number; p: Promise<Sniffed | null | undefined> }>();
+const cache = new Map<string, { at: number; p: Promise<Probed | null | undefined> }>();
 
 /**
  * Reads the first bytes of a detected file (with the page's headers) to learn what it
  * really is. Resolves to `null` when the server answers with something that isn't media
  * (error page, expired link), `undefined` when it can't tell (network error, refusal).
  */
-export function probeFile(url: string, pageUrl: string, fetchImpl: typeof fetch = fetch): Promise<Sniffed | null | undefined> {
+export function probeFile(url: string, pageUrl: string, fetchImpl: typeof fetch = fetch): Promise<Probed | null | undefined> {
   const key = normalizeMediaUrl(url);
   const now = Date.now();
   const hit = cache.get(key);
@@ -22,7 +25,7 @@ export function probeFile(url: string, pageUrl: string, fetchImpl: typeof fetch 
   return p;
 }
 
-async function readHead(url: string, pageUrl: string, fetchImpl: typeof fetch): Promise<Sniffed | null | undefined> {
+async function readHead(url: string, pageUrl: string, fetchImpl: typeof fetch): Promise<Probed | null | undefined> {
   const release = await withPageHeaders(pageUrl, [url]);
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 10_000);
@@ -41,7 +44,11 @@ async function readHead(url: string, pageUrl: string, fetchImpl: typeof fetch): 
       got += n;
     }
     void reader.cancel().catch(() => {});
-    return sniffMedia(head.subarray(0, got));
+    const sniffed = sniffMedia(head.subarray(0, got));
+    if (!sniffed) return null;
+    const range = /\/(\d+)\s*$/.exec(res.headers.get('content-range') ?? '');
+    const size = range ? Number(range[1]) : res.status === 200 ? Number(res.headers.get('content-length')) || undefined : undefined;
+    return { ...sniffed, ...(size ? { size } : {}) };
   } finally {
     clearTimeout(timer);
     ctl.abort();

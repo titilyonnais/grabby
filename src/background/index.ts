@@ -3,7 +3,7 @@ import { isYouTubeUrl, youtubeBlocked } from '../shared/policy';
 import { getSettings, setSettings } from '../shared/settings';
 import { cleanTitle } from '../shared/title';
 import { hostOf } from '../parsers/url';
-import { updateBadge } from './badge';
+import { forgetBadge, paintTab, showJobs, updateBadge } from './badge';
 import { startDetector } from './detector';
 import { resetHeaderRules } from './headers';
 import { clearHistory, getHistory } from './history';
@@ -116,7 +116,13 @@ registry.onChange((tabId) => {
 
 jobs.onChange(() => {
   for (const port of ports.keys()) schedulePush(port);
+  showJobs(jobs.list());
 });
+
+chrome.tabs.onActivated.addListener(({ tabId }) => void paintTab(tabId));
+// A navigation resets the tab's badge: put the download progress back.
+chrome.tabs.onUpdated.addListener((tabId, change) => change.status === 'loading' && void paintTab(tabId));
+chrome.tabs.onRemoved.addListener((tabId) => forgetBadge(tabId));
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'popup') return;
@@ -193,6 +199,10 @@ chrome.runtime.onMessage.addListener((msg: ContentToBg | OffscreenToBg, sender, 
     case 'capture-done':
     case 'capture-error':
       void jobs.onContentMessage(msg);
+      break;
+    case 'show-download':
+      // Only downloads Grabby made can be shown from a page.
+      if (jobs.list().some((j) => j.downloadId === msg.downloadId)) chrome.downloads.show(msg.downloadId);
       break;
   }
 });

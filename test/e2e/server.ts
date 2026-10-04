@@ -21,12 +21,14 @@ const TYPES: Record<string, string> = {
  * Static fixture server.
  * - `/media/protected-referer/*` requires a Referer from this origin (403 otherwise).
  * - `?range=a-b` returns that inclusive byte slice (simulates range-param CDNs used by MSE players).
+ * - `/opaque/clip` serves sample.mp4 with no extension and a generic type, like many small sites.
  */
 export function startServer(port = 0): Promise<{ server: Server; origin: string }> {
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? '/', 'http://localhost');
-      const path = normalize(join(ROOT, decodeURIComponent(url.pathname)));
+      const opaque = url.pathname === '/opaque/clip';
+      const path = opaque ? join(ROOT, 'media/sample.mp4') : normalize(join(ROOT, decodeURIComponent(url.pathname)));
       if (!path.startsWith(ROOT)) {
         res.writeHead(400).end();
         return;
@@ -42,7 +44,7 @@ export function startServer(port = 0): Promise<{ server: Server; origin: string 
         return;
       }
       let body = await readFile(path);
-      const type = TYPES[extname(path)] ?? 'application/octet-stream';
+      const type = opaque ? 'application/octet-stream' : (TYPES[extname(path)] ?? 'application/octet-stream');
       const range = url.searchParams.get('range');
       if (range) {
         const [a, b] = range.split('-').map(Number);

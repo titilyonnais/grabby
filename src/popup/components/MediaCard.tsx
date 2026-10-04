@@ -1,33 +1,28 @@
 import { useState } from 'preact/hooks';
 import { formatDuration } from '../../shared/format';
 import type { PopupToBg } from '../../shared/messages';
-import type { VideoFormat } from '../../shared/plan';
-import type { Job, MediaItem } from '../../shared/types';
+import { AUDIO_FORMATS, FORMAT_NAMES, isAudioFormat, videoFormatsFor } from '../../shared/formats';
+import type { AudioFormat, OutputFormat, VideoFormat } from '../../shared/plan';
+import type { Job, MediaItem, Variant } from '../../shared/types';
 import { size, t } from '../i18n';
 import { Icon } from './Icon';
 import { isActive, JobBar } from './JobBar';
+import { Select, type SelectOption } from './Select';
 
 interface Props {
   item: MediaItem;
   job?: Job;
   hero: boolean;
-  /** The user's preferred container (settings). */
-  preferred: VideoFormat;
+  /** The user's preferred outputs (settings). */
+  preferred: { video: VideoFormat; audio: AudioFormat };
   send: (m: PopupToBg) => void;
 }
 
-const FORMAT_NAMES: Record<VideoFormat, string> = { mp4: 'MP4', webm: 'WebM', mkv: 'MKV' };
-
-function Chips<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: [T, string][]; onChange: (v: T) => void }) {
-  return (
-    <div class="chips" role="radiogroup" aria-label={label}>
-      {options.map(([id, text]) => (
-        <button key={id} role="radio" aria-checked={id === value} class={`chip${id === value ? ' chip--on' : ''}`} onClick={() => onChange(id)}>
-          {text}
-        </button>
-      ))}
-    </div>
-  );
+/** Expected size of a quality: told by the source, else estimated from its bitrate. */
+function variantSize(v: Variant, format: OutputFormat, duration?: number): number | undefined {
+  const told = v.sizes?.[format as VideoFormat];
+  if (told) return told;
+  return v.bandwidth && duration ? Math.round((v.bandwidth * duration) / 8) : undefined;
 }
 
 function Thumb({ item, hero }: { item: MediaItem; hero: boolean }) {
@@ -46,11 +41,13 @@ function Thumb({ item, hero }: { item: MediaItem; hero: boolean }) {
 
 export function MediaCard({ item, job, hero, preferred, send }: Props) {
   const [variantId, setVariantId] = useState<string | undefined>(item.variants[0]?.id);
-  const formats = item.formats ?? [];
-  const [format, setFormat] = useState<VideoFormat | undefined>(formats.includes(preferred) ? preferred : formats[0]);
+  const videoFormats = item.audioOnly ? [] : (item.formats ?? videoFormatsFor(''));
+  const initial: OutputFormat = item.audioOnly ? preferred.audio : videoFormats.includes(preferred.video) ? preferred.video : (videoFormats[0] ?? preferred.audio);
+  const [format, setFormat] = useState<OutputFormat>(initial);
+  const audio = isAudioFormat(format);
   const variant = item.variants.find((v) => v.id === variantId) ?? item.variants[0];
   // Size of what will actually be saved, when the source tells (YouTube: per quality and format).
-  const shownSize = (format && variant?.sizes?.[format]) || item.size;
+  const shownSize = (!audio && variant && variantSize(variant, format, item.duration)) || item.size;
   // YouTube: a hidden player records it, the user keeps watching — it's a plain download for them.
   const hidden = !!item.ytId;
   const blocked = item.protection !== 'none' || item.live;
@@ -58,13 +55,25 @@ export function MediaCard({ item, job, hero, preferred, send }: Props) {
   const single = item.variants.length === 1 ? item.variants[0]!.label : '';
   const showJob = job && (isActive(job) || ['done', 'error', 'canceled'].includes(job.status));
 
-  const start = (mode: 'video' | 'audio') =>
+  const qualityOptions: SelectOption<string>[] = item.variants.map((v) => {
+    const bytes = variantSize(v, format, item.duration);
+    return { value: v.id, label: v.label, ...(bytes ? { detail: size(bytes) } : {}) };
+  });
+  const formatOptions: SelectOption<OutputFormat>[] = [
+    ...videoFormats.map((f) => {
+      const bytes = variant?.sizes?.[f];
+      return { value: f, label: FORMAT_NAMES[f], detail: bytes ? size(bytes) : t(`fmt_${f}`), group: t('fmt_group_video') };
+    }),
+    ...AUDIO_FORMATS.map((f) => ({ value: f, label: FORMAT_NAMES[f], detail: t(`fmt_${f}`), group: t('fmt_group_audio') })),
+  ];
+
+  const start = () =>
     send({
       type: 'download',
       mediaId: item.id,
-      mode,
-      ...(mode === 'video' && variantId ? { variantId } : {}),
-      ...(mode === 'video' && format ? { format } : {}),
+      mode: audio ? 'audio' : 'video',
+      ...(!audio && variantId ? { variantId } : {}),
+      format,
     });
 
   return (
@@ -94,11 +103,13 @@ export function MediaCard({ item, job, hero, preferred, send }: Props) {
         </p>
       ) : (
         <div class="card__actions">
-          {item.variants.length > 1 && !showJob && (
-            <Chips label={t('qualityLabel')} value={variantId ?? ''} options={item.variants.map((v) => [v.id, v.label])} onChange={setVariantId} />
-          )}
-          {formats.length > 1 && format && !showJob && (
-            <Chips label={t('formatLabel')} value={format} options={formats.map((f) => [f, FORMAT_NAMES[f]])} onChange={setFormat} />
+          {!showJob && (
+            <div class="pickers">
+              {item.variants.length > 1 && (
+                <Select label={t('qualityLabel')} value={variantId ?? ''} options={qualityOptions} onChange={setVariantId} disabled={audio} />
+              )}
+              <Select label={t('formatLabel')} value={format} options={formatOptions} onChange={setFormat} />
+            </div>
           )}
 
           {showJob ? (
@@ -108,23 +119,10 @@ export function MediaCard({ item, job, hero, preferred, send }: Props) {
             </>
           ) : (
             <div class="row">
-              {item.kind === 'capture' && !hidden ? (
-                <button class="pill pill--grow" onClick={() => start('video')}>
-                  <Icon name="record" />
-                  {t('capture')}
-                </button>
-              ) : (
-                <button class="pill pill--grow" onClick={() => start(item.audioOnly ? 'audio' : 'video')}>
-                  <Icon name="download" />
-                  {t('download')}
-                </button>
-              )}
-              {!item.audioOnly && (
-                <button class="pill pill--ghost" onClick={() => start('audio')}>
-                  <Icon name="audio" />
-                  {t('audioOnly')}
-                </button>
-              )}
+              <button class="pill pill--grow" onClick={start}>
+                <Icon name={item.kind === 'capture' && !hidden ? 'record' : audio ? 'audio' : 'download'} />
+                {item.kind === 'capture' && !hidden ? t('capture') : t('download')}
+              </button>
             </div>
           )}
           {item.kind === 'capture' && !showJob && hero && <p class="hint">{t(hidden ? 'hiddenHint' : 'captureHint')}</p>}

@@ -10,6 +10,8 @@ describe('cleanTitle', () => {
     ['Regarder Le Film | Netflix', 'www.netflix.com', 'Regarder Le Film'],
     ['Épisode 3 – Arte', 'www.arte.tv', 'Épisode 3'],
     ['Journal de 20h | France 2 | francetv', 'www.france.tv', 'Journal de 20h'],
+    ['Big Buck Bunny : Free Download, Borrow, and Streaming : Internet Archive', 'archive.org', 'Big Buck Bunny : Free Download, Borrow, and Streaming'],
+    ['Dune : Deuxième partie', 'www.allocine.fr', 'Dune : Deuxième partie'],
     ['Dailymotion', 'www.dailymotion.com', 'Dailymotion'],
     ['  Plain   title ', 'example.com', 'Plain title'],
   ])('%s', (raw, host, want) => expect(cleanTitle(raw, host)).toBe(want));

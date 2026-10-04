@@ -1,5 +1,6 @@
 import { isAdUrl } from '../parsers/adhosts';
 import { classify, isAudioResource } from '../parsers/classify';
+import { extOf, normalizeMediaUrl } from '../parsers/url';
 import { isYouTubeUrl, youtubeBlocked } from '../shared/policy';
 import { fetchTextAs } from './headers';
 import { fileItem, resolveDash, resolveHls, type DetectContext } from './manifests';
@@ -32,6 +33,14 @@ export function blockedByPolicy(...urls: (string | undefined)[]): boolean {
   return youtubeBlocked() && urls.some((u) => !!u && isYouTubeUrl(u));
 }
 
+const sameMedia = (a: string, b: string) => normalizeMediaUrl(a) === normalizeMediaUrl(b);
+/** MP3/AAC streams hold only sound; Ogg does too, except Theora video (.ogv, video/ogg). */
+function isAudioProbe(probe: { container: string } | null | undefined, url: string, contentType = ''): boolean {
+  if (!probe) return false;
+  if (probe.container === 'mp3' || probe.container === 'aac') return true;
+  return probe.container === 'ogg' && extOf(url) !== 'ogv' && !contentType.toLowerCase().startsWith('video/');
+}
+
 /** Shorter files are UI sounds, loaders or bumpers. */
 const MIN_FILE_SECONDS = 2;
 
@@ -39,10 +48,13 @@ export async function handleMediaUrl(
   registry: Registry,
   url: string,
   ctx: DetectContext,
-  info: { contentType?: string; size?: number; totalSize?: number },
+  info: { contentType?: string; size?: number; totalSize?: number; requestType?: string },
 ): Promise<void> {
   const kind = classify({ url, ...info });
   if (!kind) return;
+  const declared = info.requestType === 'declared';
+  // Named by the page: nothing to learn if it is already listed (it may even be playing).
+  if (declared && (await registry.get(ctx.tabId)).some((i) => sameMedia(i.url, url) || i.related?.some((r) => sameMedia(r, url)))) return;
   // Ad creatives (and anything inside an ad frame) are never the video being watched.
   if (isAdUrl(url) || isAdUrl(ctx.frameUrl)) return;
   if (kind === 'hls') {
@@ -57,7 +69,7 @@ export async function handleMediaUrl(
     const probe = await probeFile(url, ctx.pageUrl);
     if (probe === null) return;
     if (probe?.duration !== undefined && probe.duration < MIN_FILE_SECONDS) return;
-    const size = info.totalSize ?? info.size;
+    const size = info.totalSize ?? info.size ?? probe?.size;
     await registry.upsert(
       ctx.tabId,
       fileItem(url, ctx, {
@@ -65,7 +77,8 @@ export async function handleMediaUrl(
         ...(size ? { size } : {}),
         ...(probe?.duration ? { duration: probe.duration } : {}),
         ...(probe?.encrypted ? { protection: 'drm' as const } : {}),
-        audioOnly: isAudioResource(url, info.contentType),
+        audioOnly: isAudioResource(url, info.contentType) || isAudioProbe(probe, url, info.contentType),
+        ...(declared ? { linked: true } : {}),
       }),
     );
   }
@@ -97,13 +110,15 @@ export function startDetector(registry: Registry, onNavigate: (tabId: number) =>
       const contentType = header(d.responseHeaders, 'content-type');
       const len = Number(header(d.responseHeaders, 'content-length') ?? 0) || undefined;
       const totalSize = totalFromRange(header(d.responseHeaders, 'content-range'));
-      if (!classify({ url: d.url, ...(contentType ? { contentType } : {}), ...(len ? { size: len } : {}), ...(totalSize ? { totalSize } : {}) })) return;
+      const requestType = d.type;
+      if (!classify({ url: d.url, requestType, ...(contentType ? { contentType } : {}), ...(len ? { size: len } : {}), ...(totalSize ? { totalSize } : {}) })) return;
 
       void (async () => {
         const pageUrl = await tabUrl(d.tabId);
         const frameUrl = (d as { documentUrl?: string }).documentUrl ?? (d.frameId === 0 ? pageUrl : d.initiator ?? pageUrl);
         if (blockedByPolicy(d.url, pageUrl, frameUrl)) return;
         await handleMediaUrl(registry, d.url, { tabId: d.tabId, frameUrl, pageUrl }, {
+          requestType,
           ...(contentType ? { contentType } : {}),
           ...(len ? { size: len } : {}),
           ...(totalSize ? { totalSize } : {}),

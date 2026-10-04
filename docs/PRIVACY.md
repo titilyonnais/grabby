@@ -1,6 +1,6 @@
 # Grabby — Privacy policy / Politique de confidentialité
 
-_Last updated: 2026-10-04 (1.1.0)_
+_Last updated: 2026-10-04 (1.2.0)_
 
 ## English
 
@@ -26,8 +26,10 @@ Grabby does **not** collect, store on a server, sell or share any personal data.
   image, it takes a small still of the playing video to illustrate the list. All of this
   stays in session memory on your device. It does not read form contents, passwords or
   cookies' values.
-- **Notifications.** A system notification tells you when a download finishes; it can be
-  turned off in the settings.
+- **Links.** When a page names video files without playing them (sharing metadata, direct
+  links), Grabby reads the first 256 KB of at most 12 of them to check they are real videos.
+- **Notifications.** When a download finishes, a small bubble appears in the page you are
+  looking at, and a system notification is shown; both can be turned off in the settings.
 - **Downloads** are saved through the browser's own download manager to the location you
   choose.
 
@@ -57,8 +59,12 @@ et ne la partage pas.
   chiffrement). Quand une page n'a pas d'image d'aperçu, il prend une petite image de la
   vidéo en cours pour illustrer la liste. Tout cela reste en mémoire de session sur ton
   appareil. Il ne lit ni les formulaires, ni les mots de passe, ni le contenu des cookies.
-- **Notifications.** Une notification système te prévient quand un téléchargement est
-  terminé ; tu peux la désactiver dans les réglages.
+- **Liens.** Quand une page cite des fichiers vidéo sans les lire (métadonnées de partage,
+  liens directs), Grabby lit les 256 premiers Ko d'au plus 12 d'entre eux pour vérifier que
+  ce sont de vraies vidéos.
+- **Notifications.** À la fin d'un téléchargement, une petite bulle apparaît dans la page
+  que tu regardes et une notification système s'affiche ; tu peux les désactiver dans les
+  réglages.
 - **Les téléchargements** passent par le gestionnaire de téléchargements du navigateur,
   vers l'emplacement de ton choix.
 

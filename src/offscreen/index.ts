@@ -23,6 +23,12 @@ const MIME: Record<string, string> = {
   webm: 'video/webm',
   mkv: 'video/x-matroska',
   ts: 'video/mp2t',
+  mov: 'video/quicktime',
+  avi: 'video/x-msvideo',
+  opus: 'audio/ogg',
+  ogg: 'audio/ogg',
+  flac: 'audio/flac',
+  wav: 'audio/wav',
 };
 
 type NoTarget<T> = T extends unknown ? Omit<T, 'target'> : never;

@@ -1,7 +1,8 @@
 import { parseDash, type DashRep } from '../parsers/dash';
 import { parseHls, type HlsMedia } from '../parsers/hls';
 import { extOf, reachableFrom } from '../parsers/url';
-import { RAW_THRESHOLD, type ErrorCode, type OutputFormat, type Plan, type TrackPlan, type VideoFormat } from '../shared/plan';
+import { isAudioFormat, sourceFormat } from '../shared/formats';
+import { RAW_THRESHOLD, type ErrorCode, type OutputFormat, type Plan, type TrackPlan } from '../shared/plan';
 import type { Settings } from '../shared/settings';
 import type { JobMode, MediaItem } from '../shared/types';
 
@@ -13,15 +14,15 @@ export class PlanError extends Error {
 
 export interface PlanOptions {
   mode: JobMode;
-  /** Container for a video; defaults to the user's preferred one. */
-  format?: VideoFormat;
+  /** Chosen output (video container or audio format); defaults to the user's settings. */
+  format?: OutputFormat;
   variantId?: string;
   settings: Settings;
   fetchText: (url: string) => Promise<string>;
 }
 
-const audioOut = (s: Settings): OutputFormat => s.audioFormat;
-const videoOut = (o: PlanOptions): OutputFormat => o.format ?? o.settings.videoFormat;
+const audioOut = (o: PlanOptions): OutputFormat => (isAudioFormat(o.format) ? o.format : o.settings.audioFormat);
+const videoOut = (o: PlanOptions): OutputFormat => (o.format && !isAudioFormat(o.format) ? o.format : o.settings.videoFormat);
 
 async function hlsTrack(url: string, fetchText: PlanOptions['fetchText']): Promise<{ track: TrackPlan; media: HlsMedia }> {
   const parsed = parseHls(await fetchText(url), url);
@@ -52,11 +53,11 @@ async function planHls(item: MediaItem, o: PlanOptions): Promise<Plan> {
     const audioTrack = group.find((a) => a.isDefault) ?? group[0];
     if (audioTrack) {
       const { track } = await hlsTrack(audioTrack.url, o.fetchText);
-      return { ...common, audio: track, output: audioOut(o.settings), raw: false, audioOnly: true };
+      return { ...common, audio: track, output: audioOut(o), raw: false, audioOnly: true };
     }
     const lightest = [...variants].sort((a, b) => (a.bandwidth ?? 0) - (b.bandwidth ?? 0))[0];
     const { track } = await hlsTrack(lightest?.url ?? item.url, o.fetchText);
-    return { ...common, video: track, output: audioOut(o.settings), raw: false, audioOnly: true };
+    return { ...common, video: track, output: audioOut(o), raw: false, audioOnly: true };
   }
 
   const variant = pick(o.variantId);
@@ -120,7 +121,7 @@ async function planDash(item: MediaItem, o: PlanOptions): Promise<Plan> {
     const src = audioRep ?? videoRep;
     if (!src) throw new PlanError('unknown');
     const t = dashTrack(src, item.url);
-    return { ...common, ...(audioRep ? { audio: t } : { video: t }), output: audioOut(o.settings), raw: false, audioOnly: true };
+    return { ...common, ...(audioRep ? { audio: t } : { video: t }), output: audioOut(o), raw: false, audioOnly: true };
   }
   if (!videoRep) throw new PlanError('unknown');
   const video = dashTrack(videoRep, item.url);
@@ -152,18 +153,23 @@ export async function buildPlan(item: MediaItem, o: PlanOptions): Promise<Plan> 
     case 'capture':
       return {
         kind: 'capture',
-        output: o.mode === 'audio' ? audioOut(o.settings) : videoOut(o),
+        output: o.mode === 'audio' ? audioOut(o) : videoOut(o),
         raw: false,
         audioOnly: o.mode === 'audio',
         pageUrl: item.pageUrl,
       };
     case 'file': {
-      const ext = extOf(item.url);
+      const src = sourceFormat(extOf(item.url), item.mime);
+      const wanted = o.mode === 'audio' ? audioOut(o) : videoOut(o);
+      // Converting works in memory: past ~1.5 GB the file is saved as it is.
+      const big = (item.size ?? 0) > RAW_THRESHOLD;
+      const keep = (wanted === src || big) && (o.mode === 'video' || !!item.audioOnly);
       return {
         kind: 'file',
         video: { segments: [{ url: item.url }], container: 'file' },
-        output: o.mode === 'audio' ? audioOut(o.settings) : ((['mp4', 'webm', 'm4a', 'mp3'].includes(ext) ? ext : 'mp4') as OutputFormat),
+        output: keep ? (src ?? wanted) : wanted,
         raw: false,
+        ...(keep ? { direct: true } : {}),
         audioOnly: o.mode === 'audio',
         ...(item.size ? { estimatedSize: item.size } : {}),
         pageUrl: item.pageUrl,

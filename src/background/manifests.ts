@@ -1,6 +1,7 @@
+import { videoFormatsFor } from '../shared/formats';
 import { parseDash } from '../parsers/dash';
 import { parseHls } from '../parsers/hls';
-import { normalizeMediaUrl, reachableFrom } from '../parsers/url';
+import { extOf, normalizeMediaUrl, reachableFrom } from '../parsers/url';
 import { qualityLabel } from '../shared/format';
 import { hashId } from '../shared/ids';
 import type { AudioTrack, MediaItem, Variant } from '../shared/types';
@@ -49,7 +50,7 @@ export function resolveHls(url: string, ctx: DetectContext, fetchText: FetchText
     const parsed = parseHls(await fetchText(url, ctx.pageUrl), url);
     const item = baseItem(url, ctx, 'hls');
     item.mime = 'application/vnd.apple.mpegurl';
-    item.formats = ['mp4', 'mkv'];
+    item.formats = videoFormatsFor(parsed.type === 'master' ? parsed.variants.map((v) => v.codecs ?? '').join(',') : '');
 
     if (parsed.type === 'master') {
       item.related = [...parsed.variants.map((v) => v.url), ...parsed.audio.flatMap((a) => (a.url ? [a.url] : []))];
@@ -109,7 +110,7 @@ export function resolveDash(url: string, ctx: DetectContext, fetchText: FetchTex
     item.live = mpd.dynamic;
     if (mpd.protected) item.protection = 'drm';
     const webm = [...mpd.video, ...mpd.audio].some((r) => r.mimeType.includes('webm'));
-    item.formats = webm ? ['webm', 'mp4', 'mkv'] : ['mp4', 'mkv'];
+    item.formats = videoFormatsFor([...mpd.video.map((r) => r.codecs ?? ''), webm ? 'vp9' : ''].join(','));
     const seen = new Set<string>();
     item.variants = [...mpd.video]
       .sort((a, b) => (b.height ?? 0) - (a.height ?? 0) || b.bandwidth - a.bandwidth)
@@ -144,7 +145,7 @@ export function resolveDash(url: string, ctx: DetectContext, fetchText: FetchTex
 export function fileItem(
   url: string,
   ctx: DetectContext,
-  info: { mime?: string; size?: number; audioOnly?: boolean; duration?: number; protection?: MediaItem['protection'] },
+  info: { mime?: string; size?: number; audioOnly?: boolean; duration?: number; protection?: MediaItem['protection']; linked?: boolean },
 ): MediaItem {
   const item = baseItem(url, ctx, 'file');
   if (info.mime) item.mime = info.mime;
@@ -152,5 +153,9 @@ export function fileItem(
   if (info.audioOnly) item.audioOnly = true;
   if (info.duration) item.duration = info.duration;
   if (info.protection) item.protection = info.protection;
+  // Seen on the network: it plays. Overrides an earlier "only linked" detection when merged.
+  item.linked = info.linked ? true : undefined;
+  // A WebM file holds VP8/VP9/AV1: it can't become an AVI/MOV/TS without re-encoding.
+  if (!info.audioOnly) item.formats = videoFormatsFor(/webm/.test(info.mime ?? '') || extOf(url) === 'webm' ? 'vp9' : '');
   return item;
 }

@@ -49,7 +49,7 @@ export async function launch() {
 
 /** Declines optional cookies on consent walls (the most privacy-preserving choice). */
 export async function declineConsent(page) {
-  const labels = /^\s*(Tout refuser|Reject all|Refuser tout|Continuer sans accepter|Refuser)\s*$/i;
+  const labels = /^\s*(Tout refuser|Tout rejeter|Reject all|Refuser tout|Continuer sans accepter|Refuser)\s*$/i;
   for (const frame of page.frames()) {
     // Only real controls: the same words also appear in the dialog's explanations.
     const controls = frame.locator('button, a, [role="button"]').filter({ hasText: labels });
@@ -109,7 +109,7 @@ export function tapConsoles(filter = /offscreen|\/embed\//) {
 
 if (import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/')}`) {
   const urls = process.argv.slice(2);
-  const { ctx, sw, close } = await launch();
+  const { ctx, sw, extId, close } = await launch();
   for (const url of urls) {
     const page = await ctx.newPage();
     await page.goto(url, { waitUntil: 'domcontentloaded' }).catch((e) => console.log('goto', e.message));
@@ -122,6 +122,15 @@ if (import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/')}`) {
       console.log(` - [${i.kind}] ${i.protection} ${i.title || ''} size=${i.size ?? '?'} dur=${i.duration ?? '?'} frame=${i.frameUrl.slice(0, 60)}\n   ${i.url.slice(0, 160)}`);
       for (const v of i.variants ?? []) console.log(`     variant ${v.label}`);
     }
+    // What the user actually sees: the popup's cards (duplicates and stream pieces hidden).
+    const tabId = await sw.evaluate(async (u) => (await chrome.tabs.query({})).find((t) => t.url === u)?.id, page.url());
+    const popup = await ctx.newPage();
+    await popup.goto(`chrome-extension://${extId}/popup.html?tab=${tabId}`);
+    await popup.waitForTimeout(1500);
+    const cards = await popup.locator('article').evaluateAll((els) => els.map((e) => e.querySelector('.card__meta')?.textContent + ' · ' + e.querySelector('h2')?.textContent));
+    console.log(` POPUP (${cards.length}) :`);
+    for (const c of cards) console.log(`   ${c}`);
+    await popup.close();
   }
   if (!process.env.KEEP) await close();
 }

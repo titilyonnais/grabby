@@ -1,14 +1,14 @@
 /**
  * Real YouTube check (github build, Brave): opens a video, asks the popup for a quality and
  * format, and verifies that the file is right while the visible player keeps playing at
- * normal speed.   node test/live/yt-download.mjs [url] [quality label] [mp4|webm]
+ * normal speed.   node test/live/yt-download.mjs [url] [quality label] [mp4|webm|mkv|mp3|…]
  */
 import { execFileSync } from 'node:child_process';
 import { declineConsent, launch } from './live.mjs';
 
 const url = process.argv[2] ?? 'https://www.youtube.com/watch?v=aqz-KE-bpKQ';
 const wantQuality = process.argv[3] ?? '720p';
-const wantFormat = process.argv[4] ?? 'mp4'; // mp4 | webm | audio
+const wantFormat = process.argv[4] ?? 'mp4'; // a format of the list (mp4, webm, mp3…) or audio (M4A)
 
 const { ctx, sw, extId, close } = await launch();
 try {
@@ -34,13 +34,16 @@ try {
   if (await ok.isVisible().catch(() => false)) await ok.click();
   await popup.waitForTimeout(1500);
   await popup.screenshot({ path: '.debug/yt-popup-before.png' });
-  if (wantFormat === 'audio') {
-    await popup.getByRole('button', { name: /Audio seul|Audio only/ }).click();
-  } else {
-    await popup.getByRole('radio', { name: new RegExp(`^${wantQuality}`) }).first().click();
-    await popup.getByRole('radio', { name: wantFormat === 'mp4' ? 'MP4' : 'WebM' }).click();
-    await popup.getByRole('button', { name: /^(Télécharger|Download)$/ }).click();
-  }
+  // Quality and format lists of the card (format: MP4, WebM, MKV, or an audio one such as MP3).
+  await popup.getByRole('button', { name: /^(Télécharger|Download)$/ }).waitFor({ timeout: 15000 });
+  const pick = async (list, option) => {
+    await popup.getByRole('button', { name: new RegExp(`^${list}`) }).first().click();
+    await popup.getByRole('option', { name: new RegExp(`^${option}`, 'i') }).first().click();
+  };
+  const fmt = wantFormat === 'audio' ? 'M4A' : wantFormat;
+  if (!/^(m4a|mp3|opus|ogg|flac|wav)$/i.test(fmt)) await pick('(Qualité|Quality)', wantQuality);
+  await pick('Format', fmt);
+  await popup.getByRole('button', { name: /^(Télécharger|Download)$/ }).click();
 
   // Meanwhile the user's video must play normally.
   await page.bringToFront();

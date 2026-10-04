@@ -3,6 +3,7 @@
  * Reports <video> elements and page metadata to the service worker, relays DRM signals
  * from the MAIN-world hook, and streams capture chunks into the extension's storage.
  */
+import { showToast } from './toast';
 import { hiddenJobFromUrl, readYouTubeInfo } from '../features/youtube';
 import { deepVideos } from '../shared/dom';
 import type { BgToContent, ContentToBg, PageInfo, PageVideo, YtInfo } from '../shared/messages';
@@ -46,7 +47,7 @@ function meta(...props: string[]): string | undefined {
 }
 
 /** schema.org VideoObject (JSON-LD): many sites describe their video there. */
-function videoObject(): { name?: string; thumbnail?: string } {
+function videoObject(): { name?: string; thumbnail?: string; contentUrl?: string } {
   for (const s of document.querySelectorAll('script[type="application/ld+json"]')) {
     try {
       const found = findVideoObject(JSON.parse(s.textContent ?? ''));
@@ -56,6 +57,7 @@ function videoObject(): { name?: string; thumbnail?: string } {
         return {
           ...(typeof found.name === 'string' ? { name: found.name } : {}),
           ...(typeof thumb === 'string' ? { thumbnail: thumb } : {}),
+          ...(typeof found.contentUrl === 'string' ? { contentUrl: found.contentUrl } : {}),
         };
       }
     } catch {
@@ -65,7 +67,7 @@ function videoObject(): { name?: string; thumbnail?: string } {
   return {};
 }
 
-type Ld = { '@type'?: string | string[]; '@graph'?: unknown[]; name?: unknown; thumbnailUrl?: unknown };
+type Ld = { '@type'?: string | string[]; '@graph'?: unknown[]; name?: unknown; thumbnailUrl?: unknown; contentUrl?: unknown };
 function findVideoObject(node: unknown, depth = 0): Ld | undefined {
   if (!node || typeof node !== 'object' || depth > 4) return undefined;
   if (Array.isArray(node)) {
@@ -134,6 +136,37 @@ function largestImage(): string | undefined {
   return best?.url;
 }
 
+/** Links straight to a video or audio file ("Download", galleries of clips on small sites). */
+const MEDIA_LINK = /\.(mp4|m4v|webm|mov|mkv|ogv|mp3|m4a|ogg|oga|opus|wav|flac|m3u8|mpd)$/i;
+const MAX_DECLARED = 12;
+
+/**
+ * Video URLs the page names without having played them: sharing metadata, schema.org
+ * `contentUrl`, the <source> list of a player that hasn't loaded yet, direct links.
+ * The service worker checks each one's first bytes before listing it.
+ */
+function declaredMedia(ld: { contentUrl?: string }): string[] {
+  const urls = new Set<string>();
+  const add = (u: string | undefined) => {
+    const abs = absolute(u);
+    if (abs && /^https?:/i.test(abs) && abs !== location.href) urls.add(abs);
+  };
+  if (isTop) {
+    add(meta('og:video:secure_url', 'og:video:url', 'og:video'));
+    add(meta('twitter:player:stream'));
+    add(ld.contentUrl);
+  }
+  for (const v of deepVideos()) {
+    if (v.currentSrc) continue;
+    for (const s of v.querySelectorAll('source')) add(s.src);
+  }
+  for (const a of document.querySelectorAll<HTMLAnchorElement>('a[href]')) {
+    if (urls.size >= MAX_DECLARED) break;
+    if (MEDIA_LINK.test(a.pathname)) add(a.href);
+  }
+  return [...urls].slice(0, MAX_DECLARED);
+}
+
 let ytPlayer: YtInfo | undefined;
 
 function collect(): PageInfo {
@@ -159,6 +192,8 @@ function collect(): PageInfo {
   const raw = (isTop && (meta('og:title', 'twitter:title') || ld.name)) || document.title || '';
   const info: PageInfo = { title: cleanTitle(raw, location.hostname), videos };
   if (streams.size) info.streams = [...streams].slice(-20);
+  const declared = declaredMedia(ld);
+  if (declared.length) info.declared = declared;
   const thumb = isTop
     ? absolute(meta('og:image', 'og:image:url', 'og:image:secure_url', 'twitter:image', 'twitter:image:src') ?? document.querySelector<HTMLLinkElement>('link[rel="image_src"]')?.href ?? ld.thumbnail)
     : undefined;
@@ -179,7 +214,7 @@ function collect(): PageInfo {
 let lastSent = '';
 function report(force = false) {
   const info = collect();
-  if (!isTop && !info.videos.length && !info.streams) return;
+  if (!isTop && !info.videos.length && !info.streams && !info.declared) return;
   const sig = JSON.stringify(info);
   if (!force && sig === lastSent) return;
   lastSent = sig;
@@ -442,6 +477,9 @@ chrome.runtime.onMessage.addListener((msg: BgToContent) => {
       break;
     case 'capture-stop':
       if (session?.jobId === msg.jobId) hook.postMessage({ type: 'stop' });
+      break;
+    case 'toast':
+      if (isTop) showToast(msg);
       break;
   }
 });

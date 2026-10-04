@@ -1,3 +1,4 @@
+import { videoFormatsFor } from '../shared/formats';
 import { classify } from '../parsers/classify';
 import { hashId } from '../shared/ids';
 import type { PageInfo, PageVideo } from '../shared/messages';
@@ -35,7 +36,7 @@ async function upsertYouTube(registry: Registry, ctx: DetectContext, frameId: nu
   const item = captureItem(ctx, frameId, main?.index ?? 0, {
     title: yt.title,
     experimental: true,
-    formats: ['mp4', 'webm'],
+    formats: ['mp4', 'webm', 'mkv'],
     variants,
     ...(yt.thumbnail ? { thumbnail: yt.thumbnail } : {}),
     ...((p?.duration ?? yt.duration) ? { duration: p?.duration ?? yt.duration } : {}),
@@ -69,6 +70,9 @@ function captureItem(ctx: DetectContext, frameId: number, index: number, over: P
   };
 }
 
+/** Probing costs a request each: a page naming dozens of files gets its first ones checked. */
+const MAX_DECLARED = 12;
+
 /** Merges what a content script saw in a frame (titles, <video> elements, MSE players). */
 export async function handlePageInfo(registry: Registry, sender: chrome.runtime.MessageSender, info: PageInfo): Promise<void> {
   const tabId = sender.tab?.id;
@@ -90,6 +94,13 @@ export async function handlePageInfo(registry: Registry, sender: chrome.runtime.
   for (const url of info.streams ?? []) {
     if (typeof url === 'string' && /^https?:/i.test(url) && !blockedByPolicy(url)) {
       await handleMediaUrl(registry, url, ctx, {});
+    }
+  }
+
+  // Videos the page names but hasn't played (yet): each is checked from its first bytes.
+  for (const url of (info.declared ?? []).slice(0, MAX_DECLARED)) {
+    if (typeof url === 'string' && /^https?:/i.test(url) && !blockedByPolicy(url)) {
+      await handleMediaUrl(registry, url, ctx, { requestType: 'declared' });
     }
   }
 
@@ -116,7 +127,7 @@ export async function handlePageInfo(registry: Registry, sender: chrome.runtime.
         const item = captureItem(ctx, frameId, v.index, {
           live,
           protection: v.isProtected ? 'drm' : 'none',
-          formats: ['mp4', 'mkv'],
+          formats: videoFormatsFor(''),
           ...(Number.isFinite(v.duration) && v.duration > 0 ? { duration: v.duration } : {}),
           ...(v.poster ? { thumbnail: v.poster } : {}),
         });

@@ -20,6 +20,7 @@ const AD_HOSTS = [
   'celtra.com',
   'smartclip.net',
   'improvedigital.com',
+  'viously.com',
   'adsrvr.org',
   'advertising.com',
   'adform.net',

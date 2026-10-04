@@ -1,4 +1,4 @@
-import type { Plan, VideoFormat } from './plan';
+import type { OutputFormat, Plan, VideoFormat } from './plan';
 
 export type MediaKind = 'file' | 'hls' | 'dash' | 'capture';
 export type Protection = 'none' | 'drm' | 'encrypted';
@@ -53,6 +53,8 @@ export interface MediaItem {
   audioOnly?: boolean;
   /** True when the item comes from the experimental YouTube feature (github build). */
   experimental?: boolean;
+  /** Named by the page (metadata, link) but not seen playing: listed after what plays. */
+  linked?: boolean | undefined;
   /** Containers offered for this video (none: saved as-is). */
   formats?: VideoFormat[];
   /** github build: YouTube video id, recorded by a hidden player. */
@@ -99,7 +101,7 @@ export interface Job {
   frameId?: number;
   videoIndex?: number;
   /** Container chosen for a video. */
-  format?: VideoFormat;
+  format?: OutputFormat;
   /** Recorded by a hidden player (YouTube), not the one the user watches. */
   hidden?: boolean;
   /** Capture jobs: the assembly plan, kept (and persisted) until the recording ends. */

@@ -9,6 +9,11 @@ export interface ResourceInfo {
   size?: number;
   /** Total size from Content-Range, when the response is partial. */
   totalSize?: number;
+  /**
+   * `media`: loaded by a <video>/<audio> element; `declared`: named by the page (metadata,
+   * <source>, links). Both are checked from their first bytes, whatever their type says.
+   */
+  requestType?: string;
 }
 
 const HLS_TYPES = ['application/vnd.apple.mpegurl', 'application/x-mpegurl', 'audio/mpegurl', 'audio/x-mpegurl'];
@@ -33,8 +38,10 @@ export function classify(info: ResourceInfo): ResourceKind | null {
 
   const isMediaType = (ct.startsWith('video/') || ct.startsWith('audio/')) && !ct.includes('mpegurl');
   const isMediaExt = MEDIA_EXTS.includes(ext);
-  const knownNonMedia = ct !== '' && !isMediaType && ct !== 'application/octet-stream' && ct !== 'binary/octet-stream';
-  if (!isMediaType && !(isMediaExt && !knownNonMedia)) return null;
+  const generic = ct === '' || ct === 'application/octet-stream' || ct === 'binary/octet-stream' || ct === 'application/binary';
+  const knownNonMedia = !generic && !isMediaType;
+  const fromPlayer = (info.requestType === 'media' || info.requestType === 'declared') && !knownNonMedia;
+  if (!isMediaType && !fromPlayer && !(isMediaExt && !knownNonMedia)) return null;
 
   const effective = info.totalSize ?? info.size;
   if (effective && effective > 0 && effective < MIN_SIZE) return null;

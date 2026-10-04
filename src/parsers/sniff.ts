@@ -20,6 +20,10 @@ const MP4_TOP = new Set(['ftyp', 'styp', 'moov', 'moof', 'mdat', 'free', 'skip',
 
 interface Mp4State {
   encrypted: boolean;
+  /** A movie header was seen: this is a playable file, not a piece of a stream. */
+  moov?: boolean;
+  /** A fragment came before any movie header: a stream segment (DASH/HLS/MSE chunk). */
+  segment?: boolean;
   timescale?: number;
   duration?: number;
   fragmentDuration?: number;
@@ -48,6 +52,8 @@ function walkMp4(b: Uint8Array, start: number, end: number, st: Mp4State, depth:
     const body = at + header;
 
     if (MP4_ENCRYPTION.has(type)) st.encrypted = true;
+    if (depth === 0 && type === 'moov') st.moov = true;
+    if (depth === 0 && (type === 'moof' || type === 'styp') && !st.moov) st.segment = true;
     if (type === 'mvhd' && body + 4 <= boxEnd) {
       const v1 = b[body] === 1;
       const ts = v1 ? body + 20 : body + 12;
@@ -71,6 +77,8 @@ function sniffMp4(b: Uint8Array): Sniffed | null {
   if (b.length < 8 || !MP4_TOP.has(ascii(b, 4, 4))) return null;
   const st: Mp4State = { encrypted: false };
   walkMp4(b, 0, b.length, st, 0);
+  // One segment of an adaptive stream: unplayable alone, the stream itself is what to list.
+  if (st.segment) return null;
   const units = st.duration || st.fragmentDuration;
   const duration = st.timescale && units && units < 2 ** 52 ? units / st.timescale : undefined;
   return { container: 'mp4', encrypted: st.encrypted, ...(duration ? { duration } : {}) };

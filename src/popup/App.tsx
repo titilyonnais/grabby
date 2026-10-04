@@ -1,20 +1,14 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
-import type { Job, MediaItem } from '../shared/types';
+import type { Job } from '../shared/types';
 import { Icon } from './components/Icon';
 import { MediaCard } from './components/MediaCard';
 import { FirstRun, HistoryList, StateCard } from './components/Panels';
 import { Settings } from './components/Settings';
 import { t } from './i18n';
+import { rank } from './rank';
 import { useGrabby } from './store';
 
 const prefersDark = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
-
-/** Best candidate first: downloadable, adaptive streams with qualities, then biggest. */
-function rank(items: MediaItem[]): MediaItem[] {
-  const score = (i: MediaItem) =>
-    (i.protection === 'none' && !i.live ? 1000 : 0) + (i.variants.length > 1 ? 100 : 0) + (i.kind !== 'capture' ? 10 : 0) + (i.audioOnly ? -50 : 0);
-  return [...items].sort((a, b) => score(b) - score(a) || (b.size ?? 0) - (a.size ?? 0) || b.detectedAt - a.detectedAt);
-}
 
 function latestJob(jobs: Job[], mediaId: string): Job | undefined {
   return jobs.filter((j) => j.mediaId === mediaId).sort((a, b) => b.startedAt - a.startedAt)[0];
@@ -40,6 +34,7 @@ export function App() {
   }, [dark]);
 
   const items = useMemo(() => rank(state?.items ?? []), [state?.items]);
+  const prefs = { video: state?.settings.videoFormat ?? 'mp4', audio: state?.settings.audioFormat ?? 'm4a' } as const;
   const [hero, ...rest] = items;
 
   return (
@@ -91,12 +86,12 @@ export function App() {
               <StateCard icon="film" title={t('emptyTitle')} body={t('emptyBody')} />
             ) : (
               <>
-                <MediaCard key={hero.id} item={hero} job={latestJob(state.jobs, hero.id)} hero preferred={state.settings.videoFormat} send={send} />
+                <MediaCard key={hero.id} item={hero} job={latestJob(state.jobs, hero.id)} hero preferred={prefs} send={send} />
                 {rest.length > 0 && (
                   <section class="more" aria-label={t('moreVideos')}>
                     <h3 class="more__title">{t('moreVideos')}</h3>
                     {rest.map((i) => (
-                      <MediaCard key={i.id} item={i} job={latestJob(state.jobs, i.id)} hero={false} preferred={state.settings.videoFormat} send={send} />
+                      <MediaCard key={i.id} item={i} job={latestJob(state.jobs, i.id)} hero={false} preferred={prefs} send={send} />
                     ))}
                   </section>
                 )}

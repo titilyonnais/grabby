@@ -1,9 +1,9 @@
-import type { VideoFormat } from './plan';
+import type { AudioFormat, VideoFormat } from './plan';
 
 export interface Settings {
   theme: 'auto' | 'light' | 'dark';
   videoFormat: VideoFormat;
-  audioFormat: 'm4a' | 'mp3';
+  audioFormat: AudioFormat;
   /** System notification when a download finishes. */
   notify: boolean;
   saveAs: boolean;

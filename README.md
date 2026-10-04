@@ -17,12 +17,16 @@
   flux **HLS** (`.m3u8`) et **DASH** (`.mpd`), y compris dans les lecteurs intégrés (iframes).
 - **Mode capture** pour les lecteurs qui ne publient aucun fichier (lecteurs `blob:` / MSE) :
   instantané pour les vidéos déjà chargées, sinon enregistrement accéléré de la lecture.
-- **Choix de la qualité** et du **format** (MP4 par défaut, WebM ou MKV), **audio seul**
-  (M4A ou MP3), progression en direct, annulation, nouvel essai, **notification** à la fin,
-  bouton **retélécharger**, **historique** des 50 derniers téléchargements.
+- **Choix de la qualité** et du **format** dans deux listes : vidéo MP4 (par défaut), MKV,
+  WebM, MOV, AVI, TS ; audio seul M4A, MP3, Opus, OGG, FLAC, WAV. L'image n'est jamais
+  réencodée : seuls les formats compatibles avec la source sont proposés.
+- Progression en direct dans la popup **et sur l'icône** (42 %, puis ✓), **bulle** dans la
+  page et notification à la fin, annulation, nouvel essai, bouton **retélécharger**,
+  **historique** des 50 derniers téléchargements.
 - **Tri des vraies vidéos** : chaque fichier est vérifié à partir de ses premiers octets
-  (vraie vidéo, durée, chiffrement) ; pages d'erreur, publicités, aperçus au survol et
-  extraits de moins de 2 s sont écartés. Vrais titres et miniatures (métadonnées de la page,
+  (vraie vidéo, durée, chiffrement) ; pages d'erreur, publicités, aperçus au survol,
+  morceaux de flux, doublons et extraits de moins de 2 s sont écartés. Les vidéos que la
+  page annonce sans les lire (métadonnées, liens directs) sont aussi trouvées. Vrais titres et miniatures (métadonnées de la page,
   sinon une image de la vidéo).
 - Assemblage par **ffmpeg.wasm embarqué** (aucun code distant), sans réencodage quand c'est possible.
 - Interface minimaliste **FR / EN**, thème **clair / sombre / auto**.
@@ -73,7 +77,9 @@ npm run icons       # régénère les icônes
 Les tests E2E chargent l'extension dans Chromium et vérifient, sur un serveur local :
 fichier direct, fichier protégé par Referer, HLS (choix de qualité), HLS audio seul, DASH
 (audio + vidéo séparés), HLS chiffré refusé, MP4 chiffré (DRM) affiché « Protégé »,
-aperçus au survol écartés, capture d'un lecteur MSE (MP4 et WebM → MP4), pages restreintes.
+aperçus au survol écartés, capture d'un lecteur MSE (MP4 et WebM → MP4), HLS → MOV avec
+bulle de fin et ✓ sur l'icône, son en FLAC, liens directs, fichier sans extension ni type,
+segments de flux ignorés, pages restreintes.
 
 Vérifications sur de vrais sites (Brave, sans fenêtre visible) : `node test/live/live.mjs <url>`,
 `node test/live/yt-download.mjs <url> 1080p mp4`, `node test/live/popup-shot.mjs <url> nom`.

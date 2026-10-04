@@ -70,6 +70,13 @@ async function openPopup(context: BrowserContext, extId: string, tabId: number):
   return popup;
 }
 
+/** Opens a drop-down list of the card ("Quality", "Format") and picks an option. */
+async function pick(popup: Page, list: string, option: string) {
+  await popup.getByRole('button', { name: new RegExp(`^${list}`) }).first().click();
+  await popup.getByRole('option', { name: new RegExp(`^${option}`) }).click();
+  await expect(popup.getByRole('button', { name: new RegExp(`^${list}\\s*${option}`) }).first()).toBeVisible();
+}
+
 /** Waits for the latest completed download and returns its bytes. */
 async function lastDownload(sw: Worker): Promise<{ filename: string; bytes: Buffer }> {
   let item: chrome.downloads.DownloadItem | undefined;
@@ -125,8 +132,7 @@ test('HLS master: quality choice, segments assembled into MP4 with ffmpeg', asyn
   const { tabId } = await openFixture(context, sw, 'hls.html');
   await expect.poll(() => badge(sw, tabId)).toBe('1');
   const popup = await openPopup(context, extId, tabId);
-  await expect(popup.getByRole('radio', { name: '360p' })).toBeVisible();
-  await popup.getByRole('radio', { name: '180p' }).click();
+  await pick(popup, 'Quality', '180p');
   await popup.getByRole('button', { name: 'Download', exact: true }).click();
   await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
   const { bytes, filename } = await lastDownload(sw);
@@ -142,7 +148,8 @@ test('HLS audio only → M4A', async ({ context, sw, extId }) => {
   const { tabId } = await openFixture(context, sw, 'hls-fmp4.html');
   await expect.poll(() => badge(sw, tabId)).toBe('1');
   const popup = await openPopup(context, extId, tabId);
-  await popup.getByRole('button', { name: 'Audio only' }).click();
+  await pick(popup, 'Format', 'M4A');
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
   await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
   const { bytes, filename } = await lastDownload(sw);
   expect(isMp4(bytes)).toBe(true);
@@ -213,7 +220,7 @@ test('WebM (VP9/Opus) playback recorded and saved as MP4', async ({ context, sw,
   await page.waitForSelector('body[data-ready="1"]');
   await expect.poll(() => badge(sw, tabId)).toBe('1');
   const popup = await openPopup(context, extId, tabId);
-  await expect(popup.getByRole('radio', { name: 'MP4' })).toHaveAttribute('aria-checked', 'true');
+  await expect(popup.getByRole('button', { name: /Format\s*MP4/ })).toBeVisible();
   await popup.getByRole('button', { name: 'Record playback' }).click();
   await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
   const { bytes, filename } = await lastDownload(sw);
@@ -223,6 +230,58 @@ test('WebM (VP9/Opus) playback recorded and saved as MP4', async ({ context, sw,
     expect(info.streams).toEqual(['audio', 'video']);
     expect(info.duration).toBeGreaterThan(4);
   }
+});
+
+test('HLS saved as MOV; the page gets a "done" bubble and the icon a ✓', async ({ context, sw, extId }) => {
+  const { page, tabId } = await openFixture(context, sw, 'hls.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  await pick(popup, 'Format', 'MOV');
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
+  // The user goes back to their page while it downloads.
+  await page.bringToFront();
+  await expect(page.locator('grabby-toast')).toBeAttached({ timeout: 60_000 });
+  expect(await badge(sw, tabId)).toBe('✓');
+  const { bytes, filename } = await lastDownload(sw);
+  expect(bytes.subarray(4, 12).toString('latin1')).toMatch(/^ftypqt/);
+  const info = probe(filename);
+  if (info) expect(info.streams).toEqual(['audio', 'video']);
+});
+
+test('DASH audio saved as FLAC', async ({ context, sw, extId }) => {
+  const { tabId } = await openFixture(context, sw, 'dash.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  await pick(popup, 'Format', 'FLAC');
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
+  await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
+  const { bytes } = await lastDownload(sw);
+  expect(bytes.subarray(0, 4).toString('latin1')).toBe('fLaC');
+});
+
+test('linked files are found without a player; broken links and pages are not', async ({ context, sw, extId }) => {
+  const { tabId } = await openFixture(context, sw, 'links.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  await new Promise((r) => setTimeout(r, 1500));
+  expect(await badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  // A WebM file saved as MP4 (the default format): converted without re-encoding the picture.
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
+  await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
+  const { bytes, filename } = await lastDownload(sw);
+  expect(isMp4(bytes)).toBe(true);
+  const info = probe(filename);
+  if (info) expect(info.streams).toEqual(['audio', 'video']);
+});
+
+test('a file without extension or media type is found; stream segments are not', async ({ context, sw }) => {
+  const { page, tabId } = await openFixture(context, sw, 'opaque.html');
+  await page.waitForSelector('body[data-ready="1"]');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  await page.waitForTimeout(1500);
+  const urls = await sw.evaluate(async (id) => ((await chrome.storage.session.get(`tab:${id}`))[`tab:${id}`] as { items: { url: string }[] }).items.map((i) => i.url), tabId);
+  expect(urls).toHaveLength(1);
+  expect(urls[0]).toContain('/opaque/clip');
 });
 
 test('restricted pages show an explanation instead of an empty list', async ({ context, sw, extId }) => {

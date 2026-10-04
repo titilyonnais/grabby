@@ -16,6 +16,10 @@ export function cleanTitle(raw: string, host: string): string {
   const prefix = /^([^:|–—-]{2,40})\s*[:|–—-]\s+(.+)$/.exec(title);
   if (prefix && isBrand(prefix[1]!)) return cleanTitle(prefix[2]!, host);
 
+  // "Title : Brand" (French spacing) or "Title: Brand" suffixes.
+  const suffix = /^(.+?)\s*[:|–—-]\s*([^:|–—-]{2,40})$/.exec(title);
+  if (suffix && isBrand(suffix[2]!)) return cleanTitle(suffix[1]!, host);
+
   const parts = title.split(/\s+[|–—-]\s+|\s+·\s+/);
   const kept = parts.filter((p) => !isBrand(p));
   return (kept.length ? kept : parts).join(' - ').trim();

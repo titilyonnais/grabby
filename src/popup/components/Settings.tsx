@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Settings as S } from '../../shared/settings';
 import { t } from '../i18n';
+import { AUDIO_FORMATS, FORMAT_NAMES, VIDEO_FORMATS } from '../../shared/formats';
 import { Icon } from './Icon';
+import { Select } from './Select';
 
 interface Props {
   settings: S;
@@ -71,29 +73,28 @@ export function Settings({ settings, onChange, onClose }: Props) {
 
         <div class="setting">
           <span class="setting__label">{t('set_video')}</span>
-          <Segmented
-            label={t('set_video')}
-            value={settings.videoFormat}
-            options={[
-              ['mp4', 'MP4'],
-              ['webm', 'WebM'],
-              ['mkv', 'MKV'],
-            ]}
-            onChange={(videoFormat) => onChange({ videoFormat })}
-          />
+          <span class="setting__control">
+            <Select
+              label={t('set_video')}
+              hideLabel
+              value={settings.videoFormat}
+              options={VIDEO_FORMATS.map((f) => ({ value: f, label: FORMAT_NAMES[f], detail: t(`fmt_${f}`) }))}
+              onChange={(videoFormat) => onChange({ videoFormat })}
+            />
+          </span>
         </div>
 
         <div class="setting">
           <span class="setting__label">{t('set_audio')}</span>
-          <Segmented
-            label={t('set_audio')}
-            value={settings.audioFormat}
-            options={[
-              ['m4a', 'M4A'],
-              ['mp3', 'MP3'],
-            ]}
-            onChange={(audioFormat) => onChange({ audioFormat })}
-          />
+          <span class="setting__control">
+            <Select
+              label={t('set_audio')}
+              hideLabel
+              value={settings.audioFormat}
+              options={AUDIO_FORMATS.map((f) => ({ value: f, label: FORMAT_NAMES[f], detail: t(`fmt_${f}`) }))}
+              onChange={(audioFormat) => onChange({ audioFormat })}
+            />
+          </span>
         </div>
 
         <Toggle label={t('set_notify')} hint={t('set_notify_hint')} checked={settings.notify} onChange={(notify) => onChange({ notify })} />

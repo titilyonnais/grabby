@@ -38,6 +38,8 @@ export interface PageInfo {
   image?: string;
   /** HLS/DASH manifest URLs this frame has loaded (Performance API), a second detection path. */
   streams?: string[];
+  /** Video URLs the page names without playing them: metadata, <source>, direct links. */
+  declared?: string[];
   /** github build only: YouTube player metadata. */
   youtube?: { id: string; title: string; thumbnail?: string; duration?: number; player?: YtInfo };
 }
@@ -48,13 +50,17 @@ export type ContentToBg =
   | { type: 'drm'; keySystem: string }
   | { type: 'capture-progress'; jobId: string; progress: number; bytes: number }
   | { type: 'capture-done'; jobId: string; tracks: { track: number; mime: string }[]; keep?: number[] }
-  | { type: 'capture-error'; jobId: string; error: ErrorCode };
+  | { type: 'capture-error'; jobId: string; error: ErrorCode }
+  /** The "done" bubble's button. */
+  | { type: 'show-download'; downloadId: number };
 
 /* ---------- service worker → content script ---------- */
 export type BgToContent =
   | { type: 'scan' }
   | { type: 'capture-start'; jobId: string; videoIndex: number }
-  | { type: 'capture-stop'; jobId: string };
+  | { type: 'capture-stop'; jobId: string }
+  /** Bubble in the page the user is looking at when a download ends. */
+  | { type: 'toast'; ok: boolean; title: string; detail: string; action?: string; downloadId?: number };
 
 /* ---------- popup ⇄ service worker (port "popup") ---------- */
 export type BlockedReason = 'youtube' | 'restricted';
@@ -71,7 +77,7 @@ export interface PopupState {
 
 export type PopupToBg =
   | { type: 'subscribe'; tabId: number }
-  | { type: 'download'; mediaId: string; variantId?: string; mode: JobMode; format?: VideoFormat }
+  | { type: 'download'; mediaId: string; variantId?: string; mode: JobMode; format?: OutputFormat }
   | { type: 'cancel'; jobId: string }
   | { type: 'finish-capture'; jobId: string }
   | { type: 'retry'; jobId: string }

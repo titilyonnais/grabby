@@ -33,14 +33,36 @@ describe('muxAttempts', () => {
   it('extracts m4a by copy first, then by re-encoding', () => {
     const a = muxAttempts({ audio: '/j/a.mp4' }, 'm4a', true, '/j/out');
     expect(a.map((x) => x.args)).toEqual([
-      ['-y', '-i', '/j/a.mp4', '-vn', '-c:a', 'copy', '/j/out.m4a'],
-      ['-y', '-i', '/j/a.mp4', '-vn', '-c:a', 'aac', '-b:a', '192k', '/j/out.m4a'],
+      ['-y', '-i', '/j/a.mp4', '-vn', '-map', '0:a:0', '-c:a', 'copy', '/j/out.m4a'],
+      ['-y', '-i', '/j/a.mp4', '-vn', '-map', '0:a:0', '-c:a', 'aac', '-b:a', '192k', '/j/out.m4a'],
     ]);
   });
 
   it('extracts mp3 from the video when there is no separate audio', () => {
     const [only] = muxAttempts({ video: '/j/v.ts' }, 'mp3', true, '/j/out');
-    expect(only!.args).toEqual(['-y', '-i', '/j/v.ts', '-vn', '-c:a', 'libmp3lame', '-q:a', '2', '/j/out.mp3']);
+    expect(only!.args).toEqual(['-y', '-i', '/j/v.ts', '-vn', '-map', '0:a:0', '-c:a', 'libmp3lame', '-q:a', '2', '/j/out.mp3']);
+  });
+
+  it.each([
+    ['opus', ['copy', 'libopus']],
+    ['ogg', ['copy', 'libvorbis']],
+    ['flac', ['flac']],
+    ['wav', ['pcm_s16le']],
+  ] as const)('audio %s: %j', (fmt, codecs) => {
+    const a = muxAttempts({ audio: '/j/a.webm' }, fmt, true, '/j/out');
+    expect(a.map((x) => x.args[x.args.indexOf('-c:a') + 1])).toEqual(codecs);
+    expect(a.every((x) => x.out === `/j/out.${fmt}`)).toBe(true);
+  });
+
+  it.each([
+    ['mov', 'aac', true],
+    ['avi', 'libmp3lame', false],
+    ['ts', 'aac', false],
+  ] as const)('video %s: copy, then %s audio, then MKV', (fmt, codec, faststart) => {
+    const a = muxAttempts({ video: '/j/v.ts' }, fmt, false, '/j/out');
+    expect(a.map((x) => x.out)).toEqual([`/j/out.${fmt}`, `/j/out.${fmt}`, '/j/out.mkv']);
+    expect(a[1]!.args).toContain(codec);
+    expect(a[0]!.args.includes('+faststart')).toBe(faststart);
   });
 
   it('throws when nothing can be muxed', () => {

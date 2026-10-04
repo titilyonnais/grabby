@@ -1,4 +1,5 @@
-import { extOf, hostOf } from '../parsers/url';
+import { hostOf } from '../parsers/url';
+import { isAudioFormat, VIDEO_FORMATS } from '../shared/formats';
 import { buildFilename } from '../shared/filename';
 import { uid } from '../shared/ids';
 import type { BgToContent, ContentToBg, OffscreenToBg } from '../shared/messages';
@@ -119,7 +120,7 @@ export class JobManager {
 
   /* -------------------------------------------------------------- commands */
 
-  async start(tabId: number, mediaId: string, variantId: string | undefined, mode: JobMode, format?: VideoFormat): Promise<Job | undefined> {
+  async start(tabId: number, mediaId: string, variantId: string | undefined, mode: JobMode, format?: OutputFormat): Promise<Job | undefined> {
     await this.ready;
     const item = await this.registry.find(tabId, mediaId);
     if (!item) return undefined;
@@ -147,7 +148,7 @@ export class JobManager {
       startedAt: Date.now(),
       ...(variantId ? { variantId } : {}),
       ...(mode === 'video' && variant ? { quality: variant.label } : {}),
-      ...(mode === 'video' && format && item.formats?.includes(format) ? { format } : {}),
+      ...(format && (mode === 'audio' ? isAudioFormat(format) : (item.formats ?? VIDEO_FORMATS).includes(format as VideoFormat)) ? { format } : {}),
       ...(item.ytId ? { hidden: true } : {}),
       ...(item.frameId !== undefined ? { frameId: item.frameId } : {}),
       ...(item.videoIndex !== undefined ? { videoIndex: item.videoIndex } : {}),
@@ -241,10 +242,7 @@ export class JobManager {
       if (this.gone(job.id)) return;
       this.update(job.id, { raw: plan.raw, ...(plan.estimatedSize ? { bytes: 0 } : {}) });
 
-      if (plan.kind === 'file' && (!plan.audioOnly || item.audioOnly)) {
-        const ext = item.audioOnly ? extOf(item.url) || 'mp3' : plan.output;
-        return await this.direct(job, item.url, ext, settings);
-      }
+      if (plan.kind === 'file' && plan.direct) return await this.direct(job, item.url, plan.output, settings);
       if (plan.kind === 'capture') {
         return __TARGET__ === 'github' && item.ytId ? await this.startHidden(job, plan, item) : await this.startCapture(job, plan);
       }
