@@ -17,8 +17,14 @@
 
 ---
 
-<!-- release:1.5.2 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
-## Nouveautés de la version 1.5.2
+<!-- release:1.5.3 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
+## Nouveautés de la version 1.5.3
+
+- **Finitions** : interrupteurs sans à-coup au clic, ligne d'une vidéo en cours plus
+  propre (barre sous le texte, miniature sur toute la hauteur), icône du format décollée du
+  bord, page Réglages plus animée, plus d'étiquette « Expérimental ».
+
+**Rappel de la 1.5.2** :
 
 - **Finitions** : interrupteurs qui ne débordent plus de leur rail, liste des formats qui
   ne défile plus toute seule au survol, textes moins collés au bord des cartes, petites

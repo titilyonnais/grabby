@@ -130,7 +130,6 @@ export function MediaCard({ item, job, open, onToggle, index, preferred, send }:
           </h2>
           <p class="card__meta">
             <span class="tag">{kind}</span>
-            {item.experimental && <span class="tag tag--accent">{t('experimental')}</span>}
             {single && <span>{single}</span>}
             {running && !open ? (
               <span class="card__pct">{Math.round(job!.progress * 100)} %</span>
@@ -139,6 +138,8 @@ export function MediaCard({ item, job, open, onToggle, index, preferred, send }:
             ) : null}
             {blocked && !open && <Icon name={item.live ? 'live' : 'lock'} size={14} />}
           </p>
+          {/* A download running in a row: its bar under the text, not over the layout. */}
+          {running && !open && <span class="card__progress" style={{ '--p': String(job!.progress) }} aria-hidden="true" />}
         </div>
         <button
           class="card__toggle"
@@ -152,7 +153,6 @@ export function MediaCard({ item, job, open, onToggle, index, preferred, send }:
         >
           <Icon name="chevron" size={18} />
         </button>
-        {running && !open && <span class="card__progress" style={{ '--p': String(job!.progress) }} aria-hidden="true" />}
       </div>
 
       {open && (

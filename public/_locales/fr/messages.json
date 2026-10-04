@@ -19,7 +19,6 @@
   "showFile": { "message": "Afficher dans le dossier" },
   "dismiss": { "message": "Masquer" },
   "qualityLabel": { "message": "Qualité" },
-  "experimental": { "message": "Expérimental" },
   "rawNotice": { "message": "Flux très volumineux : enregistré tel quel, sans conversion." },
 
   "st_queued": { "message": "En attente…" },

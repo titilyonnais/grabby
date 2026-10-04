@@ -15,6 +15,26 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 Rien pour l'instant.
 
+## [1.5.3] — 2026-10-04
+
+### Corrigé
+- **Interrupteurs** : un simple clic déclenchait l'étirement du bouton (prévu pour un appui
+  long) en même temps que sa glissade, ce qui faisait un petit à-coup. L'étirement n'arrive
+  plus qu'après un vrai appui maintenu.
+- **Ligne d'une vidéo en cours de téléchargement** : le pourcentage passait sous les
+  étiquettes dès qu'il avait deux chiffres. La barre de progression est maintenant sous le
+  texte de la ligne, et le pourcentage reste à côté du type de vidéo.
+- **Aperçu du nom de fichier** : l'icône du format était collée au bord arrondi ; elle a
+  maintenant sa marge.
+
+### Modifié
+- **Miniature des lignes** : elle occupe toute la hauteur de la ligne, de haut en bas, au
+  lieu de laisser du vide au-dessus et en dessous.
+- **Plus d'étiquette « Expérimental »** sur les cartes des vidéos YouTube :
+  l'explication sous le bouton Télécharger suffit.
+- **Page Réglages plus animée** : elle glisse plus posément, le titre et la flèche de retour
+  arrivent ensuite, puis les groupes de réglages montent l'un après l'autre.
+
 ## [1.5.2] — 2026-10-04
 
 Finitions de l'interface.
@@ -366,7 +386,8 @@ Première version.
 - Capture YouTube expérimentale.
 - Interface en français et en anglais, thème clair et sombre.
 
-[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.5.2...HEAD
+[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.5.3...HEAD
+[1.5.3]: https://github.com/titilyonnais/grabby/compare/v1.5.2...v1.5.3
 [1.5.2]: https://github.com/titilyonnais/grabby/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/titilyonnais/grabby/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/titilyonnais/grabby/compare/v1.4.1...v1.5.0

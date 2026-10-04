@@ -19,7 +19,6 @@
   "showFile": { "message": "Show in folder" },
   "dismiss": { "message": "Hide" },
   "qualityLabel": { "message": "Quality" },
-  "experimental": { "message": "Experimental" },
   "rawNotice": { "message": "Very large stream: saved as-is without conversion." },
 
   "st_queued": { "message": "Waiting…" },
