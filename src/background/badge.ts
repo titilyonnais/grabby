@@ -22,7 +22,8 @@ let running = new Set<string>();
 let flashTimer: ReturnType<typeof setTimeout> | undefined;
 let lastJobs: Job[] = [];
 
-const defaultTitle = () => chrome.runtime.getManifest().action?.default_title ?? 'Grabby';
+// The manifest's title is a `__MSG_…__` placeholder: read the translated name itself.
+const defaultTitle = () => chrome.i18n.getMessage('extName') || 'Grabby';
 
 async function paint(tabId: number): Promise<void> {
   const n = counts.get(tabId) ?? 0;

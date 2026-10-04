@@ -17,10 +17,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Refuses to publish a version whose CHANGELOG/README are not up to date (or a wrong tag).
+      - run: npm run release:check
+      - run: node scripts/release-check.mjs --notes > release-notes.md
       - run: npm run build
       - run: npm test
       - run: npm run zip
       - uses: softprops/action-gh-release@v2
         with:
           files: release/*.zip
-          generate_release_notes: true
+          name: Grabby ${{ github.ref_name }}
+          body_path: release-notes.md
