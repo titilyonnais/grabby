@@ -40,6 +40,7 @@
   "err_ffmpeg": { "message": "Le fichier n'a pas pu être assemblé. Le format n'est peut-être pas pris en charge." },
   "err_protected": { "message": "Cette vidéo est protégée. Grabby ne télécharge pas les contenus protégés." },
   "err_live": { "message": "Les diffusions en direct ne sont pas prises en charge." },
+  "err_too_large": { "message": "Trop volumineux pour être assemblé dans le navigateur (plus de 1,5 Go). Choisis une qualité inférieure." },
   "err_capture_failed": { "message": "Rien n'a été enregistré. Lance la vidéo, puis réessaie." },
   "err_capture_unavailable": { "message": "Ce lecteur ne peut pas être enregistré. Recharge la page et réessaie." },
   "err_canceled": { "message": "Annulé." },

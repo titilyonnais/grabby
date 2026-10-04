@@ -1,3 +1,5 @@
+import type { Plan } from './plan';
+
 export type MediaKind = 'file' | 'hls' | 'dash' | 'capture';
 export type Protection = 'none' | 'drm' | 'encrypted';
 
@@ -36,6 +38,8 @@ export interface MediaItem {
   size?: number;
   variants: Variant[];
   audioTracks: AudioTrack[];
+  /** Every rendition URL a master references, even those merged out of `variants`. */
+  related?: string[];
   protection: Protection;
   live: boolean;
   detectedAt: number;
@@ -88,6 +92,10 @@ export interface Job {
   /** Capture jobs: where the <video> lives. */
   frameId?: number;
   videoIndex?: number;
+  /** Capture jobs: the assembly plan, kept (and persisted) until the recording ends. */
+  capturePlan?: Plan;
+  /** The final file is an offscreen Blob URL that must be released once saved. */
+  blob?: boolean;
 }
 
 export interface HistoryEntry {

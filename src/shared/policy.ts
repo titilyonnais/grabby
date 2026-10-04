@@ -1,4 +1,4 @@
-const YT_HOSTS = ['youtube.com', 'youtu.be', 'youtube-nocookie.com', 'googlevideo.com', 'ytimg.com'];
+const YT_HOSTS = ['youtube.com', 'youtu.be', 'youtube-nocookie.com', 'youtubekids.com', 'googlevideo.com', 'ytimg.com'];
 
 /** True for any YouTube-owned host (site, short links, embeds, video CDN, images). */
 export function isYouTubeUrl(url: string): boolean {

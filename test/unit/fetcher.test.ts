@@ -36,6 +36,19 @@ describe('fetchInOrder', () => {
     expect(bytes).toBe(40);
   });
 
+  it('finishes when the first segment is slow and every other worker is waiting', async () => {
+    const f = fakeFetch(async (url) => {
+      if (url.endsWith('/0')) await sleep(40);
+      return new Response(enc('x'));
+    });
+    const segs = Array.from({ length: 60 }, (_, i) => ({ url: `https://x/${i}` }));
+    let n = 0;
+    const done = fetchInOrder(segs, { concurrency: 6, fetchImpl: f, onData: () => void n++ });
+    const timeout = new Promise((_, ko) => setTimeout(() => ko(new Error('hung')), 2000));
+    await Promise.race([done, timeout]);
+    expect(n).toBe(60);
+  });
+
   it('retries transient failures', async () => {
     let calls = 0;
     const f = fakeFetch(async () => {
@@ -68,6 +81,16 @@ describe('fetchInOrder', () => {
     await fetchInOrder([{ url: 'https://x/f', range: [2, 4] }], { fetchImpl: f, onData: (_i, d) => void got.push(dec(d)) });
     expect(seen).toEqual(['bytes=2-4']);
     expect(got).toEqual(['234']);
+  });
+
+  it('gives up on a server that never answers, as a network error', async () => {
+    const f = fakeFetch(
+      (_u, init) =>
+        new Promise((_ok, ko) => init?.signal?.addEventListener('abort', () => ko(init.signal!.reason))),
+    );
+    const p = fetchInOrder([{ url: 'https://x/a' }], { fetchImpl: f, retries: 1, retryDelayMs: 1, timeoutMs: 20, onData: () => {} });
+    await expect(p).rejects.toBeInstanceOf(TypeError);
+    expect(f).toHaveBeenCalledTimes(2);
   });
 
   it('aborts', async () => {

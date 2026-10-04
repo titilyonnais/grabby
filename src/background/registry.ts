@@ -10,6 +10,8 @@ export interface KV {
 interface TabState {
   items: MediaItem[];
   drmFrames: string[];
+  /** Frames that streamed from a host the policy blocks: no playback capture there. */
+  blockedFrames?: string[];
   pageTitle?: string;
   thumbnail?: string;
 }
@@ -22,7 +24,8 @@ export const sessionKV: KV = {
   async get(k) {
     return (await chrome.storage.session.get(k))[k];
   },
-  set: (k, v) => chrome.storage.session.set({ [k]: v }),
+  // Over quota (1 MB before Chrome 112), the in-memory cache still serves this session.
+  set: (k, v) => chrome.storage.session.set({ [k]: v }).catch(() => {}),
   remove: (k) => chrome.storage.session.remove(k),
 };
 
@@ -33,6 +36,11 @@ function titleFromUrl(url: string): string {
   } catch {
     return 'video';
   }
+}
+
+/** Media playlists a master stands for (including renditions hidden from its quality list). */
+function refsOf(i: MediaItem): Set<string> {
+  return new Set([...i.variants.map((v) => v.url), ...i.audioTracks.map((a) => a.url), ...(i.related ?? [])].map(normalizeMediaUrl));
 }
 
 /** Per-tab media registry, cached in memory and persisted to session storage. */
@@ -97,19 +105,15 @@ export class Registry {
       (s) => {
         const norm = normalizeMediaUrl(item.url);
         // A media playlist already listed as a variant/audio of a master is absorbed.
-        const absorbed = s.items.some(
-          (i) =>
-            i.id !== item.id &&
-            (i.variants.some((v) => normalizeMediaUrl(v.url) === norm) ||
-              i.audioTracks.some((a) => normalizeMediaUrl(a.url) === norm)),
-        );
+        const absorbed = s.items.some((i) => i.id !== item.id && refsOf(i).has(norm));
         if (absorbed) return false;
 
+        if (item.kind === 'capture' && s.blockedFrames?.includes(item.frameUrl)) return false;
         if (item.kind === 'capture' && s.drmFrames.includes(item.frameUrl)) item = { ...item, protection: 'drm' };
 
         // A master removes the media playlists it references.
-        if (item.variants.length || item.audioTracks.length) {
-          const refs = new Set([...item.variants, ...item.audioTracks].map((r) => normalizeMediaUrl(r.url)));
+        const refs = refsOf(item);
+        if (refs.size) {
           s.items = s.items.filter((i) => i.id === item.id || !refs.has(normalizeMediaUrl(i.url)));
         }
 
@@ -177,6 +181,20 @@ export class Registry {
     );
   }
 
+  blockFrame(tabId: number, frameUrl: string): Promise<boolean> {
+    return this.mutate(
+      tabId,
+      (s) => {
+        const before = s.items.length;
+        const known = (s.blockedFrames ??= []).includes(frameUrl);
+        if (!known) s.blockedFrames.push(frameUrl);
+        s.items = s.items.filter((i) => !(i.kind === 'capture' && i.frameUrl === frameUrl));
+        return !known || s.items.length !== before;
+      },
+      (r) => r,
+    );
+  }
+
   async isDrmFrame(tabId: number, frameUrl: string): Promise<boolean> {
     return (await this.load(tabId)).drmFrames.includes(frameUrl);
   }
@@ -200,6 +218,7 @@ export class Registry {
       (s) => {
         s.items = [];
         s.drmFrames = [];
+        s.blockedFrames = [];
         delete s.pageTitle;
         delete s.thumbnail;
         return true;

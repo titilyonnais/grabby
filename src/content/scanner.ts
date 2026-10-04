@@ -15,6 +15,11 @@ type HookUp =
   | { type: 'error'; error: 'capture_unavailable' | 'protected' | 'capture_failed' };
 
 const send = (msg: ContentToBg) => chrome.runtime.sendMessage(msg).catch(() => {});
+
+/* Private channel to the MAIN-world hook (see hook.ts): offered before page scripts run. */
+const channel = new MessageChannel();
+const hook = channel.port1;
+window.postMessage({ __grabby: 'hello' }, '*', [channel.port2]);
 const MANIFEST = /\.(m3u8|mpd)($|[?#])/i;
 const streams = new Set<string>();
 const isTop = window === window.top;
@@ -134,6 +139,10 @@ interface Sink {
   close(): void;
 }
 
+/** Acks can be lost (frame torn down, extension reloaded): never wait forever. */
+const withTimeout = (p: Promise<void>, ms = 15_000) =>
+  Promise.race([p, new Promise<void>((r) => setTimeout(r, ms))]);
+
 /** Preferred sink: hidden extension iframe writing to IndexedDB (zero-copy transfer). */
 function iframeSink(jobId: string): Promise<Sink> {
   return new Promise((resolve, reject) => {
@@ -168,13 +177,24 @@ function iframeSink(jobId: string): Promise<Sink> {
       window.removeEventListener('message', onMessage);
       frame.remove();
     }
+    // If the page removes our frame mid-recording, the rest goes through the port.
+    let fallback: Sink | null = null;
     const sink: Sink = {
       put(track, seq, mime, init, data) {
+        const w = frame.isConnected ? frame.contentWindow : null;
+        if (!w) return (fallback ??= portSink(jobId)).put(track, seq, mime, init, data);
         pending++;
-        frame.contentWindow!.postMessage({ type: 'chunk', jobId, track, seq, mime, init, data }, origin, [data]);
+        w.postMessage({ type: 'chunk', jobId, track, seq, mime, init, data }, origin, [data]);
       },
-      flush: () => (pending === 0 ? Promise.resolve() : new Promise((r) => flushWaiters.push(r))),
-      close: cleanup,
+      flush: () =>
+        Promise.all([
+          withTimeout(pending === 0 || !frame.isConnected ? Promise.resolve() : new Promise<void>((r) => flushWaiters.push(r))),
+          fallback?.flush(),
+        ]).then(() => {}),
+      close() {
+        cleanup();
+        fallback?.close();
+      },
     };
     window.addEventListener('message', onMessage);
     (document.body ?? document.documentElement).appendChild(frame);
@@ -203,7 +223,7 @@ function portSink(jobId: string): Sink {
       pending++;
       port.postMessage({ jobId, track, seq, mime, init, b64: toB64(data) });
     },
-    flush: () => (pending === 0 ? Promise.resolve() : new Promise((r) => waiters.push(r))),
+    flush: () => withTimeout(pending === 0 ? Promise.resolve() : new Promise<void>((r) => waiters.push(r))),
     close: () => port.disconnect(),
   };
 }
@@ -212,7 +232,7 @@ async function startCapture(jobId: string, videoIndex: number) {
   session?.sink.close();
   const sink = await iframeSink(jobId).catch(() => portSink(jobId));
   session = { jobId, bytes: 0, seq: new Map(), tracks: new Map(), sink };
-  window.postMessage({ __grabby: 'down', type: 'arm', videoIndex }, '*');
+  hook.postMessage({ type: 'arm', videoIndex });
 }
 
 async function finish(s: Session) {
@@ -224,10 +244,9 @@ async function finish(s: Session) {
 }
 
 let lastProgress = 0;
-window.addEventListener('message', (e: MessageEvent) => {
-  if (e.source !== window) return;
-  const d = e.data as ({ __grabby?: string } & HookUp) | null;
-  if (!d || d.__grabby !== 'up') return;
+hook.onmessage = (e: MessageEvent) => {
+  const d = e.data as HookUp | null;
+  if (!d) return;
   switch (d.type) {
     case 'drm':
       void send({ type: 'drm', keySystem: String(d.keySystem).slice(0, 100) });
@@ -263,7 +282,7 @@ window.addEventListener('message', (e: MessageEvent) => {
       }
       break;
   }
-});
+};
 
 /* --------------------------------------------------- service worker ⇄ us */
 
@@ -276,7 +295,7 @@ chrome.runtime.onMessage.addListener((msg: BgToContent) => {
       void startCapture(msg.jobId, msg.videoIndex);
       break;
     case 'capture-stop':
-      if (session?.jobId === msg.jobId) window.postMessage({ __grabby: 'down', type: 'stop' }, '*');
+      if (session?.jobId === msg.jobId) hook.postMessage({ type: 'stop' });
       break;
   }
 });

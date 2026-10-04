@@ -119,6 +119,18 @@ describe('buildPlan — HLS', () => {
     expect(p.raw).toBe(true);
     expect(p.output).toBe('ts');
   });
+
+  it('refuses public playlists whose segments point into the local network', async () => {
+    const f = fetcher({ 'https://cdn.com/hi.m3u8': media('http://192.168.1.1/v'), 'https://cdn.com/en.m3u8': media('a') });
+    await expect(buildPlan(hlsItem, { mode: 'video', settings: DEFAULT_SETTINGS, fetchText: f })).rejects.toMatchObject({ code: 'unknown' });
+  });
+
+  it('refuses to assemble huge streams with separate audio instead of crashing ffmpeg', async () => {
+    const long = (s: string) => media(s).replaceAll('#EXTINF:4,', '#EXTINF:1800,');
+    const f = fetcher({ 'https://cdn.com/hi.m3u8': long('v'), 'https://cdn.com/en.m3u8': long('a') });
+    const item = { ...hlsItem, variants: [{ ...hlsItem.variants[0]!, bandwidth: 20_000_000 }] };
+    await expect(buildPlan(item, { mode: 'video', settings: DEFAULT_SETTINGS, fetchText: f })).rejects.toMatchObject({ code: 'too_large' });
+  });
 });
 
 const MPD = `<MPD mediaPresentationDuration="PT4S"><Period>
@@ -161,6 +173,19 @@ describe('buildPlan — DASH', () => {
     expect(p.video).toBeUndefined();
     expect(p.audio!.segments).toHaveLength(2);
     expect(p.output).toBe('m4a');
+  });
+
+  it('applies the size limit to DASH: raw for a single track, refused when audio must be merged', async () => {
+    const long = MPD.replace('PT4S', 'PT2H');
+    const f = fetcher({ 'https://cdn.com/d/manifest.mpd': long });
+    await expect(buildPlan(item, { mode: 'video', variantId: 'v1', settings: DEFAULT_SETTINGS, fetchText: f })).rejects.toMatchObject({
+      code: 'too_large',
+    });
+    const videoOnly = long.replace(/<AdaptationSet contentType="audio"[\s\S]*?<\/AdaptationSet>/, '');
+    const g = fetcher({ 'https://cdn.com/d/manifest.mpd': videoOnly });
+    const p = await buildPlan(item, { mode: 'video', variantId: 'v1', settings: DEFAULT_SETTINGS, fetchText: g });
+    expect(p.raw).toBe(true);
+    expect(p.output).toBe('mp4');
   });
 
   it('refuses protected manifests', async () => {

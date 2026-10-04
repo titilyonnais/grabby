@@ -13,11 +13,22 @@ export interface CapturedTrack {
 export function bestRun(chunks: StoredChunk[]): StoredChunk[] {
   const runs: StoredChunk[][] = [];
   for (const c of chunks) {
-    if (c.init || !runs.length) runs.push([c]);
-    else runs[runs.length - 1]!.push(c);
+    const run = runs[runs.length - 1];
+    // Players often re-append an identical init (seek, buffer reset): same stream, keep going.
+    if (run && c.init && sameBytes(run[0]!, c)) continue;
+    if (c.init || !run) runs.push([c]);
+    else run.push(c);
   }
   const size = (r: StoredChunk[]) => r.reduce((n, c) => n + c.data.byteLength, 0);
   return runs.filter((r) => r[0]!.init).sort((a, b) => size(b) - size(a))[0] ?? runs[0] ?? [];
+}
+
+function sameBytes(a: StoredChunk, b: StoredChunk): boolean {
+  if (!a.init || a.data.byteLength !== b.data.byteLength) return false;
+  const x = new Uint8Array(a.data);
+  const y = new Uint8Array(b.data);
+  for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return false;
+  return true;
 }
 
 function concat(chunks: StoredChunk[]): Uint8Array {

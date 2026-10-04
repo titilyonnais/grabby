@@ -1,5 +1,5 @@
 /** Promise-based client for the ffmpeg worker, with a serial lock around exec. */
-type Pending = { ok: (v: unknown) => void; ko: (e: Error) => void };
+type Pending = { ok: (v: unknown) => void; ko: (e: Error) => void; cmd: string };
 
 export class FFmpeg {
   private worker: Worker;
@@ -9,6 +9,8 @@ export class FFmpeg {
   private logs: string[] = [];
   private progressCb: ((p: number) => void) | null = null;
   private loaded: Promise<void>;
+  /** Set once the wasm module aborted (e.g. out of memory): it can't be reused. */
+  broken = false;
 
   constructor() {
     this.worker = new Worker(new URL('./ffmpeg-worker.ts', import.meta.url), { type: 'module' });
@@ -27,7 +29,14 @@ export class FFmpeg {
       if (!p) return;
       this.pending.delete(d.id!);
       if (d.ok) p.ok(d.res);
-      else p.ko(new Error(d.error ?? 'ffmpeg error'));
+      else {
+        if (p.cmd === 'exec' || p.cmd === 'load') this.broken = true;
+        p.ko(new Error(`ffmpeg: ${d.error ?? 'error'}`));
+      }
+    };
+    this.worker.onerror = (e) => {
+      e.preventDefault();
+      this.fail(new Error(`ffmpeg: ${e.message || 'worker crashed'}`));
     };
     this.loaded = this.call('load', {
       coreURL: chrome.runtime.getURL('ffmpeg/ffmpeg-core.js'),
@@ -38,7 +47,8 @@ export class FFmpeg {
   private call<T = unknown>(cmd: string, payload: object, transfer: Transferable[] = []): Promise<T> {
     const id = ++this.seq;
     return new Promise<T>((ok, ko) => {
-      this.pending.set(id, { ok: ok as (v: unknown) => void, ko });
+      if (this.broken) return ko(new Error('ffmpeg: unavailable'));
+      this.pending.set(id, { ok: ok as (v: unknown) => void, ko, cmd });
       this.worker.postMessage({ id, cmd, ...payload }, transfer);
     });
   }
@@ -94,12 +104,24 @@ export class FFmpeg {
     return this.logs.join('\n');
   }
 
-  terminate() {
+  private fail(err: Error) {
+    this.broken = true;
     this.worker.terminate();
-    for (const p of this.pending.values()) p.ko(new Error('terminated'));
+    for (const p of this.pending.values()) p.ko(err);
     this.pending.clear();
+  }
+
+  terminate() {
+    this.fail(new Error('ffmpeg: terminated'));
   }
 }
 
 let instance: FFmpeg | null = null;
-export const getFFmpeg = (): FFmpeg => (instance ??= new FFmpeg());
+/** Shared instance, recreated after a crash so one bad job doesn't break the next ones. */
+export function getFFmpeg(): FFmpeg {
+  if (instance?.broken) {
+    instance.terminate();
+    instance = null;
+  }
+  return (instance ??= new FFmpeg());
+}

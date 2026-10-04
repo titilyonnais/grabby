@@ -1,6 +1,6 @@
 import { parseDash } from '../parsers/dash';
 import { parseHls } from '../parsers/hls';
-import { normalizeMediaUrl } from '../parsers/url';
+import { normalizeMediaUrl, reachableFrom } from '../parsers/url';
 import { qualityLabel } from '../shared/format';
 import { hashId } from '../shared/ids';
 import type { AudioTrack, MediaItem, Variant } from '../shared/types';
@@ -51,7 +51,8 @@ export function resolveHls(url: string, ctx: DetectContext, fetchText: FetchText
     item.mime = 'application/vnd.apple.mpegurl';
 
     if (parsed.type === 'master') {
-      const sorted = [...parsed.variants].sort((a, b) => (b.height ?? 0) - (a.height ?? 0) || b.bandwidth - a.bandwidth);
+      item.related = [...parsed.variants.map((v) => v.url), ...parsed.audio.flatMap((a) => (a.url ? [a.url] : []))];
+      const sorted = parsed.variants.filter((v) => reachableFrom(url, v.url)).sort((a, b) => (b.height ?? 0) - (a.height ?? 0) || b.bandwidth - a.bandwidth);
       const seen = new Set<string>();
       item.variants = sorted
         .map<Variant>((v) => ({
@@ -66,7 +67,7 @@ export function resolveHls(url: string, ctx: DetectContext, fetchText: FetchText
         }))
         .filter((v) => (seen.has(v.label) ? false : (seen.add(v.label), true)));
       item.audioTracks = parsed.audio
-        .filter((a) => a.url)
+        .filter((a) => a.url && reachableFrom(url, a.url))
         .map<AudioTrack>((a) => ({
           id: hashId(a.url!),
           label: a.name,

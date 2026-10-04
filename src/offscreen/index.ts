@@ -12,6 +12,7 @@ import { fetchInOrder, fetchSegment, fetchStream, HttpError } from './fetcher';
 import { getFFmpeg } from './muxer';
 
 const controllers = new Map<string, AbortController>();
+const HEARTBEAT_MS = 10_000;
 const blobUrls = new Map<string, string>();
 
 const MIME: Record<string, string> = {
@@ -28,10 +29,13 @@ type NoTarget<T> = T extends unknown ? Omit<T, 'target'> : never;
 const toBg = (msg: NoTarget<OffscreenToBg>) =>
   chrome.runtime.sendMessage({ target: 'bg', ...msg } as OffscreenToBg).catch(() => {});
 
+type Reporter = ReturnType<typeof reporter>;
+
 function reporter(jobId: string) {
   const start = performance.now();
   let last = 0;
   let bytes = 0;
+  let state: { status: JobStatus; progress: number } = { status: 'downloading', progress: 0 };
   return {
     addBytes(n: number) {
       bytes += n;
@@ -40,11 +44,16 @@ function reporter(jobId: string) {
       return bytes;
     },
     send(status: JobStatus, progress: number, force = false) {
+      state = { status, progress: Math.max(0, Math.min(1, progress)) };
       const now = performance.now();
       if (!force && now - last < 250) return;
       last = now;
       const speed = bytes / Math.max(0.25, (now - start) / 1000);
-      void toBg({ type: 'job-progress', jobId, status, progress: Math.max(0, Math.min(1, progress)), bytes, speed });
+      void toBg({ type: 'job-progress', jobId, ...state, bytes, speed });
+    },
+    /** Tells the service worker the job is alive, e.g. while it waits for ffmpeg. */
+    beat() {
+      if (performance.now() - last > HEARTBEAT_MS / 2) this.send(state.status, state.progress, true);
     },
   };
 }
@@ -60,10 +69,9 @@ function errorCode(e: unknown): ErrorCode {
 const segCount = (t?: TrackPlan) => (t ? t.segments.length + (t.init ? 1 : 0) : 0);
 
 /** Raw mode (huge streams): concatenate into a Blob, skipping ffmpeg's memory limits. */
-async function runRaw(jobId: string, plan: Plan, signal: AbortSignal) {
+async function runRaw(rep: Reporter, plan: Plan, signal: AbortSignal) {
   const track = plan.video ?? plan.audio;
   if (!track) throw new Error('no track');
-  const rep = reporter(jobId);
   const type = MIME[plan.output] ?? 'application/octet-stream';
   // A single file (direct-download fallback): stream it with byte-level progress.
   if (track.segments.length === 1 && !track.init && !track.segments[0]!.range) {
@@ -104,11 +112,13 @@ async function run(jobId: string, plan: Plan) {
   const rep = reporter(jobId);
   const dir = `/j${jobId}`;
   const ff = plan.raw ? null : getFFmpeg();
+  rep.send(plan.kind === 'capture' ? 'processing' : 'downloading', 0, true);
+  const heartbeat = setInterval(() => rep.beat(), HEARTBEAT_MS);
   try {
     let result: { blob: Blob; ext: string };
 
     if (plan.raw) {
-      result = await runRaw(jobId, plan, signal);
+      result = await runRaw(rep, plan, signal);
     } else {
       const f = ff!;
       await f.mkdir(dir);
@@ -188,6 +198,7 @@ async function run(jobId: string, plan: Plan) {
     await toBg({ type: 'job-error', jobId, error: code });
     if (ff) await ff.rmdir(dir).catch(() => {});
   } finally {
+    clearInterval(heartbeat);
     controllers.delete(jobId);
   }
 }

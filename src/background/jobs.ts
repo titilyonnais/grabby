@@ -5,7 +5,7 @@ import type { BgToContent, ContentToBg, OffscreenToBg } from '../shared/messages
 import type { ErrorCode, OutputFormat, Plan } from '../shared/plan';
 import { getSettings, type Settings } from '../shared/settings';
 import type { Job, JobMode, JobStatus } from '../shared/types';
-import { fetchTextAs, withPageHeaders } from './headers';
+import { fetchTextAs, sweepHeaderRules, withPageHeaders } from './headers';
 import { addHistory } from './history';
 import { scheduleOffscreenClose, sendOffscreen } from './offscreen-client';
 import { buildPlan, PlanError } from './plan';
@@ -15,6 +15,8 @@ const STORE_KEY = 'jobs';
 const MAX_PARALLEL = 2;
 const KEEP_FINISHED_MS = 30 * 60_000;
 const STALL_MS = 120_000;
+/** A recording that receives nothing for this long is wrapped up with what it has. */
+const CAPTURE_STALL_MS = 60_000;
 
 const ACTIVE: JobStatus[] = ['downloading', 'capturing', 'processing', 'saving'];
 const FINISHED: JobStatus[] = ['done', 'error', 'canceled'];
@@ -35,10 +37,8 @@ function interruptCode(reason: string | undefined): ErrorCode {
 
 export class JobManager {
   private jobs = new Map<string, Job>();
-  private capturePlans = new Map<string, Plan>();
+  /** Header rules held by running jobs (in memory; orphans are swept once idle). */
   private releases = new Map<string, () => Promise<void>>();
-  /** Jobs whose final file comes from an offscreen Blob URL (must be revoked). */
-  private blobJobs = new Set<string>();
   private lastUpdate = new Map<string, number>();
   private listeners: (() => void)[] = [];
   private pollTimer: ReturnType<typeof setInterval> | undefined;
@@ -69,6 +69,12 @@ export class JobManager {
     return [...this.jobs.values()].some((j) => ACTIVE.includes(j.status) || j.status === 'queued');
   }
 
+  /** True once the job was canceled or dropped: long-running steps check it after each await. */
+  private gone(id: string): boolean {
+    const j = this.jobs.get(id);
+    return !j || FINISHED.includes(j.status);
+  }
+
   private update(id: string, patch: Partial<Job>): Job | undefined {
     const job = this.jobs.get(id);
     if (!job) return undefined;
@@ -89,7 +95,7 @@ export class JobManager {
     }
     clearTimeout(this.persistTimer);
     this.persistTimer = setTimeout(() => {
-      void chrome.storage.session.set({ [STORE_KEY]: [...this.jobs.values()] });
+      void chrome.storage.session.set({ [STORE_KEY]: [...this.jobs.values()] }).catch(() => {});
     }, 300);
     for (const l of this.listeners) l();
     if (this.isBusy()) this.startPolling();
@@ -103,7 +109,7 @@ export class JobManager {
       this.jobs.set(j.id, j);
       this.lastUpdate.set(j.id, now);
     }
-    if (saved.some((j) => j.downloadId !== undefined && ACTIVE.includes(j.status))) this.startPolling();
+    if (saved.some((j) => ACTIVE.includes(j.status))) this.startPolling();
     this.pump();
   }
 
@@ -148,13 +154,15 @@ export class JobManager {
   }
 
   async retry(jobId: string): Promise<void> {
+    await this.ready;
     const j = this.jobs.get(jobId);
     if (!j || !FINISHED.includes(j.status)) return;
     this.jobs.delete(jobId);
     await this.start(j.tabId, j.mediaId, j.variantId, j.mode);
   }
 
-  dismiss(jobId: string): void {
+  async dismiss(jobId: string): Promise<void> {
+    await this.ready;
     const j = this.jobs.get(jobId);
     if (j && FINISHED.includes(j.status)) {
       this.jobs.delete(jobId);
@@ -163,6 +171,7 @@ export class JobManager {
   }
 
   async cancel(jobId: string): Promise<void> {
+    await this.ready;
     const job = this.jobs.get(jobId);
     if (!job || FINISHED.includes(job.status)) return;
     const prev = job.status;
@@ -175,8 +184,19 @@ export class JobManager {
   }
 
   async finishCapture(jobId: string): Promise<void> {
+    await this.ready;
     const job = this.jobs.get(jobId);
-    if (job?.status === 'capturing') await this.toContent(job, { type: 'capture-stop', jobId });
+    if (job?.status !== 'capturing') return;
+    // The page may be gone already: assemble whatever was stored.
+    if (!(await this.toContent(job, { type: 'capture-stop', jobId }))) await this.assembleCapture(job);
+  }
+
+  /** The tab closed or left the page: recordings there can't continue. */
+  async onTabGone(tabId: number): Promise<void> {
+    await this.ready;
+    for (const j of this.list(tabId)) {
+      if (j.status === 'capturing') await this.assembleCapture(j);
+    }
   }
 
   /* ------------------------------------------------------------ execution */
@@ -210,7 +230,7 @@ export class JobManager {
         fetchText: (u) => fetchTextAs(u, item.pageUrl),
         ...(job.variantId ? { variantId: job.variantId } : {}),
       });
-      if (this.jobs.get(job.id)?.status === 'canceled') return;
+      if (this.gone(job.id)) return;
       this.update(job.id, { raw: plan.raw, ...(plan.estimatedSize ? { bytes: 0 } : {}) });
 
       if (plan.kind === 'file' && (!plan.audioOnly || item.audioOnly)) {
@@ -222,10 +242,11 @@ export class JobManager {
       const urls = [plan.video, plan.audio].flatMap((t) => (t ? [...(t.init ? [t.init.url] : []), ...t.segments.map((s) => s.url)] : []));
       const perHost = [...new Map(urls.map((u) => [hostOf(u), u])).values()];
       this.releases.set(job.id, await withPageHeaders(job.pageUrl, perHost));
-      this.blobJobs.add(job.id);
+      if (this.gone(job.id)) return void this.cleanup(job.id);
+      this.update(job.id, { blob: true });
       await sendOffscreen({ target: 'offscreen', type: 'run', jobId: job.id, plan });
     } catch (e) {
-      this.fail(job.id, e instanceof PlanError ? e.code : 'network');
+      if (!this.gone(job.id)) this.fail(job.id, e instanceof PlanError ? e.code : 'network');
     }
   }
 
@@ -241,7 +262,12 @@ export class JobManager {
   private async direct(job: Job, url: string, ext: string, settings: Settings) {
     const filename = this.filename(job, ext, settings);
     this.releases.set(job.id, await withPageHeaders(job.pageUrl, [url]));
+    if (this.gone(job.id)) return void this.cleanup(job.id);
     const downloadId = await chrome.downloads.download({ url, filename, saveAs: settings.saveAs, conflictAction: 'uniquify' });
+    if (this.gone(job.id)) {
+      await chrome.downloads.cancel(downloadId).catch(() => {});
+      return void this.cleanup(job.id);
+    }
     this.update(job.id, { downloadId, filename, sourceUrl: url, ext });
     this.startPolling();
   }
@@ -249,11 +275,11 @@ export class JobManager {
   private async fetchFallback(job: Job) {
     const url = job.sourceUrl!;
     const { downloadId: _dropped, ...rest } = job;
-    this.jobs.set(job.id, { ...rest, viaFetch: true, status: 'downloading', progress: 0, bytes: 0, speed: 0 });
+    this.jobs.set(job.id, { ...rest, viaFetch: true, blob: true, status: 'downloading', progress: 0, bytes: 0, speed: 0 });
     this.changed();
     await this.releases.get(job.id)?.();
     this.releases.set(job.id, await withPageHeaders(job.pageUrl, [url]));
-    this.blobJobs.add(job.id);
+    if (this.gone(job.id)) return void this.cleanup(job.id);
     const plan: Plan = {
       kind: 'file',
       video: { segments: [{ url }], container: 'file' },
@@ -267,11 +293,19 @@ export class JobManager {
 
   private async startCapture(job: Job, plan: Plan) {
     if (job.videoIndex === undefined) return this.fail(job.id, 'capture_unavailable');
-    this.capturePlans.set(job.id, plan);
-    this.update(job.id, { status: 'capturing' });
+    this.update(job.id, { status: 'capturing', capturePlan: plan });
     const ok = await this.toContent(job, { type: 'capture-start', jobId: job.id, videoIndex: job.videoIndex });
-    if (!ok) this.fail(job.id, 'capture_unavailable');
+    if (!ok && !this.gone(job.id)) this.fail(job.id, 'capture_unavailable');
     this.pump();
+  }
+
+  /** Ends a recording: hands the stored chunks to the offscreen assembler. */
+  private async assembleCapture(job: Job, hasTracks = job.bytes > 0) {
+    if (job.status !== 'capturing') return;
+    const plan = job.capturePlan;
+    if (!plan || !hasTracks) return this.fail(job.id, 'capture_failed');
+    this.update(job.id, { status: 'processing', progress: 0, blob: true });
+    await sendOffscreen({ target: 'offscreen', type: 'run', jobId: job.id, plan }).catch(() => this.fail(job.id, 'unknown'));
   }
 
   private async toContent(job: Job, msg: BgToContent): Promise<boolean> {
@@ -286,17 +320,20 @@ export class JobManager {
   private async cleanup(jobId: string) {
     const release = this.releases.get(jobId);
     this.releases.delete(jobId);
-    this.capturePlans.delete(jobId);
     await release?.();
-    if (this.blobJobs.delete(jobId) || this.jobs.get(jobId)?.kind === 'capture') {
+    const job = this.jobs.get(jobId);
+    if (job?.blob || job?.kind === 'capture') {
       await sendOffscreen({ target: 'offscreen', type: 'release', jobId }).catch(() => {});
     }
+    // Rules whose owner was lost in a service-worker restart.
+    if (!this.isBusy()) await sweepHeaderRules().catch(() => {});
   }
 
   /* --------------------------------------------------------------- events */
 
   async onContentMessage(msg: ContentToBg): Promise<void> {
     if (!('jobId' in msg)) return;
+    await this.ready;
     const job = this.jobs.get(msg.jobId);
     if (!job || job.status !== 'capturing') return;
     if (msg.type === 'capture-progress') {
@@ -304,16 +341,13 @@ export class JobManager {
     } else if (msg.type === 'capture-error') {
       this.fail(job.id, msg.error);
     } else if (msg.type === 'capture-done') {
-      const plan = this.capturePlans.get(job.id);
-      if (!plan || !msg.tracks.length) return this.fail(job.id, 'capture_failed');
-      this.update(job.id, { status: 'processing', progress: 0 });
-      this.blobJobs.add(job.id);
-      await sendOffscreen({ target: 'offscreen', type: 'run', jobId: job.id, plan }).catch(() => this.fail(job.id, 'unknown'));
+      await this.assembleCapture(job, msg.tracks.length > 0);
     }
   }
 
   async onOffscreenMessage(msg: OffscreenToBg): Promise<void> {
     if (msg.type === 'sink-check') return;
+    await this.ready;
     const job = this.jobs.get(msg.jobId);
     if (!job || FINISHED.includes(job.status)) return;
     if (msg.type === 'job-progress') {
@@ -323,9 +357,11 @@ export class JobManager {
     } else if (msg.type === 'job-ready') {
       const settings = await getSettings();
       const filename = this.filename(job, msg.ext as OutputFormat, settings);
+      if (this.gone(job.id)) return;
       this.update(job.id, { status: 'saving', progress: 1, bytes: msg.size, speed: 0, filename });
       try {
         const downloadId = await chrome.downloads.download({ url: msg.blobUrl, filename, saveAs: settings.saveAs, conflictAction: 'uniquify' });
+        if (this.gone(job.id)) return void chrome.downloads.cancel(downloadId).catch(() => {});
         this.update(job.id, { downloadId });
         this.startPolling();
       } catch {
@@ -359,7 +395,7 @@ export class JobManager {
     } else if (d.state?.current === 'interrupted') {
       const code = interruptCode(d.error?.current);
       // The download manager bypasses our Referer/Origin rules: retry through an extension fetch.
-      if (job.sourceUrl && !job.viaFetch && !this.blobJobs.has(job.id) && ['http_403', 'http_404', 'http_other'].includes(code)) {
+      if (job.sourceUrl && !job.viaFetch && !job.blob && ['http_403', 'http_404', 'http_other'].includes(code)) {
         await chrome.downloads.erase({ id: d.id }).catch(() => {});
         return this.fetchFallback(job);
       }
@@ -384,8 +420,12 @@ export class JobManager {
         });
       }
       for (const j of this.jobs.values()) {
-        if (['downloading', 'processing'].includes(j.status) && j.downloadId === undefined && now - (this.lastUpdate.get(j.id) ?? now) > STALL_MS) {
+        const idle = now - (this.lastUpdate.get(j.id) ?? now);
+        // Offscreen jobs send a heartbeat even while queued behind ffmpeg: silence means it died.
+        if (['downloading', 'processing'].includes(j.status) && j.downloadId === undefined && idle > STALL_MS) {
           this.fail(j.id, 'network');
+        } else if (j.status === 'capturing' && idle > CAPTURE_STALL_MS) {
+          void this.assembleCapture(j);
         }
       }
       if (!this.isBusy()) {

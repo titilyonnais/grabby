@@ -11,6 +11,7 @@ describe('isYouTubeUrl', () => {
     'https://www.youtube-nocookie.com/embed/abc',
     'https://rr3---sn-abc.googlevideo.com/videoplayback?x=1',
     'https://i.ytimg.com/vi/abc/hqdefault.jpg',
+    'https://www.youtubekids.com/watch?v=abc',
   ])('matches %s', (u) => expect(isYouTubeUrl(u)).toBe(true));
 
   it.each([

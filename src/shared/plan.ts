@@ -37,6 +37,7 @@ export type ErrorCode =
   | 'ffmpeg'
   | 'protected'
   | 'live'
+  | 'too_large'
   | 'capture_failed'
   | 'capture_unavailable'
   | 'canceled'

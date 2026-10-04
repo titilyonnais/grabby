@@ -6,6 +6,8 @@ export const YOUTUBE_MATCHES = [
   '*://youtu.be/*',
   '*://youtube-nocookie.com/*',
   '*://*.youtube-nocookie.com/*',
+  '*://youtubekids.com/*',
+  '*://*.youtubekids.com/*',
 ];
 
 const ICONS = { 16: 'icons/icon-16.png', 32: 'icons/icon-32.png', 48: 'icons/icon-48.png', 128: 'icons/icon-128.png' };

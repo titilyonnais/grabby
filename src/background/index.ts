@@ -15,7 +15,8 @@ import { clearAll, putChunk } from '../shared/idb';
 const registry = new Registry(sessionKV);
 const jobs = new JobManager(registry);
 
-startDetector(registry);
+// A new document replaced the page: recordings in that tab can't continue.
+startDetector(registry, (tabId) => void jobs.onTabGone(tabId));
 
 chrome.runtime.onStartup.addListener(() => {
   void resetHeaderRules();
@@ -45,6 +46,7 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   forgetTab(tabId);
   void registry.remove(tabId);
+  void jobs.onTabGone(tabId);
 });
 
 /* ------------------------------------------------------------- popups */

@@ -12,12 +12,41 @@ export interface FetchOptions {
   retryDelayMs?: number;
   signal?: AbortSignal;
   fetchImpl?: typeof fetch;
+  /** Per-segment deadline: a server that stops answering counts as a network error. */
+  timeoutMs?: number;
   /** Called strictly in segment order; awaited before the next one (backpressure). */
   onData: (index: number, data: Uint8Array<ArrayBuffer>) => void | Promise<void>;
   onBytes?: (n: number) => void;
 }
 
 const FATAL = new Set([401, 403, 404, 410]);
+const SEGMENT_TIMEOUT_MS = 60_000;
+const STREAM_IDLE_MS = 60_000;
+
+/**
+ * A signal that aborts with `outer`, or with a TypeError (like a network failure) when
+ * `arm()` isn't called again within `ms`. (AbortSignal.any needs Chrome 116.)
+ */
+function deadline(outer: AbortSignal | undefined, ms: number) {
+  const ctl = new AbortController();
+  const onAbort = () => ctl.abort(outer!.reason);
+  if (outer?.aborted) onAbort();
+  else outer?.addEventListener('abort', onAbort, { once: true });
+  let t: ReturnType<typeof setTimeout> | undefined;
+  const arm = () => {
+    clearTimeout(t);
+    t = setTimeout(() => ctl.abort(new TypeError('network timeout')), ms);
+  };
+  arm();
+  return {
+    signal: ctl.signal,
+    arm,
+    done() {
+      clearTimeout(t);
+      outer?.removeEventListener('abort', onAbort);
+    },
+  };
+}
 
 const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((ok, ko) => {
@@ -28,13 +57,26 @@ const sleep = (ms: number, signal?: AbortSignal) =>
     }, { once: true });
   });
 
-export async function fetchSegment(seg: SegRef, opts: Pick<FetchOptions, 'signal' | 'fetchImpl'>): Promise<Uint8Array<ArrayBuffer>> {
+export async function fetchSegment(
+  seg: SegRef,
+  opts: Pick<FetchOptions, 'signal' | 'fetchImpl' | 'timeoutMs'>,
+): Promise<Uint8Array<ArrayBuffer>> {
   const f = opts.fetchImpl ?? fetch;
   const headers: Record<string, string> = {};
   if (seg.range) headers.Range = `bytes=${seg.range[0]}-${seg.range[1]}`;
-  const res = await f(seg.url, { credentials: 'include', headers, ...(opts.signal ? { signal: opts.signal } : {}) });
-  if (!res.ok) throw new HttpError(res.status);
-  const buf = new Uint8Array(await res.arrayBuffer());
+  const dl = deadline(opts.signal, opts.timeoutMs ?? SEGMENT_TIMEOUT_MS);
+  let buf: Uint8Array<ArrayBuffer>;
+  let res: Response;
+  try {
+    res = await f(seg.url, { credentials: 'include', headers, signal: dl.signal });
+    if (!res.ok) throw new HttpError(res.status);
+    buf = new Uint8Array(await res.arrayBuffer());
+  } catch (e) {
+    // Report our own timeout as a network error, not as the user's cancel.
+    throw dl.signal.aborted && !opts.signal?.aborted ? dl.signal.reason : e;
+  } finally {
+    dl.done();
+  }
   // Server ignored the Range header and sent the whole resource.
   if (seg.range && res.status === 200 && buf.length > seg.range[1] - seg.range[0] + 1) {
     return buf.slice(seg.range[0], seg.range[1] + 1);
@@ -48,21 +90,30 @@ export async function fetchStream(
   opts: { signal?: AbortSignal; fetchImpl?: typeof fetch; onProgress?: (received: number, total: number) => void },
 ): Promise<Uint8Array<ArrayBuffer>[]> {
   const f = opts.fetchImpl ?? fetch;
-  const res = await f(url, { credentials: 'include', ...(opts.signal ? { signal: opts.signal } : {}) });
-  if (!res.ok) throw new HttpError(res.status);
-  const total = Number(res.headers.get('content-length')) || 0;
-  if (!res.body) return [new Uint8Array(await res.arrayBuffer())];
-  const reader = res.body.getReader();
-  const parts: Uint8Array<ArrayBuffer>[] = [];
-  let received = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    parts.push(value as Uint8Array<ArrayBuffer>);
-    received += value.length;
-    opts.onProgress?.(received, total);
+  // Large files can take hours: only time out when no data arrives for a while.
+  const dl = deadline(opts.signal, STREAM_IDLE_MS);
+  try {
+    const res = await f(url, { credentials: 'include', signal: dl.signal });
+    if (!res.ok) throw new HttpError(res.status);
+    const total = Number(res.headers.get('content-length')) || 0;
+    if (!res.body) return [new Uint8Array(await res.arrayBuffer())];
+    const reader = res.body.getReader();
+    const parts: Uint8Array<ArrayBuffer>[] = [];
+    let received = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      dl.arm();
+      parts.push(value as Uint8Array<ArrayBuffer>);
+      received += value.length;
+      opts.onProgress?.(received, total);
+    }
+    return parts;
+  } catch (e) {
+    throw dl.signal.aborted && !opts.signal?.aborted ? dl.signal.reason : e;
+  } finally {
+    dl.done();
   }
-  return parts;
 }
 
 async function withRetry(seg: SegRef, o: FetchOptions): Promise<Uint8Array<ArrayBuffer>> {
@@ -87,12 +138,14 @@ export async function fetchInOrder(segs: SegRef[], o: FetchOptions): Promise<voi
   let next = 0;
   let delivered = 0;
   let failed: unknown = null;
-  let wake: (() => void) | null = null;
+  // Several workers can wait at once: every change wakes all of them.
+  let waiters: (() => void)[] = [];
   const notify = () => {
-    wake?.();
-    wake = null;
+    const w = waiters;
+    waiters = [];
+    for (const r of w) r();
   };
-  const waitChange = () => new Promise<void>((r) => (wake = r));
+  const waitChange = () => new Promise<void>((r) => waiters.push(r));
 
   let flushing = false;
   async function flush() {

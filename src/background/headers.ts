@@ -13,6 +13,14 @@ interface RuleRef {
 const rules = new Map<string, RuleRef>();
 let nextId = 0;
 
+/** Every rule change runs in turn: concurrent callers can't share ids or leak rules. */
+let queue: Promise<unknown> = Promise.resolve();
+function serial<T>(fn: () => Promise<T>): Promise<T> {
+  const run = queue.then(fn);
+  queue = run.catch(() => undefined);
+  return run;
+}
+
 /** Session rules outlive service-worker restarts: continue numbering after them. */
 async function allocId(): Promise<number> {
   if (nextId === 0) {
@@ -23,13 +31,32 @@ async function allocId(): Promise<number> {
 }
 
 /** Called on browser startup / install: no download can be in flight then. */
-export async function resetHeaderRules(): Promise<void> {
-  const existing = await chrome.declarativeNetRequest.getSessionRules();
-  if (existing.length) {
-    await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: existing.map((r) => r.id) });
-  }
-  rules.clear();
-  nextId = 1;
+export function resetHeaderRules(): Promise<void> {
+  return serial(async () => {
+    const existing = await chrome.declarativeNetRequest.getSessionRules();
+    if (existing.length) {
+      await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: existing.map((r) => r.id) });
+    }
+    rules.clear();
+    nextId = 1;
+  });
+}
+
+/** Removes rules nobody holds (their owner was lost when the service worker restarted). */
+export function sweepHeaderRules(): Promise<void> {
+  return serial(async () => {
+    if (rules.size) return;
+    const existing = await chrome.declarativeNetRequest.getSessionRules();
+    if (existing.length) {
+      await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: existing.map((r) => r.id) });
+    }
+  });
+}
+
+/** What a browser would send: the full URL on the same host, only the origin elsewhere. */
+export function refererFor(pageUrl: string, host: string): string {
+  const page = new URL(pageUrl);
+  return page.hostname === host ? pageUrl : `${page.origin}/`;
 }
 
 /** Adds Referer/Origin rules for the hosts of `urls`; returns a release function. */
@@ -43,50 +70,63 @@ export async function withPageHeaders(pageUrl: string, urls: string[]): Promise<
   if (!/^https?:/.test(origin)) return async () => {};
 
   const hosts = [...new Set(urls.map(hostOf).filter(Boolean))];
-  const keys: string[] = [];
-  const add: chrome.declarativeNetRequest.Rule[] = [];
+  const keys = hosts.map((host) => `${host}|${pageUrl}`);
 
-  for (const host of hosts) {
-    const key = `${host}|${pageUrl}`;
-    keys.push(key);
-    const existing = rules.get(key);
-    if (existing) {
-      existing.refs++;
-      continue;
+  await serial(async () => {
+    const add: chrome.declarativeNetRequest.Rule[] = [];
+    for (const [i, host] of hosts.entries()) {
+      const existing = rules.get(keys[i]!);
+      if (existing) {
+        existing.refs++;
+        continue;
+      }
+      const id = await allocId();
+      rules.set(keys[i]!, { id, refs: 1 });
+      add.push({
+        id,
+        priority: 1,
+        action: {
+          type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
+          requestHeaders: [
+            { header: 'referer', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: refererFor(pageUrl, host) },
+            { header: 'origin', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: origin },
+          ],
+        },
+        condition: {
+          requestDomains: [host],
+          tabIds: [chrome.tabs.TAB_ID_NONE],
+        },
+      });
     }
-    const id = await allocId();
-    rules.set(key, { id, refs: 1 });
-    add.push({
-      id,
-      priority: 1,
-      action: {
-        type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
-        requestHeaders: [
-          { header: 'referer', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: pageUrl },
-          { header: 'origin', operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: origin },
-        ],
-      },
-      condition: {
-        requestDomains: [host],
-        tabIds: [chrome.tabs.TAB_ID_NONE],
-      },
-    });
-  }
-  if (add.length) await chrome.declarativeNetRequest.updateSessionRules({ addRules: add });
+    if (!add.length) return;
+    try {
+      await chrome.declarativeNetRequest.updateSessionRules({ addRules: add });
+    } catch (e) {
+      // Undo the bookkeeping so a later call can try again.
+      for (const key of keys) {
+        const r = rules.get(key);
+        if (r && add.some((a) => a.id === r.id)) rules.delete(key);
+        else if (r) r.refs--;
+      }
+      throw e;
+    }
+  });
 
   let released = false;
-  return async () => {
-    if (released) return;
+  return () => {
+    if (released) return Promise.resolve();
     released = true;
-    const remove: number[] = [];
-    for (const key of keys) {
-      const r = rules.get(key);
-      if (r && --r.refs <= 0) {
-        rules.delete(key);
-        remove.push(r.id);
+    return serial(async () => {
+      const remove: number[] = [];
+      for (const key of keys) {
+        const r = rules.get(key);
+        if (r && --r.refs <= 0) {
+          rules.delete(key);
+          remove.push(r.id);
+        }
       }
-    }
-    if (remove.length) await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: remove });
+      if (remove.length) await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: remove });
+    });
   };
 }
 

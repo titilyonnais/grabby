@@ -81,6 +81,31 @@ describe('Registry', () => {
     expect(byId).toEqual({ c1: 'drm', c2: 'drm', f: 'none' });
   });
 
+  it('absorbs renditions hidden from the quality list (same label) too', async () => {
+    const master = item({
+      id: 'm',
+      kind: 'hls',
+      url: 'https://cdn.com/master.m3u8',
+      variants: [{ id: 'a', label: '720p', url: 'https://cdn.com/720a.m3u8' }],
+      related: ['https://cdn.com/720a.m3u8', 'https://cdn.com/720b.m3u8'],
+    });
+    await reg.upsert(1, item({ id: 'b-first', kind: 'hls', url: 'https://cdn.com/720b.m3u8' }));
+    await reg.upsert(1, master);
+    await reg.upsert(1, item({ id: 'b-later', kind: 'hls', url: 'https://cdn.com/720b.m3u8#t' }));
+    expect((await reg.get(1)).map((i) => i.id)).toEqual(['m']);
+  });
+
+  it('never offers playback capture in frames that streamed from a blocked host', async () => {
+    await reg.upsert(1, item({ id: 'c1', kind: 'capture', frameUrl: 'https://mirror.com/' }));
+    await reg.blockFrame(1, 'https://mirror.com/');
+    await reg.upsert(1, item({ id: 'c2', kind: 'capture', frameUrl: 'https://mirror.com/' }));
+    await reg.upsert(1, item({ id: 'other', kind: 'capture', frameUrl: 'https://site.com/' }));
+    expect((await reg.get(1)).map((i) => i.id)).toEqual(['other']);
+    await reg.clear(1);
+    await reg.upsert(1, item({ id: 'c3', kind: 'capture', frameUrl: 'https://mirror.com/' }));
+    expect((await reg.get(1)).map((i) => i.id)).toEqual(['c3']);
+  });
+
   it('fills missing titles from page info and url', async () => {
     await reg.upsert(1, item({ id: 'a', url: 'https://cdn.com/path/My%20Clip.mp4?x=1' }));
     expect((await reg.get(1))[0]!.title).toBe('My Clip');

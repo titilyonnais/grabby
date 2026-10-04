@@ -27,7 +27,31 @@ const LOG_BUDGET = 48 * 1024 * 1024;
   if (w.__grabbyHook) return;
   w.__grabbyHook = true;
 
-  const post = (msg: Up, transfer: Transferable[] = []) => window.postMessage({ __grabby: 'up', ...msg }, '*', transfer);
+  /*
+   * Private channel to the isolated scanner. The scanner offers a MessagePort at
+   * document_start, before any page script runs, so the page can neither read nor forge
+   * this traffic. Messages sent before the port arrives are queued.
+   */
+  let port: MessagePort | null = null;
+  const early: [Up, Transferable[]][] = [];
+  const post = (msg: Up, transfer: Transferable[] = []) => {
+    if (port) port.postMessage(msg, transfer);
+    else if (early.length < 50) early.push([msg, transfer]);
+  };
+  const onHello = (e: MessageEvent) => {
+    const d = e.data as { __grabby?: string } | null;
+    if (e.source !== window || d?.__grabby !== 'hello' || !e.ports[0]) return;
+    window.removeEventListener('message', onHello, true);
+    e.stopImmediatePropagation();
+    port = e.ports[0];
+    port.onmessage = (m: MessageEvent) => {
+      const d = m.data as Down | null;
+      if (d?.type === 'arm' && Number.isInteger(d.videoIndex)) arm(d.videoIndex);
+      else if (d?.type === 'stop') stop(true);
+    };
+    for (const [msg, transfer] of early.splice(0)) port.postMessage(msg, transfer);
+  };
+  window.addEventListener('message', onHello, true);
 
   /* ----------------------------------------------------------- MSE state */
   interface LogEntry {
@@ -48,13 +72,29 @@ const LOG_BUDGET = 48 * 1024 * 1024;
   let logBytes = 0;
   let drmSeen = false;
 
+  function dropLog(info: SbInfo) {
+    for (const e of info.log ?? []) logBytes -= e.data.byteLength;
+    info.log = null;
+    logged.delete(info);
+  }
+
   function dropLogs(ms?: MediaSource) {
-    for (const info of [...logged]) {
-      if (ms && info.ms !== ms) continue;
-      for (const e of info.log ?? []) logBytes -= e.data.byteLength;
-      info.log = null;
-      logged.delete(info);
+    for (const info of [...logged]) if (!ms || info.ms === ms) dropLog(info);
+  }
+
+  /** Frees the budget held by other (older) players first; false if it still doesn't fit. */
+  function makeRoom(info: SbInfo, need: number): boolean {
+    for (const other of [...logged]) {
+      if (logBytes + need <= LOG_BUDGET) break;
+      if (other.ms !== info.ms) dropLog(other);
     }
+    return logBytes + need <= LOG_BUDGET;
+  }
+
+  /** A detached MediaSource can't play again: release everything kept for it. */
+  function forget(ms: MediaSource) {
+    dropLogs(ms);
+    for (const [url, m] of blobToMs) if (m === ms) blobToMs.delete(url);
   }
 
   /* --------------------------------------------------------------- DRM */
@@ -87,7 +127,11 @@ const LOG_BUDGET = 48 * 1024 * 1024;
   const createObjectURL = URL.createObjectURL;
   URL.createObjectURL = function (obj: Blob | MediaSource) {
     const url = createObjectURL.call(URL, obj);
-    if (typeof MediaSource !== 'undefined' && obj instanceof MediaSource) blobToMs.set(url, obj);
+    if (typeof MediaSource !== 'undefined' && obj instanceof MediaSource) {
+      blobToMs.set(url, obj);
+      // Bound what a page creating many players can make us retain.
+      if (blobToMs.size > 16) blobToMs.delete(blobToMs.keys().next().value!);
+    }
     return url;
   };
 
@@ -98,9 +142,12 @@ const LOG_BUDGET = 48 * 1024 * 1024;
       const info: SbInfo = { mime, ms: this, log: drmSeen ? null : [] };
       sbInfo.set(sb, info);
       if (info.log) logged.add(info);
-      const list = msBuffers.get(this) ?? [];
-      list.push(sb);
-      msBuffers.set(this, list);
+      const list = msBuffers.get(this);
+      if (list) list.push(sb);
+      else {
+        msBuffers.set(this, [sb]);
+        this.addEventListener('sourceclose', () => forget(this), { once: true });
+      }
       return sb;
     };
 
@@ -149,7 +196,7 @@ const LOG_BUDGET = 48 * 1024 * 1024;
     }
 
     if (info.log && !drmSeen) {
-      if (logBytes + bytes.byteLength > LOG_BUDGET) {
+      if (!makeRoom(info, bytes.byteLength)) {
         dropLogs(info.ms);
         return;
       }
@@ -273,11 +320,4 @@ const LOG_BUDGET = 48 * 1024 * 1024;
     void video.play().catch(() => {});
   }
 
-  window.addEventListener('message', (e: MessageEvent) => {
-    if (e.source !== window) return;
-    const d = e.data as ({ __grabby?: string } & Down) | null;
-    if (!d || d.__grabby !== 'down') return;
-    if (d.type === 'arm' && Number.isInteger(d.videoIndex)) arm(d.videoIndex);
-    else if (d.type === 'stop') stop(true);
-  });
 })();

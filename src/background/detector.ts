@@ -14,6 +14,17 @@ function totalFromRange(v: string | undefined): number | undefined {
   return m ? Number(m[1]) : undefined;
 }
 
+/**
+ * A main_frame response that becomes a download (attachment, binary) or a prerendered
+ * page the user hasn't opened yet leaves the current page in place.
+ */
+export function replacesPage(d: { responseHeaders?: chrome.webRequest.HttpHeader[]; documentLifecycle?: string }): boolean {
+  if (d.documentLifecycle === 'prerender') return false;
+  if (/^\s*attachment/i.test(header(d.responseHeaders, 'content-disposition') ?? '')) return false;
+  const type = (header(d.responseHeaders, 'content-type') ?? '').split(';')[0]!.trim().toLowerCase();
+  return !/^application\/(octet-stream|zip|x-zip-compressed|x-msdownload|x-7z-compressed|x-rar-compressed|x-tar|gzip|x-gzip)$/.test(type);
+}
+
 /** Returns true if detection must be skipped for this request (YouTube in the store build). */
 export function blockedByPolicy(...urls: (string | undefined)[]): boolean {
   return youtubeBlocked() && urls.some((u) => !!u && isYouTubeUrl(u));
@@ -47,7 +58,7 @@ export async function handleMediaUrl(
 }
 
 /** Observes (never modifies) responses to find media resources in every tab. */
-export function startDetector(registry: Registry): void {
+export function startDetector(registry: Registry, onNavigate: (tabId: number) => void = () => {}): void {
   const ownOrigin = new URL(chrome.runtime.getURL('')).origin;
 
   chrome.webRequest.onHeadersReceived.addListener(
@@ -55,12 +66,20 @@ export function startDetector(registry: Registry): void {
       if (d.tabId < 0) return;
       if (d.statusCode !== 200 && d.statusCode !== 206) return;
       if (d.type === 'main_frame') {
+        if (!replacesPage(d)) return;
         // A new document always arrives before its own sub-resources: reset here, in order.
         rememberTabUrl(d.tabId, d.url);
         void registry.clear(d.tabId);
+        onNavigate(d.tabId);
         return;
       }
       if (d.initiator === ownOrigin) return;
+      if (blockedByPolicy(d.url)) {
+        // A frame streaming from YouTube's CDN (mirror, custom player…) never gets playback capture.
+        const frameUrl = (d as { documentUrl?: string }).documentUrl;
+        if (frameUrl) void registry.blockFrame(d.tabId, frameUrl);
+        return;
+      }
       const contentType = header(d.responseHeaders, 'content-type');
       const len = Number(header(d.responseHeaders, 'content-length') ?? 0) || undefined;
       const totalSize = totalFromRange(header(d.responseHeaders, 'content-range'));

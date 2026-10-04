@@ -1,6 +1,6 @@
 import { parseDash, type DashRep } from '../parsers/dash';
 import { parseHls, type HlsMedia } from '../parsers/hls';
-import { extOf } from '../parsers/url';
+import { extOf, reachableFrom } from '../parsers/url';
 import { RAW_THRESHOLD, type ErrorCode, type OutputFormat, type Plan, type TrackPlan } from '../shared/plan';
 import type { Settings } from '../shared/settings';
 import type { JobMode, MediaItem } from '../shared/types';
@@ -24,7 +24,7 @@ async function hlsTrack(url: string, fetchText: PlanOptions['fetchText']): Promi
   const parsed = parseHls(await fetchText(url), url);
   if (parsed.type !== 'media') {
     // A master where we expected a media playlist: follow its best variant.
-    const best = [...parsed.variants].sort((a, b) => b.bandwidth - a.bandwidth)[0];
+    const best = parsed.variants.filter((v) => reachableFrom(url, v.url)).sort((a, b) => b.bandwidth - a.bandwidth)[0];
     if (!best || parsed.encrypted) throw new PlanError(parsed.encrypted ? 'protected' : 'unknown');
     return hlsTrack(best.url, fetchText);
   }
@@ -35,7 +35,7 @@ async function hlsTrack(url: string, fetchText: PlanOptions['fetchText']): Promi
     container: parsed.map ? 'fmp4' : 'ts',
     ...(parsed.map ? { init: parsed.map } : {}),
   };
-  return { track, media: parsed };
+  return { track: checkReachable(url, track), media: parsed };
 }
 
 async function planHls(item: MediaItem, o: PlanOptions): Promise<Plan> {
@@ -66,7 +66,7 @@ async function planHls(item: MediaItem, o: PlanOptions): Promise<Plan> {
   }
   const duration = media.duration || item.duration || 0;
   const estimatedSize = variant?.bandwidth ? Math.round((variant.bandwidth * duration) / 8) : undefined;
-  const raw = !audio && (estimatedSize ?? 0) > RAW_THRESHOLD;
+  const raw = tooBig(estimatedSize, !!audio);
   return {
     ...common,
     video,
@@ -78,13 +78,30 @@ async function planHls(item: MediaItem, o: PlanOptions): Promise<Plan> {
   };
 }
 
-function dashTrack(rep: DashRep): TrackPlan {
-  return {
+/**
+ * ffmpeg.wasm works in memory: past ~1.5 GB a single track is concatenated as-is,
+ * and two tracks that would need merging are refused (a lower quality fits).
+ */
+function tooBig(estimatedSize: number | undefined, twoTracks: boolean): boolean {
+  if ((estimatedSize ?? 0) <= RAW_THRESHOLD) return false;
+  if (twoTracks) throw new PlanError('too_large');
+  return true;
+}
+
+/** Every URL a track will fetch must stay out of the local network if its playlist did. */
+function checkReachable(source: string, track: TrackPlan): TrackPlan {
+  const urls = [...(track.init ? [track.init.url] : []), ...track.segments.map((s) => s.url)];
+  if (!urls.every((u) => reachableFrom(source, u))) throw new PlanError('unknown');
+  return track;
+}
+
+function dashTrack(rep: DashRep, source: string): TrackPlan {
+  return checkReachable(source, {
     segments: rep.segments,
     container: rep.mimeType.includes('webm') ? 'webm' : 'fmp4',
     ...(rep.init ? { init: rep.init } : {}),
     ...(rep.codecs ? { codecs: rep.codecs } : {}),
-  };
+  });
 }
 
 async function planDash(item: MediaItem, o: PlanOptions): Promise<Plan> {
@@ -99,20 +116,21 @@ async function planDash(item: MediaItem, o: PlanOptions): Promise<Plan> {
   if (o.mode === 'audio') {
     const src = audioRep ?? videoRep;
     if (!src) throw new PlanError('unknown');
-    const t = dashTrack(src);
+    const t = dashTrack(src, item.url);
     return { ...common, ...(audioRep ? { audio: t } : { video: t }), output: audioOut(o.settings), raw: false, audioOnly: true };
   }
   if (!videoRep) throw new PlanError('unknown');
-  const video = dashTrack(videoRep);
-  const audio = audioRep ? dashTrack(audioRep) : undefined;
+  const video = dashTrack(videoRep, item.url);
+  const audio = audioRep ? dashTrack(audioRep, item.url) : undefined;
   const webm = video.container === 'webm' || audio?.container === 'webm';
   const estimatedSize = Math.round(((videoRep.bandwidth + (audioRep?.bandwidth ?? 0)) * mpd.duration) / 8) || undefined;
+  const raw = tooBig(estimatedSize, !!audio);
   return {
     ...common,
     video,
     ...(audio ? { audio } : {}),
     output: webm ? 'webm' : 'mp4',
-    raw: false,
+    raw,
     audioOnly: false,
     ...(estimatedSize ? { estimatedSize } : {}),
   };

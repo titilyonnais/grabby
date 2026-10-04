@@ -40,6 +40,7 @@
   "err_ffmpeg": { "message": "The file couldn't be assembled. The format may not be supported." },
   "err_protected": { "message": "This video is protected. Grabby doesn't download protected content." },
   "err_live": { "message": "Live streams aren't supported." },
+  "err_too_large": { "message": "Too large to assemble in the browser (over 1.5 GB). Pick a lower quality." },
   "err_capture_failed": { "message": "Nothing was recorded. Start the video, then try again." },
   "err_capture_unavailable": { "message": "This player can't be recorded. Reload the page and try again." },
   "err_canceled": { "message": "Canceled." },

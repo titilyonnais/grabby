@@ -56,3 +56,22 @@ export function hostOf(url: string): string {
     return '';
   }
 }
+
+/** Loopback, private, link-local and .local hosts: the user's own network. */
+export function isPrivateHost(url: string): boolean {
+  const host = hostOf(url).toLowerCase().replace(/^\[|\]$/g, '');
+  if (!host) return false;
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')) return true;
+  const v4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(host);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
+  }
+  return host === '::1' || host === '::' || /^f[cd][0-9a-f]{2}:/.test(host) || /^fe[89ab][0-9a-f]:/.test(host) || host.startsWith('::ffff:');
+}
+
+/**
+ * URLs read from a page or a playlist may not send the extension (which bypasses CORS and
+ * Private Network Access) into the local network, unless they came from there already.
+ */
+export const reachableFrom = (source: string, target: string): boolean => !isPrivateHost(target) || isPrivateHost(source);

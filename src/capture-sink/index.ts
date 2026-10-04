@@ -25,23 +25,29 @@ window.addEventListener('message', (e: MessageEvent) => {
 
   if (d.type === 'open') {
     const jobId = d.jobId;
-    queue = queue.then(async () => {
-      const ok = await chrome.runtime.sendMessage({ target: 'bg', type: 'sink-check', jobId }).catch(() => false);
-      allowedJob = ok === true ? jobId : null;
-    });
+    queue = queue
+      .then(async () => {
+        const ok = await chrome.runtime.sendMessage({ target: 'bg', type: 'sink-check', jobId }).catch(() => false);
+        allowedJob = ok === true ? jobId : null;
+      })
+      .catch(() => {});
     return;
   }
 
   if (d.type === 'chunk') {
     const c = d as ChunkMsg;
     if (!(c.data instanceof ArrayBuffer) || !Number.isInteger(c.track) || !Number.isInteger(c.seq)) return;
-    const origin = e.origin;
-    queue = queue.then(async () => {
-      if (c.jobId === allowedJob) {
-        await putChunk({ jobId: c.jobId, track: c.track, seq: c.seq, init: !!c.init, data: c.data }, String(c.mime).slice(0, 200)).catch(() => {});
-      }
-      window.parent.postMessage({ grabbySink: 'ack' }, origin);
-    });
+    // A sandboxed parent has an opaque origin ('null'), which isn't a valid target: acks
+    // carry no data, so '*' is safe there.
+    const target = e.origin === 'null' ? '*' : e.origin;
+    queue = queue
+      .then(async () => {
+        if (c.jobId === allowedJob) {
+          await putChunk({ jobId: c.jobId, track: c.track, seq: c.seq, init: !!c.init, data: c.data }, String(c.mime).slice(0, 200)).catch(() => {});
+        }
+      })
+      .finally(() => window.parent.postMessage({ grabbySink: 'ack' }, target))
+      .catch(() => {});
   }
 });
 
