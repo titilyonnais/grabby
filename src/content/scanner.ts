@@ -142,7 +142,7 @@ const MAX_DECLARED = 12;
 
 /**
  * Video URLs the page names without having played them: sharing metadata, schema.org
- * `contentUrl`, the <source> list of a player that hasn't loaded yet, direct links.
+ * `contentUrl`, the <source> list of a player (other qualities, or not loaded yet), direct links.
  * The service worker checks each one's first bytes before listing it.
  */
 function declaredMedia(ld: { contentUrl?: string }): string[] {
@@ -156,9 +156,9 @@ function declaredMedia(ld: { contentUrl?: string }): string[] {
     add(meta('twitter:player:stream'));
     add(ld.contentUrl);
   }
+  // Every <source> of a player: the qualities it offers (Plyr, video.js…) besides the one playing.
   for (const v of deepVideos()) {
-    if (v.currentSrc) continue;
-    for (const s of v.querySelectorAll('source')) add(s.src);
+    for (const s of v.querySelectorAll('source')) if (s.src !== v.currentSrc) add(s.src);
   }
   for (const a of document.querySelectorAll<HTMLAnchorElement>('a[href]')) {
     if (urls.size >= MAX_DECLARED) break;

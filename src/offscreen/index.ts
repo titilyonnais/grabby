@@ -119,6 +119,8 @@ async function run(jobId: string, plan: Plan) {
   const rep = reporter(jobId);
   const dir = `/j${jobId}`;
   const ff = plan.raw ? null : getFFmpeg();
+  // Share of the progress bar for fetching: shrinking the picture is the long part.
+  const fetched = plan.scale ? 0.3 : 0.9;
   rep.send(plan.kind === 'capture' ? 'processing' : 'downloading', 0, true);
   const heartbeat = setInterval(() => rep.beat(), HEARTBEAT_MS);
   try {
@@ -169,17 +171,17 @@ async function run(jobId: string, plan: Plan) {
             onData: async (_i, data) => {
               await f.append(path, data);
               done++;
-              rep.send('downloading', (done / total) * 0.9);
+              rep.send('downloading', (done / total) * fetched);
             },
           });
         }
       }
 
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-      rep.send('processing', 0.9, true);
+      rep.send('processing', fetched, true);
       let made: { out: string; ext: string } | null = null;
-      for (const attempt of muxAttempts(inputs, output, plan.audioOnly, `${dir}/out`)) {
-        const code = await f.exec(attempt.args, (p) => rep.send('processing', 0.9 + p * 0.1));
+      for (const attempt of muxAttempts(inputs, output, plan.audioOnly, `${dir}/out`, plan.scale)) {
+        const code = await f.exec(attempt.args, (p) => rep.send('processing', fetched + p * (1 - fetched)));
         if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
         if (code === 0) {
           made = attempt;

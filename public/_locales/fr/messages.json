@@ -110,5 +110,9 @@
   "badgeQueued": { "message": "Grabby — téléchargement en attente" },
   "badgeProgress": {"message": "Grabby — $P1$ % : $P2$", "placeholders": {"p1": {"content": "$1"}, "p2": {"content": "$2"}}},
   "badgeMany": {"message": "$P1$ téléchargements", "placeholders": {"p1": {"content": "$1"}}},
-  "toastShow": { "message": "Afficher" }
+  "toastShow": { "message": "Afficher" },
+  "quality_group_source": { "message": "Proposées par le site" },
+  "quality_group_shrink": { "message": "Réduire (conversion, plus lent)" },
+  "quality_shrunk": { "message": "Conversion" },
+  "shrinkHint": { "message": "Grabby réduit l'image lui-même, dans le navigateur : c'est bien plus lent qu'un simple téléchargement (plusieurs minutes, davantage pour un film). Ça continue même si tu fermes cette fenêtre." }
 }

@@ -110,5 +110,9 @@
   "badgeQueued": { "message": "Grabby — download queued" },
   "badgeProgress": {"message": "Grabby — $P1$%: $P2$", "placeholders": {"p1": {"content": "$1"}, "p2": {"content": "$2"}}},
   "badgeMany": {"message": "$P1$ downloads", "placeholders": {"p1": {"content": "$1"}}},
-  "toastShow": { "message": "Show" }
+  "toastShow": { "message": "Show" },
+  "quality_group_source": { "message": "Offered by the site" },
+  "quality_group_shrink": { "message": "Shrink (conversion, slower)" },
+  "quality_shrunk": { "message": "Conversion" },
+  "shrinkHint": { "message": "Grabby shrinks the picture itself, in the browser: much slower than a plain download (several minutes, more for a film). It keeps going in the background." }
 }

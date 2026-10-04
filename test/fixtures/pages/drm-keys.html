@@ -1,0 +1,12 @@
+<!doctype html><html><head><meta charset="utf-8"><title>EME player</title></head>
+<body><h1>EME</h1>
+<!-- A DRM player: gets a key system, creates keys and attaches them to its <video>. -->
+<video id="v" src="/media/sample.mp4" controls muted preload="auto" width="640"></video>
+<script>
+const cfg = [{ initDataTypes: ['cenc', 'keyids'], videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"' }] }];
+navigator.requestMediaKeySystemAccess('org.w3.clearkey', cfg)
+  .then((a) => a.createMediaKeys())
+  .then((keys) => document.getElementById('v').setMediaKeys(keys))
+  .then(() => (document.body.dataset.ready = 'keys'), (e) => (document.body.dataset.ready = 'failed: ' + e));
+</script>
+</body></html>

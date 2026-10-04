@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Player that probes DRM support</title></head>
+<body><h1>Probe</h1>
+<!-- Like many players and ad SDKs: asks which DRM systems exist, then plays a clear video. -->
+<video id="v" src="/media/sample.mp4" controls muted preload="auto" width="640"></video>
+<script>
+const cfg = [{ initDataTypes: ['cenc'], videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"' }] }];
+Promise.allSettled(['org.w3.clearkey', 'com.widevine.alpha', 'com.microsoft.playready.recommendation'].map((k) => navigator.requestMediaKeySystemAccess(k, cfg)))
+  .then(() => (document.body.dataset.ready = '1'));
+</script>
+</body></html>

@@ -7,6 +7,9 @@ export type Sniffed = {
   container: 'mp4' | 'webm' | 'mp3' | 'aac' | 'ogg' | 'ts' | 'flv';
   encrypted: boolean;
   duration?: number;
+  /** Picture size of the video track, when the header tells. */
+  width?: number;
+  height?: number;
 };
 
 const ascii = (b: Uint8Array, at: number, n: number) => String.fromCharCode(...b.subarray(at, at + n));
@@ -24,6 +27,8 @@ interface Mp4State {
   moov?: boolean;
   /** A fragment came before any movie header: a stream segment (DASH/HLS/MSE chunk). */
   segment?: boolean;
+  width?: number;
+  height?: number;
   timescale?: number;
   duration?: number;
   fragmentDuration?: number;
@@ -61,6 +66,17 @@ function walkMp4(b: Uint8Array, start: number, end: number, st: Mp4State, depth:
         st.timescale = readUint(b, ts, 4);
         st.duration = readUint(b, ts + 4, v1 ? 8 : 4);
       }
+    } else if (type === 'tkhd') {
+      // Track header: width and height (16.16 fixed point) close its body; 0 for sound.
+      const at = body + (b[body] === 1 ? 88 : 76);
+      if (at + 8 <= boxEnd) {
+        const w = readUint(b, at, 4) >>> 16;
+        const h = readUint(b, at + 4, 4) >>> 16;
+        if (w > (st.width ?? 0)) {
+          st.width = w;
+          st.height = h;
+        }
+      }
     } else if (type === 'mehd' && body + 8 <= boxEnd) {
       st.fragmentDuration = readUint(b, body + 4, b[body] === 1 ? 8 : 4);
     } else if (type === 'stsd' && body + 8 <= boxEnd) {
@@ -81,7 +97,7 @@ function sniffMp4(b: Uint8Array): Sniffed | null {
   if (st.segment) return null;
   const units = st.duration || st.fragmentDuration;
   const duration = st.timescale && units && units < 2 ** 52 ? units / st.timescale : undefined;
-  return { container: 'mp4', encrypted: st.encrypted, ...(duration ? { duration } : {}) };
+  return { container: 'mp4', encrypted: st.encrypted, ...(duration ? { duration } : {}), ...(st.width && st.height ? { width: st.width, height: st.height } : {}) };
 }
 
 /* ------------------------------------------------------------------- WebM */
@@ -110,13 +126,23 @@ const EBML_CONTENT_ENCODING = 0x6240;
 const EBML_CONTENT_ENCRYPTION = 0x5035;
 const EBML_TIMECODE_SCALE = 0x2ad7b1;
 const EBML_DURATION = 0x4489;
-const EBML_MASTERS = new Set([EBML_SEGMENT, EBML_INFO, EBML_TRACKS, EBML_TRACK_ENTRY, EBML_CONTENT_ENCODINGS, EBML_CONTENT_ENCODING]);
+const EBML_VIDEO = 0xe0;
+const EBML_PIXEL_WIDTH = 0xb0;
+const EBML_PIXEL_HEIGHT = 0xba;
+const EBML_MASTERS = new Set([EBML_SEGMENT, EBML_INFO, EBML_TRACKS, EBML_TRACK_ENTRY, EBML_CONTENT_ENCODINGS, EBML_CONTENT_ENCODING, EBML_VIDEO]);
 
 function sniffWebm(b: Uint8Array): Sniffed | null {
   if (b.length < 4 || b[0] !== 0x1a || b[1] !== 0x45 || b[2] !== 0xdf || b[3] !== 0xa3) return null;
   let encrypted = false;
   let scale = 1_000_000;
   let rawDuration: number | undefined;
+  let width: number | undefined;
+  let height: number | undefined;
+  const uint = (from: number, to: number) => {
+    let v = 0;
+    for (let i = from; i < to; i++) v = v * 256 + b[i]!;
+    return v;
+  };
   const view = new DataView(b.buffer, b.byteOffset, b.byteLength);
 
   const walk = (start: number, end: number, depth: number) => {
@@ -132,6 +158,10 @@ function sniffWebm(b: Uint8Array): Sniffed | null {
       else if (id.value === EBML_TIMECODE_SCALE && bodyEnd - body <= 8) {
         scale = 0;
         for (let i = body; i < bodyEnd; i++) scale = scale * 256 + b[i]!;
+      } else if (id.value === EBML_PIXEL_WIDTH && bodyEnd - body <= 4) {
+        width ??= uint(body, bodyEnd);
+      } else if (id.value === EBML_PIXEL_HEIGHT && bodyEnd - body <= 4) {
+        height ??= uint(body, bodyEnd);
       } else if (id.value === EBML_DURATION) {
         if (bodyEnd - body === 8) rawDuration = view.getFloat64(body);
         else if (bodyEnd - body === 4) rawDuration = view.getFloat32(body);
@@ -148,7 +178,12 @@ function sniffWebm(b: Uint8Array): Sniffed | null {
   if (!headSize || headSize.value < 0) return { container: 'webm', encrypted };
   walk(head.len + headSize.len + headSize.value, b.length, 0);
   const duration = rawDuration && scale ? (rawDuration * scale) / 1e9 : undefined;
-  return { container: 'webm', encrypted, ...(duration && Number.isFinite(duration) ? { duration } : {}) };
+  return {
+    container: 'webm',
+    encrypted,
+    ...(duration && Number.isFinite(duration) ? { duration } : {}),
+    ...(width && height ? { width, height } : {}),
+  };
 }
 
 /* ------------------------------------------------------------------ other */

@@ -78,7 +78,7 @@ console.log('✓ fixtures written to test/fixtures/media');
 
 /** Fixtures added in 1.1 (also runnable alone: `node scripts/make-fixtures.mjs --extras`). */
 async function extras() {
-  for (const d of ['mse-webm', 'encrypted', 'preview']) await mkdir(join(out, d), { recursive: true });
+  for (const d of ['mse-webm', 'encrypted', 'preview', 'qualities']) await mkdir(join(out, d), { recursive: true });
   const VP9 = ['-c:v', 'libvpx-vp9', '-b:v', '300k', '-deadline', 'realtime', '-cpu-used', '8', '-g', '50'];
   const OPUS = ['-c:a', 'libopus', '-b:a', '48k'];
   // 7. WebM (VP9 + Opus): container detection and "record to MP4" without re-encoding.
@@ -93,4 +93,6 @@ async function extras() {
     '-movflags', '+faststart', join(out, 'encrypted/movie.mp4'));
   // 9. Short muted loop, like hover previews on video portals: not a real video.
   ff('-f', 'lavfi', '-i', 'testsrc2=size=426x240:rate=25', '-t', '4', ...H264, '-an', '-movflags', '+faststart', join(out, 'preview/teaser.mp4'));
+  // 10. The same video in a smaller quality, offered by the player as a second <source>.
+  ff(...SRC('426x240'), ...H264, ...AAC, '-movflags', '+faststart', join(out, 'qualities/clip-240.mp4'));
 }

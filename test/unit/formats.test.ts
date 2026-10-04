@@ -41,7 +41,8 @@ describe('stream segments are not files', () => {
   it('rejects fMP4 segments, keeps whole and fragmented files', () => {
     expect(sniffMedia(head('dash/chunk-stream0-00002.m4s'))).toBeNull();
     expect(sniffMedia(head('hls-fmp4/seg1.m4s'))).toBeNull();
-    expect(sniffMedia(head('sample.mp4'))).toMatchObject({ container: 'mp4', duration: 6 });
+    expect(sniffMedia(head('sample.mp4'))).toMatchObject({ container: 'mp4', duration: 6, width: 640, height: 360 });
+    expect(sniffMedia(head('sample.webm'))).toMatchObject({ container: 'webm', width: 640, height: 360 });
     expect(sniffMedia(head('mse/video.mp4'))).toMatchObject({ container: 'mp4' });
   });
 });

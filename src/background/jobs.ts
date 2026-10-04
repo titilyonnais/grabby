@@ -1,5 +1,6 @@
 import { hostOf } from '../parsers/url';
 import { isAudioFormat, VIDEO_FORMATS } from '../shared/formats';
+import { canShrink, scaleChoices } from '../shared/scale';
 import { buildFilename } from '../shared/filename';
 import { uid } from '../shared/ids';
 import type { BgToContent, ContentToBg, OffscreenToBg } from '../shared/messages';
@@ -15,6 +16,7 @@ import { hiddenPlayerUrl } from '../features/youtube';
 import { allowHiddenPlayer } from './headers';
 import { ensureOffscreen } from './offscreen-client';
 import type { Registry } from './registry';
+import { findVisible } from './visible';
 
 const STORE_KEY = 'jobs';
 const MAX_PARALLEL = 2;
@@ -120,13 +122,22 @@ export class JobManager {
 
   /* -------------------------------------------------------------- commands */
 
-  async start(tabId: number, mediaId: string, variantId: string | undefined, mode: JobMode, format?: OutputFormat): Promise<Job | undefined> {
+  async start(
+    tabId: number,
+    mediaId: string,
+    variantId: string | undefined,
+    mode: JobMode,
+    format?: OutputFormat,
+    scale?: number,
+  ): Promise<Job | undefined> {
     await this.ready;
-    const item = await this.registry.find(tabId, mediaId);
+    const item = findVisible(await this.registry.get(tabId), mediaId);
     if (!item) return undefined;
+    // Only the smaller qualities the card offers.
+    if (scale !== undefined && (mode !== 'video' || !canShrink(item) || !scaleChoices(item.variants).includes(scale))) scale = undefined;
     const dup = [...this.jobs.values()].find(
       (j) =>
-        j.tabId === tabId && j.mediaId === mediaId && j.mode === mode && j.variantId === variantId &&
+        j.tabId === tabId && j.mediaId === mediaId && j.mode === mode && j.variantId === variantId && j.scale === scale &&
         !FINISHED.includes(j.status),
     );
     if (dup) return dup;
@@ -147,7 +158,7 @@ export class JobManager {
       kind: item.kind,
       startedAt: Date.now(),
       ...(variantId ? { variantId } : {}),
-      ...(mode === 'video' && variant ? { quality: variant.label } : {}),
+      ...(scale ? { scale, quality: `${scale}p` } : mode === 'video' && variant ? { quality: variant.label } : {}),
       ...(format && (mode === 'audio' ? isAudioFormat(format) : (item.formats ?? VIDEO_FORMATS).includes(format as VideoFormat)) ? { format } : {}),
       ...(item.ytId ? { hidden: true } : {}),
       ...(item.frameId !== undefined ? { frameId: item.frameId } : {}),
@@ -165,7 +176,7 @@ export class JobManager {
     const j = this.jobs.get(jobId);
     if (!j || !FINISHED.includes(j.status)) return;
     this.jobs.delete(jobId);
-    await this.start(j.tabId, j.mediaId, j.variantId, j.mode, j.format);
+    await this.start(j.tabId, j.mediaId, j.variantId, j.mode, j.format, j.scale);
   }
 
   async dismiss(jobId: string): Promise<void> {
@@ -229,7 +240,7 @@ export class JobManager {
   private async run(job: Job) {
     this.update(job.id, { status: 'downloading', progress: 0 });
     try {
-      const item = await this.registry.find(job.tabId, job.mediaId);
+      const item = findVisible(await this.registry.get(job.tabId), job.mediaId);
       if (!item) return this.fail(job.id, 'unknown');
       const settings = await getSettings();
       const plan = await buildPlan(item, {
@@ -238,11 +249,12 @@ export class JobManager {
         settings,
         fetchText: (u) => fetchTextAs(u, item.pageUrl),
         ...(job.variantId ? { variantId: job.variantId } : {}),
+        ...(job.scale ? { scale: job.scale } : {}),
       });
       if (this.gone(job.id)) return;
       this.update(job.id, { raw: plan.raw, ...(plan.estimatedSize ? { bytes: 0 } : {}) });
 
-      if (plan.kind === 'file' && plan.direct) return await this.direct(job, item.url, plan.output, settings);
+      if (plan.kind === 'file' && plan.direct) return await this.direct(job, plan.video?.segments[0]?.url ?? item.url, plan.output, settings);
       if (plan.kind === 'capture') {
         return __TARGET__ === 'github' && item.ytId ? await this.startHidden(job, plan, item) : await this.startCapture(job, plan);
       }

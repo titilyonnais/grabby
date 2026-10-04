@@ -4,7 +4,8 @@ import { extOf, reachableFrom } from '../parsers/url';
 import { isAudioFormat, sourceFormat } from '../shared/formats';
 import { RAW_THRESHOLD, type ErrorCode, type OutputFormat, type Plan, type TrackPlan } from '../shared/plan';
 import type { Settings } from '../shared/settings';
-import type { JobMode, MediaItem } from '../shared/types';
+import { scaleBox, scaleSource } from '../shared/scale';
+import type { JobMode, MediaItem, Variant } from '../shared/types';
 
 export class PlanError extends Error {
   constructor(public code: ErrorCode) {
@@ -17,12 +18,36 @@ export interface PlanOptions {
   /** Chosen output (video container or audio format); defaults to the user's settings. */
   format?: OutputFormat;
   variantId?: string;
+  /** Make a smaller quality (e.g. 360 for 360p) by shrinking the picture. */
+  scale?: number;
   settings: Settings;
   fetchText: (url: string) => Promise<string>;
 }
 
 const audioOut = (o: PlanOptions): OutputFormat => (isAudioFormat(o.format) ? o.format : o.settings.audioFormat);
-const videoOut = (o: PlanOptions): OutputFormat => (o.format && !isAudioFormat(o.format) ? o.format : o.settings.videoFormat);
+const videoOut = (o: PlanOptions): OutputFormat => {
+  const f = o.format && !isAudioFormat(o.format) ? o.format : o.settings.videoFormat;
+  // Shrunk pictures are H.264, which WebM can't hold.
+  return scaling(o) && f === 'webm' ? 'mp4' : f;
+};
+
+/** Shrinking: only for a video. */
+const scaling = (o: PlanOptions) => (o.mode === 'video' && o.scale ? o.scale : undefined);
+
+/** The quality to download: the one chosen, or the one to shrink from. */
+function chosenVariant(variants: Variant[], o: PlanOptions): Variant | undefined {
+  const lines = scaling(o);
+  if (lines) return scaleSource(variants, lines);
+  return variants.find((v) => v.id === o.variantId) ?? variants[0];
+}
+
+/** Plan fields for a shrunk picture; refused when the source is too big to work on in memory. */
+function scaled(o: PlanOptions, source: Variant | undefined, estimatedSize: number | undefined): Pick<Plan, 'scale'> {
+  const lines = scaling(o);
+  if (!lines) return {};
+  if ((estimatedSize ?? 0) > RAW_THRESHOLD) throw new PlanError('too_large');
+  return { scale: scaleBox(lines, source) };
+}
 
 async function hlsTrack(url: string, fetchText: PlanOptions['fetchText']): Promise<{ track: TrackPlan; media: HlsMedia }> {
   const parsed = parseHls(await fetchText(url), url);
@@ -60,7 +85,7 @@ async function planHls(item: MediaItem, o: PlanOptions): Promise<Plan> {
     return { ...common, video: track, output: audioOut(o), raw: false, audioOnly: true };
   }
 
-  const variant = pick(o.variantId);
+  const variant = chosenVariant(variants, o);
   const { track: video, media } = await hlsTrack(variant?.url ?? item.url, o.fetchText);
   let audio: TrackPlan | undefined;
   if (variant?.audioGroup) {
@@ -70,11 +95,13 @@ async function planHls(item: MediaItem, o: PlanOptions): Promise<Plan> {
   }
   const duration = media.duration || item.duration || 0;
   const estimatedSize = variant?.bandwidth ? Math.round((variant.bandwidth * duration) / 8) : undefined;
+  const scale = scaled(o, variant, estimatedSize);
   const raw = tooBig(estimatedSize, !!audio);
   return {
     ...common,
     video,
     ...(audio ? { audio } : {}),
+    ...scale,
     output: raw ? (video.container === 'ts' ? 'ts' : 'mp4') : videoOut(o),
     raw,
     audioOnly: false,
@@ -113,7 +140,8 @@ async function planDash(item: MediaItem, o: PlanOptions): Promise<Plan> {
   if (mpd.protected) throw new PlanError('protected');
   if (mpd.dynamic) throw new PlanError('live');
   const byBw = (a: DashRep, b: DashRep) => b.bandwidth - a.bandwidth;
-  const videoRep = mpd.video.find((r) => r.id === o.variantId) ?? [...mpd.video].sort(byBw)[0];
+  const pickedId = chosenVariant(item.variants, o)?.id ?? o.variantId;
+  const videoRep = mpd.video.find((r) => r.id === pickedId) ?? [...mpd.video].sort(byBw)[0];
   const audioRep = [...mpd.audio].sort(byBw)[0];
   const common = { kind: 'stream' as const, pageUrl: item.pageUrl };
 
@@ -128,11 +156,13 @@ async function planDash(item: MediaItem, o: PlanOptions): Promise<Plan> {
   const audio = audioRep ? dashTrack(audioRep, item.url) : undefined;
   const webm = video.container === 'webm' || audio?.container === 'webm';
   const estimatedSize = Math.round(((videoRep.bandwidth + (audioRep?.bandwidth ?? 0)) * mpd.duration) / 8) || undefined;
+  const scale = scaled(o, item.variants.find((v) => v.id === videoRep.id), estimatedSize);
   const raw = tooBig(estimatedSize, !!audio);
   return {
     ...common,
     video,
     ...(audio ? { audio } : {}),
+    ...scale,
     output: raw && webm ? 'webm' : raw ? 'mp4' : videoOut(o),
     raw,
     audioOnly: false,
@@ -159,19 +189,25 @@ export async function buildPlan(item: MediaItem, o: PlanOptions): Promise<Plan> 
         pageUrl: item.pageUrl,
       };
     case 'file': {
-      const src = sourceFormat(extOf(item.url), item.mime);
+      // A video offered in several qualities: each one is its own file.
+      const variant = o.mode === 'audio' ? undefined : chosenVariant(item.variants, o);
+      const url = variant?.url || item.url;
+      const size = variant?.size ?? item.size;
+      const src = sourceFormat(extOf(url), item.mime);
       const wanted = o.mode === 'audio' ? audioOut(o) : videoOut(o);
+      const scale = scaled(o, variant, size);
       // Converting works in memory: past ~1.5 GB the file is saved as it is.
-      const big = (item.size ?? 0) > RAW_THRESHOLD;
-      const keep = (wanted === src || big) && (o.mode === 'video' || !!item.audioOnly);
+      const big = (size ?? 0) > RAW_THRESHOLD;
+      const keep = !scale.scale && (wanted === src || big) && (o.mode === 'video' || !!item.audioOnly);
       return {
         kind: 'file',
-        video: { segments: [{ url: item.url }], container: 'file' },
+        video: { segments: [{ url }], container: 'file' },
         output: keep ? (src ?? wanted) : wanted,
         raw: false,
         ...(keep ? { direct: true } : {}),
+        ...scale,
         audioOnly: o.mode === 'audio',
-        ...(item.size ? { estimatedSize: item.size } : {}),
+        ...(size ? { estimatedSize: size } : {}),
         pageUrl: item.pageUrl,
       };
     }

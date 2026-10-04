@@ -77,7 +77,7 @@ export interface PopupState {
 
 export type PopupToBg =
   | { type: 'subscribe'; tabId: number }
-  | { type: 'download'; mediaId: string; variantId?: string; mode: JobMode; format?: OutputFormat }
+  | { type: 'download'; mediaId: string; variantId?: string; mode: JobMode; format?: OutputFormat; scale?: number }
   | { type: 'cancel'; jobId: string }
   | { type: 'finish-capture'; jobId: string }
   | { type: 'retry'; jobId: string }

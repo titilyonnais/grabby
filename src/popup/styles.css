@@ -732,7 +732,9 @@ p {
   align-items: center;
   text-align: center;
   gap: 8px;
-  padding: 36px 24px 40px;
+  padding: 24px 24px 32px;
+  /* Centered in the space left (the popup has a fixed height). */
+  margin: auto 0;
 }
 
 .state__icon {

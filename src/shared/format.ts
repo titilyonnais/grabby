@@ -21,9 +21,16 @@ export function formatBytes(n: number): string {
   return `${rounded} ${UNITS[i]}`;
 }
 
-/** "720p" from a resolution; the short side counts, so a vertical 1080×1920 video is 1080p. */
+/**
+ * "1080p" from a resolution, the way people name it: a film letterboxed to 1920×800 is
+ * 1080p (it's 16:9 width that counts), and so is a vertical 1080×1920 video.
+ */
 export function qualityLabel(height?: number, bandwidth?: number, width?: number): string {
-  const lines = height && width ? Math.min(height, width) : height;
+  let lines = height;
+  if (height && width) {
+    const [long, short] = width >= height ? [width, height] : [height, width];
+    lines = Math.max(short, Math.round((long * 9) / 16));
+  }
   if (lines) return `${lines}p`;
   if (bandwidth) {
     return bandwidth >= 1_000_000

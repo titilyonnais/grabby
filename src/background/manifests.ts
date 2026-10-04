@@ -145,7 +145,16 @@ export function resolveDash(url: string, ctx: DetectContext, fetchText: FetchTex
 export function fileItem(
   url: string,
   ctx: DetectContext,
-  info: { mime?: string; size?: number; audioOnly?: boolean; duration?: number; protection?: MediaItem['protection']; linked?: boolean },
+  info: {
+    mime?: string;
+    size?: number;
+    audioOnly?: boolean;
+    duration?: number;
+    protection?: MediaItem['protection'];
+    linked?: boolean;
+    width?: number;
+    height?: number;
+  },
 ): MediaItem {
   const item = baseItem(url, ctx, 'file');
   if (info.mime) item.mime = info.mime;
@@ -157,5 +166,18 @@ export function fileItem(
   item.linked = info.linked ? true : undefined;
   // A WebM file holds VP8/VP9/AV1: it can't become an AVI/MOV/TS without re-encoding.
   if (!info.audioOnly) item.formats = videoFormatsFor(/webm/.test(info.mime ?? '') || extOf(url) === 'webm' ? 'vp9' : '');
+  // Its resolution, read from its header: shown on the card, and how its copies are told apart.
+  if (!info.audioOnly && info.width && info.height) {
+    item.variants = [
+      {
+        id: item.id,
+        label: qualityLabel(info.height, undefined, info.width),
+        url,
+        width: info.width,
+        height: info.height,
+        ...(info.size ? { size: info.size } : {}),
+      },
+    ];
+  }
   return item;
 }

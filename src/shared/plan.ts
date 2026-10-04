@@ -31,6 +31,8 @@ export interface Plan {
   audioOnly: boolean;
   estimatedSize?: number;
   pageUrl: string;
+  /** Shrink the picture to fit this box (re-encoded in H.264): a quality the source lacks. */
+  scale?: { w: number; h: number };
   /** Capture: recorded tracks that belong to the video (others are ads or abandoned players). */
   keepTracks?: number[];
 }

@@ -24,6 +24,11 @@ describe('format', () => {
     // Vertical video: the short side names the quality.
     expect(qualityLabel(1920, 0, 1080)).toBe('1080p');
     expect(qualityLabel(720, 0, 1280)).toBe('720p');
+    // Films letterboxed to cinema formats keep the name of their width.
+    expect(qualityLabel(800, 0, 1920)).toBe('1080p');
+    expect(qualityLabel(534, 0, 1280)).toBe('720p');
+    expect(qualityLabel(1608, 0, 3840)).toBe('2160p');
+    expect(qualityLabel(1036, 0, 1920)).toBe('1080p');
   });
   it('hashId is stable and short', () => {
     expect(hashId('abc')).toBe(hashId('abc'));

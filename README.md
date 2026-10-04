@@ -17,12 +17,19 @@
 
 ---
 
-<!-- release:1.2.1 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
-## Nouveautés de la version 1.2.1
+<!-- release:1.3.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
+## Nouveautés de la version 1.3.0
 
-- **Correctif** : l'infobulle de l'icône affiche de nouveau « Grabby » après un téléchargement.
-- **Suivi des versions** : un [journal des modifications](CHANGELOG.md) détaillé en
-  français, ce README tenu à jour, et des notes de release tirées du journal.
+- **Toutes les qualités d'un lecteur** dans une seule carte : quand un site propose la même
+  vidéo en plusieurs fichiers ou flux, tu choisis la qualité dans la liste, et la meilleure
+  est choisie par défaut.
+- **Réduire la qualité** : une vidéo proposée seulement en 4K (ou en 1080p) peut être
+  enregistrée en 720p, 480p, 360p, 240p ou 144p. Grabby réduit l'image lui-même, c'est plus
+  lent qu'un simple téléchargement.
+- **Résolution réelle** des fichiers affichée, et films au format cinéma nommés comme sur
+  les lecteurs (1920 × 800 = 1080p).
+- **Corrigé** : fausses alertes « Protégé » et avertissement PlayReady dans les erreurs de
+  l'extension ; messages vides centrés dans la popup.
 
 **Rappel de la 1.2.0** :
 - **Popup stable** : elle garde la même taille partout, les cartes sont centrées et la
@@ -70,7 +77,10 @@ Le détail de chaque version est dans le [journal des modifications](CHANGELOG.m
 
   La vidéo en cours de lecture et les vidéos longues passent en tête de liste.
 - **Qualité et format** au choix : 6 formats vidéo et 6 formats audio (voir
-  [plus bas](#formats-denregistrement)), sans jamais réencoder l'image.
+  [plus bas](#formats-denregistrement)). Toutes les qualités qu'un lecteur propose sont
+  réunies dans une seule carte, avec la résolution réelle de chaque fichier.
+- **Réduire la qualité** : les qualités plus petites que la source (jusqu'à 144p) peuvent
+  être fabriquées par Grabby, même quand le site ne les propose pas.
 - **Vrais titres et miniatures** : métadonnées de la page, sinon une image de la vidéo.
 - **Suivi** : progression dans la popup et sur l'icône, bulle et notification à la fin,
   annulation, nouvel essai, bouton retélécharger, historique des 50 derniers
@@ -84,7 +94,7 @@ Le détail de chaque version est dans le [journal des modifications](CHANGELOG.m
 |---|---|
 | **DRM et chiffrement** | Netflix, Prime Video, Disney+, Paramount+, myCanal, contenus payants… Contourner une mesure technique de protection est illégal (art. L.335-3-1 CPI, directive 2001/29/CE, DMCA §1201). Grabby détecte ces contenus (EME, `EXT-X-KEY`, `ContentProtection`, fichiers chiffrés) et les affiche « Protégé ». Pour regarder hors connexion, utilise le téléchargement intégré aux applications officielles. |
 | **Directs (live)** | Les diffusions en direct sont signalées mais pas enregistrées. |
-| **Réencodage de l'image** | Trop lent dans un navigateur : seuls les formats compatibles avec la source sont proposés. |
+| **Réencodage pour changer de format** | Trop lent dans un navigateur : seuls les formats compatibles avec la source sont proposés. L'image n'est réencodée que si tu demandes une qualité plus petite (groupe « Réduire »). |
 
 > Télécharge uniquement des vidéos que tu as le droit de conserver (les tiennes, sous licence
 > libre ou avec l'accord de l'auteur) et respecte les conditions d'utilisation des sites.
@@ -127,7 +137,11 @@ npm run zip        # → release/*.zip
    Grabby.
 2. Clique sur l'icône. La vidéo principale est en haut, les autres en dessous.
 3. Choisis la **qualité** et le **format** dans les deux listes, puis **Télécharger** (ou
-   **Enregistrer la lecture** pour un lecteur sans fichier).
+   **Enregistrer la lecture** pour un lecteur sans fichier). La liste des qualités a deux
+   groupes :
+   - **Proposées par le site** : téléchargées telles quelles, rapide ;
+   - **Réduire (conversion, plus lent)** : des qualités plus petites, fabriquées par
+     Grabby à partir de la source (taille approximative indiquée).
 4. Pendant le téléchargement, l'icône affiche le **pourcentage**. À la fin, elle affiche
    **✓**, une **bulle** apparaît en bas à droite de la page et une notification système
    est envoyée. Le bouton **Afficher** ouvre le dossier du fichier.
@@ -160,8 +174,9 @@ npm run zip        # → release/*.zip
 | **FLAC** | Audio | Sans perte | toujours |
 | **WAV** | Audio | Non compressé | toujours |
 
-L'image est **copiée telle quelle**, jamais réencodée. Le son est copié quand le format le
-permet, sinon converti. Au-delà de 1,5 Go, un flux à piste unique ou un fichier direct est
+L'image est **copiée telle quelle**, sauf si tu choisis une qualité du groupe « Réduire » :
+elle est alors réencodée en H.264 (MP4, MKV, MOV, AVI ou TS). Le son est copié quand le
+format le permet, sinon converti. Au-delà de 1,5 Go, un flux à piste unique ou un fichier direct est
 enregistré dans son format d'origine (la conversion se fait en mémoire).
 
 ## Questions fréquentes
@@ -183,6 +198,22 @@ extension ne peut pas le modifier.
 
 **Une vidéo est affichée « Protégé ».**
 Elle est chiffrée par son éditeur (DRM). Grabby ne contourne jamais une protection.
+
+**Le lecteur affiche 1080p mais Grabby propose moins.**
+Grabby liste ce que le site envoie vraiment. Beaucoup de lecteurs choisissent la qualité
+selon ta connexion et ne chargent la 1080p qu'une fois sélectionnée : choisis-la dans le
+lecteur, lance la lecture quelques secondes, puis rouvre Grabby. Les qualités proposées
+par le site sont réunies dans la liste de la carte.
+
+**Réduire la qualité est long.**
+L'image est réencodée dans le navigateur, sur un seul cœur : quelques secondes pour un
+court extrait, plusieurs minutes (parfois plus que la durée de la vidéo) pour un film en
+haute définition. Le téléchargement continue si tu fermes la popup. Si le site propose déjà
+une qualité proche, elle est bien plus rapide à télécharger.
+
+**Un avertissement PlayReady apparaît dans les erreurs de l'extension.**
+Il venait d'une ancienne vérification de Grabby (jusqu'à la 1.2.1). Depuis la 1.3.0, il
+n'apparaît plus : efface les anciennes lignes avec « Tout effacer » sur la page des erreurs.
 
 **Grabby ne trouve rien sur une page.**
 Lance la lecture de la vidéo : certains lecteurs ne chargent rien avant. Si rien n'apparaît

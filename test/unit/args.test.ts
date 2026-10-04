@@ -65,6 +65,16 @@ describe('muxAttempts', () => {
     expect(a[0]!.args.includes('+faststart')).toBe(faststart);
   });
 
+  it('shrinks the picture in H.264 when a smaller quality is asked, never into WebM', () => {
+    const a = muxAttempts({ video: '/j/v.mp4' }, 'webm', false, '/j/out', { w: 640, h: 360 });
+    expect(a[0]!.out).toBe('/j/out.mp4');
+    expect(a[0]!.args).toEqual(expect.arrayContaining(['-c:v', 'libx264', '-c:a', 'copy']));
+    expect(a[0]!.args.join(' ')).toContain('scale=w=640:h=360:force_original_aspect_ratio=decrease');
+    // Every fallback shrinks too: never a full-size copy by mistake.
+    expect(a.every((x) => x.args.includes('libx264'))).toBe(true);
+    expect(a[1]!.args).toContain('aac');
+  });
+
   it('throws when nothing can be muxed', () => {
     expect(() => muxAttempts({}, 'mp4', false, '/x')).toThrow();
   });

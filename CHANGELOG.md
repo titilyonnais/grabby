@@ -15,6 +15,54 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 Rien pour l'instant.
 
+## [1.3.0] — 2026-10-04
+
+Toutes les qualités qu'un lecteur propose, réduction de la qualité par Grabby, fausses
+alertes DRM supprimées.
+
+### Ajouté
+- **Toutes les qualités d'un lecteur dans une seule carte** : quand un site propose la même
+  vidéo en plusieurs fichiers (une balise `<source>` par qualité, un flux HLS par qualité…),
+  Grabby les regroupe et les liste dans le choix de qualité, de la meilleure à la plus
+  petite. La meilleure est choisie par défaut, même si le lecteur jouait une qualité
+  inférieure.
+- **Résolution réelle des fichiers** : Grabby la lit dans leurs premiers octets (MP4 et
+  WebM) et l'affiche sur la carte (« 1080p »), au lieu de ne rien indiquer.
+- **Réduire la qualité** : le choix de qualité propose aussi, dans un groupe « Réduire »,
+  les qualités usuelles plus petites que la source (1440p, 1080p, 720p, 480p, 360p, 240p,
+  144p) que le site n'offre pas. Grabby réduit alors l'image lui-même (H.264), avec la
+  taille attendue. Exemple : une vidéo proposée uniquement en 4K peut être enregistrée en
+  360p.
+  - Fonctionne pour les fichiers directs et les flux HLS/DASH, pas pour les enregistrements
+    de lecture ni YouTube (qui propose déjà ses petites qualités).
+  - Grabby part de la plus petite qualité suffisante (moins à télécharger et à décoder).
+  - Formats MP4, MKV, MOV, AVI ou TS (le WebM ne peut pas contenir de H.264), ou audio seul.
+
+### Modifié
+- **Noms des qualités des films** : un film au format cinéma (1920 × 800, 1280 × 534…) est
+  appelé 1080p ou 720p, comme sur les lecteurs, et non plus « 800p » ou « 534p ».
+- La barre de progression d'une réduction de qualité tient compte de la conversion, qui est
+  la partie la plus longue.
+
+### Corrigé
+- **Fausse alerte « Protégé »** sur des lecteurs qui vérifient seulement si le navigateur
+  sait lire les vidéos protégées, sans en lire. Seule une vidéo qui reçoit vraiment des clés
+  de déchiffrement est maintenant considérée comme protégée.
+- **Avertissement PlayReady dans les erreurs de l'extension**
+  (`com.microsoft.playready.recommendation… setServerCertificate()`, attribué à `hook.js`) :
+  il venait de la même vérification et n'apparaît plus. Les anciennes lignes s'effacent avec
+  « Tout effacer » sur la page des erreurs de l'extension.
+- Le message « Rien à voir ici » et l'historique vide sont centrés verticalement dans la
+  popup.
+
+### Limites connues
+- Réduire la qualité réencode l'image dans le navigateur, sur un seul cœur : compte
+  plusieurs minutes, et parfois plus que la durée de la vidéo pour un film en haute
+  définition. Au-delà de 1,5 Go de source, la réduction est refusée.
+- Un fichier dont l'index est à la fin (MP4 non optimisé pour le web) ne révèle ni sa durée
+  ni sa résolution dans ses premiers octets : ses autres qualités restent alors sur des
+  cartes séparées.
+
 ## [1.2.1] — 2026-10-04
 
 Correctif de l'icône et vrai suivi des versions.
@@ -150,7 +198,8 @@ Première version.
 - Capture YouTube expérimentale.
 - Interface en français et en anglais, thème clair et sombre.
 
-[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.2.1...HEAD
+[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/titilyonnais/grabby/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/titilyonnais/grabby/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/titilyonnais/grabby/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/titilyonnais/grabby/compare/v1.0.0...v1.1.0

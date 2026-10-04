@@ -284,6 +284,65 @@ test('a file without extension or media type is found; stream segments are not',
   expect(urls[0]).toContain('/opaque/clip');
 });
 
+test('a player that only probes DRM support still offers its clear video', async ({ context, sw, extId }) => {
+  const { page, tabId } = await openFixture(context, sw, 'drm-probe.html');
+  await page.waitForSelector('body[data-ready="1"]');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  await expect(popup.getByRole('button', { name: 'Download', exact: true })).toBeVisible();
+  await expect(popup.getByText(/encrypted by its publisher/)).toHaveCount(0);
+});
+
+test('a player that attaches DRM keys is shown as protected', async ({ context, sw, extId }) => {
+  const { page, tabId } = await openFixture(context, sw, 'drm-keys.html');
+  await page.waitForSelector('body[data-ready]');
+  expect(await page.evaluate(() => document.body.dataset.ready)).toBe('keys');
+  const popup = await openPopup(context, extId, tabId);
+  await expect(popup.getByText(/encrypted by its publisher/)).toBeVisible();
+  await expect(popup.getByRole('button', { name: 'Download', exact: true })).toHaveCount(0);
+});
+
+/** Picture size of a saved video, read by ffprobe (null when it isn't installed). */
+function pictureSize(file: string): string | null {
+  try {
+    return execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0:s=x', file], {
+      encoding: 'utf8',
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+test('a player offering several qualities gets one card with the choice', async ({ context, sw, extId }) => {
+  const { tabId } = await openFixture(context, sw, 'qualities.html');
+  // Same video in two files: one card, one count.
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  await expect(popup.getByRole('heading', { name: 'Sample: two qualities' })).toHaveCount(1);
+  await expect(popup.getByRole('button', { name: /^Quality\s*360p/ })).toBeVisible();
+  await pick(popup, 'Quality', '240p');
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
+  await expect(popup.getByText('Saved')).toBeVisible();
+  const { bytes } = await lastDownload(sw);
+  expect(bytes.length).toBe(readFileSync('test/fixtures/media/qualities/clip-240.mp4').length);
+});
+
+test('a smaller quality the site lacks is made by shrinking the picture', async ({ context, sw, extId }) => {
+  const { tabId } = await openFixture(context, sw, 'direct.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  await pick(popup, 'Quality', '144p');
+  await expect(popup.getByText(/shrinks the picture itself/)).toBeVisible();
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
+  await expect(popup.getByText('Saved')).toBeVisible({ timeout: 90_000 });
+  const { bytes, filename } = await lastDownload(sw);
+  expect(isMp4(bytes)).toBe(true);
+  const dims = pictureSize(filename);
+  if (dims !== null) expect(dims).toBe('256x144');
+  const info = probe(filename);
+  if (info) expect(info.streams).toEqual(['audio', 'video']);
+});
+
 test('restricted pages show an explanation instead of an empty list', async ({ context, sw, extId }) => {
   const page = await context.newPage();
   await page.goto('about:blank');

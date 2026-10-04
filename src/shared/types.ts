@@ -12,6 +12,8 @@ export interface Variant {
   codecs?: string;
   url: string;
   audioGroup?: string;
+  /** Size of this quality's file, when known (files offered in several qualities). */
+  size?: number;
   /** Expected file size per output format, when the source tells us (YouTube). */
   sizes?: Partial<Record<VideoFormat, number>>;
 }
@@ -102,6 +104,8 @@ export interface Job {
   videoIndex?: number;
   /** Container chosen for a video. */
   format?: OutputFormat;
+  /** A smaller quality made by shrinking the picture (e.g. 360 for 360p). */
+  scale?: number;
   /** Recorded by a hidden player (YouTube), not the one the user watches. */
   hidden?: boolean;
   /** Capture jobs: the assembly plan, kept (and persisted) until the recording ends. */

@@ -47,11 +47,29 @@ const VIDEO_AUDIO_FALLBACK: Record<string, string[]> = {
 };
 
 /**
+ * Shrinking the picture (a quality the source doesn't offer): H.264 fitted in the box, the
+ * fastest settings that still look right, since ffmpeg.wasm encodes on a single thread.
+ */
+export function shrinkArgs(box: { w: number; h: number }): string[] {
+  return [
+    '-vf', `scale=w=${box.w}:h=${box.h}:force_original_aspect_ratio=decrease:force_divisible_by=2`,
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '24', '-pix_fmt', 'yuv420p',
+  ];
+}
+
+/**
  * ffmpeg invocations to try in order until one succeeds. Stream copy first (fast, lossless),
  * then audio re-encode (codec not allowed in the container), then MKV (accepts anything).
- * The picture is never re-encoded: that would take far too long in the browser.
+ * The picture is copied as it is, unless it must be shrunk (`scale`): re-encoding is slow
+ * in the browser, so it is done only when the user asks for a smaller quality.
  */
-export function muxAttempts(inputs: MuxInputs, output: OutputFormat, audioOnly: boolean, outBase: string): Attempt[] {
+export function muxAttempts(
+  inputs: MuxInputs,
+  output: OutputFormat,
+  audioOnly: boolean,
+  outBase: string,
+  scale?: { w: number; h: number },
+): Attempt[] {
   const mk = (ext: string, body: string[]): Attempt => ({ ext, out: `${outBase}.${ext}`, args: ['-y', ...body, `${outBase}.${ext}`] });
 
   if (audioOnly) {
@@ -67,14 +85,17 @@ export function muxAttempts(inputs: MuxInputs, output: OutputFormat, audioOnly: 
   if (!inputs.video) throw new Error('no video input');
   const ins = ['-i', inputs.video, ...(inputs.audio ? ['-i', inputs.audio] : [])];
   const maps = inputs.audio ? ['-map', '0:v:0', '-map', '1:a:0'] : ['-map', '0:v:0?', '-map', '0:a:0?'];
-  if (output === 'mkv') return [mk('mkv', [...ins, ...maps, '-c', 'copy'])];
-  const container = ['webm', 'mov', 'avi', 'ts'].includes(output) ? output : 'mp4';
+  // H.264 doesn't go in WebM: a shrunk picture is saved as MP4 instead.
+  const container = scale && output === 'webm' ? 'mp4' : ['mkv', 'webm', 'mov', 'avi', 'ts'].includes(output) ? output : 'mp4';
+  const video = scale ? shrinkArgs(scale) : ['-c:v', 'copy'];
+  const copy = scale ? [...video, '-c:a', 'copy'] : ['-c', 'copy'];
+  if (container === 'mkv') return [mk('mkv', [...ins, ...maps, ...copy])];
   // MP4/MOV play before they are fully loaded when the index comes first.
   const tag = container === 'mp4' || container === 'mov' ? ['-movflags', '+faststart'] : [];
   const audio = VIDEO_AUDIO_FALLBACK[container] ?? ['-c:a', 'aac', '-b:a', '192k'];
   return [
-    mk(container, [...ins, ...maps, '-c', 'copy', ...tag]),
-    mk(container, [...ins, ...maps, '-c:v', 'copy', ...audio, ...tag]),
-    mk('mkv', [...ins, ...maps, '-c', 'copy']),
+    mk(container, [...ins, ...maps, ...copy, ...tag]),
+    mk(container, [...ins, ...maps, ...video, ...audio, ...tag]),
+    mk('mkv', [...ins, ...maps, ...copy]),
   ];
 }

@@ -119,14 +119,18 @@ const LOG_BUDGET = 48 * 1024 * 1024;
     dropLogs();
     post({ type: 'drm', keySystem });
   };
-  const nav = Navigator.prototype as Navigator & { requestMediaKeySystemAccess?: Navigator['requestMediaKeySystemAccess'] };
-  const rmksa = nav.requestMediaKeySystemAccess;
-  if (rmksa) {
-    nav.requestMediaKeySystemAccess = function (this: Navigator, keySystem: string, configs: MediaKeySystemConfiguration[]) {
-      onDrm(keySystem);
-      return rmksa.call(this, keySystem, configs);
-    };
-  }
+  // Asking which DRM systems exist (requestMediaKeySystemAccess) proves nothing: players
+  // and ad SDKs probe it for clear videos too. Only keys attached to an element, or media
+  // that turns out to be encrypted, mean protected playback. (Not wrapping that probe also
+  // keeps the browser's PlayReady warnings from being attributed to Grabby.)
+  document.addEventListener(
+    'encrypted',
+    (e) => {
+      if (e.target instanceof HTMLMediaElement) protectedEls.add(e.target);
+      onDrm('encrypted');
+    },
+    true,
+  );
   const setMediaKeys = HTMLMediaElement.prototype.setMediaKeys;
   if (setMediaKeys) {
     HTMLMediaElement.prototype.setMediaKeys = function (this: HTMLMediaElement, keys: MediaKeys | null) {

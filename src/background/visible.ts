@@ -1,13 +1,5 @@
 import type { MediaItem } from '../shared/types';
-
-/** Requests only tell which origin a stream was loaded from, not the frame's full address. */
-const originOf = (url: string) => {
-  try {
-    return new URL(url).origin;
-  } catch {
-    return url;
-  }
-};
+import { groupSameVideo, originOf } from './group';
 
 const isStream = (i: MediaItem) => i.kind === 'hls' || i.kind === 'dash';
 
@@ -17,7 +9,8 @@ const isStream = (i: MediaItem) => i.kind === 'hls' || i.kind === 'dash';
  * - files a stream is made of (single-file renditions fetched by byte range, e.g. Reddit's
  *   CMAF files) are hidden behind that stream: same player, same duration;
  * - one file reached through several addresses (redirects, mirrors, "download" links) is
- *   listed once, preferring the copy that plays.
+ *   listed once, preferring the copy that plays;
+ * - copies of one video in several qualities become one item with a quality list.
  */
 export function visibleItems(items: MediaItem[]): MediaItem[] {
   const streams = items.filter(isStream);
@@ -39,10 +32,17 @@ export function visibleItems(items: MediaItem[]): MediaItem[] {
     return sameFile.get(`${i.size}|${Math.round(i.duration * 10)}`) !== i;
   };
 
-  return items.filter((i) => {
-    if (i.kind === 'capture') return i.experimental || !streamFrames.has(originOf(i.frameUrl));
-    return !partOfStream(i) && !duplicate(i);
-  });
+  return groupSameVideo(
+    items.filter((i) => {
+      if (i.kind === 'capture') return i.experimental || !streamFrames.has(originOf(i.frameUrl));
+      return !partOfStream(i) && !duplicate(i);
+    }),
+  );
+}
+
+/** An item as the user sees it (merged with its other qualities), else as detected. */
+export function findVisible(items: MediaItem[], id: string): MediaItem | undefined {
+  return visibleItems(items).find((i) => i.id === id) ?? items.find((i) => i.id === id);
 }
 
 export const downloadableCount = (items: MediaItem[]): number =>

@@ -76,6 +76,7 @@ export async function handleMediaUrl(
         ...(info.contentType ? { mime: info.contentType.split(';')[0]!.trim() } : {}),
         ...(size ? { size } : {}),
         ...(probe?.duration ? { duration: probe.duration } : {}),
+        ...(probe?.width && probe.height ? { width: probe.width, height: probe.height } : {}),
         ...(probe?.encrypted ? { protection: 'drm' as const } : {}),
         audioOnly: isAudioResource(url, info.contentType) || isAudioProbe(probe, url, info.contentType),
         ...(declared ? { linked: true } : {}),
