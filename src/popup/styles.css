@@ -713,6 +713,10 @@ p {
   animation: rise 220ms var(--ease);
 }
 
+.sheet:focus {
+  outline: none;
+}
+
 .sheet__head {
   display: flex;
   align-items: center;

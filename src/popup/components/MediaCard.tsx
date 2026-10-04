@@ -64,7 +64,7 @@ export function MediaCard({ item, job, hero, send }: Props) {
         </p>
       ) : (
         <div class="card__actions">
-          {item.variants.length > 1 && !isActive(job) && (
+          {item.variants.length > 1 && !showJob && (
             <div class="chips" role="radiogroup" aria-label={t('qualityLabel')}>
               {item.variants.map((v) => (
                 <button

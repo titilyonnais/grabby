@@ -35,10 +35,11 @@ function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange
 
 export function Settings({ settings, onChange, onClose }: Props) {
   const [template, setTemplate] = useState(settings.template);
-  const closeRef = useRef<HTMLButtonElement>(null);
+  const sheetRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    closeRef.current?.focus();
+    // Focus the dialog itself: keyboard users land inside it without a stray focus ring.
+    sheetRef.current?.focus();
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -46,10 +47,10 @@ export function Settings({ settings, onChange, onClose }: Props) {
 
   return (
     <div class="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <section ref={sheetRef} tabIndex={-1} class="sheet" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <header class="sheet__head">
           <h2 id="settings-title">{t('openSettings')}</h2>
-          <button ref={closeRef} class="icon-btn" aria-label={t('closeSettings')} title={t('closeSettings')} onClick={onClose}>
+          <button class="icon-btn" aria-label={t('closeSettings')} title={t('closeSettings')} onClick={onClose}>
             <Icon name="close" />
           </button>
         </header>
