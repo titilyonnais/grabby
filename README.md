@@ -17,8 +17,13 @@
 
 ---
 
-<!-- release:1.5.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
-## Nouveautés de la version 1.5.0
+<!-- release:1.5.1 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
+## Nouveautés de la version 1.5.1
+
+- **Corrigé** : une liste déroulante ouverte juste après avoir déplié une carte se
+  refermait toute seule.
+
+**Rappel de la 1.5.0** :
 
 - **Nouvelle interface** : la vidéo ouverte s'affiche en **grande carte avec sa miniature**,
   les autres en lignes compactes ; cliquer sur une ligne la déplie en grand.

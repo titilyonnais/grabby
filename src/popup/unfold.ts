@@ -54,7 +54,8 @@ export function useUnfold<T extends HTMLElement>(open: boolean) {
     const done = () => {
       card.style.overflow = '';
       last.current = { ...now, height: card.offsetHeight };
-      if (open) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      // Not while a list is open: scrolling closes it (the user already picked a choice).
+      if (open && !document.querySelector('.menu')) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     };
     grow.onfinish = done;
     grow.oncancel = () => (card.style.overflow = '');

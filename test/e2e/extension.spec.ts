@@ -469,7 +469,12 @@ test('a WebM video can be saved as WebM, MP4 and MKV, and its sound in every aud
   await expect.poll(() => badge(sw, tabId)).toBe('2');
   const popup = await openPopup(context, extId, tabId);
   // Open the card that offers WebM (the WebM file's).
-  if (!(await offeredFormats(popup)).includes('WebM')) await popup.getByRole('button', { name: 'Show options' }).click();
+  if (!(await offeredFormats(popup)).includes('WebM')) {
+    await popup.getByRole('button', { name: 'Show options' }).click();
+    // Let the card finish unfolding (it may scroll into view).
+    await expect(popup.locator('.card--open')).toHaveCount(1);
+    await popup.waitForTimeout(1000);
+  }
   await everyFormat(popup, sw, ['MP4', 'WebM', 'MKV', 'M4A', 'MP3', 'Opus', 'OGG', 'FLAC', 'WAV']);
 });
 

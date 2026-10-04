@@ -15,6 +15,14 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 Rien pour l'instant.
 
+## [1.5.1] — 2026-10-04
+
+### Corrigé
+- **Liste déroulante refermée toute seule** juste après avoir déplié une carte : la carte
+  défilait pour se mettre en vue à la fin de son animation, ce qui fermait une liste
+  (qualité, format) ouverte entre-temps. Elle ne défile plus quand une liste est ouverte.
+  Repéré par les tests de bout en bout sur la machine d'intégration continue, plus lente.
+
 ## [1.5.0] — 2026-10-04
 
 Nouvelle interface (grande miniature, tout en pilules, animations à ressort), audit complet
@@ -339,7 +347,8 @@ Première version.
 - Capture YouTube expérimentale.
 - Interface en français et en anglais, thème clair et sombre.
 
-[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.5.0...HEAD
+[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.5.1...HEAD
+[1.5.1]: https://github.com/titilyonnais/grabby/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/titilyonnais/grabby/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/titilyonnais/grabby/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/titilyonnais/grabby/compare/v1.3.0...v1.4.0
