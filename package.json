@@ -1,0 +1,36 @@
+{
+  "name": "grabby",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Detect and download non-encrypted videos on any page. Chromium MV3 extension.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:store": "node scripts/build.mjs store",
+    "build:github": "node scripts/build.mjs github",
+    "zip": "node scripts/zip.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "fixtures": "node scripts/make-fixtures.mjs",
+    "icons": "node scripts/make-icons.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@ffmpeg/core": "^0.12.10",
+    "preact": "^11.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/chrome": "^0.3.4",
+    "@types/node": "^26.6.4",
+    "fflate": "^0.8.3",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3"
+  }
+}
