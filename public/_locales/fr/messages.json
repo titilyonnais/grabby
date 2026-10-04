@@ -129,5 +129,6 @@
   "set_name_sample": { "message": "Ma vidéo" },
   "browserAsksNote": { "message": "Si une fenêtre « Enregistrer sous » s'ouvre quand même, c'est le réglage « Toujours demander où enregistrer les fichiers » de ton navigateur qui décide : aucune extension ne peut passer outre." },
   "browserAsksBody": { "message": "Ton navigateur demande où enregistrer chaque fichier : son réglage passe avant celui de Grabby. Désactive « Toujours demander où enregistrer les fichiers » pour que Grabby enregistre directement, dans le dossier Grabby si tu l'as choisi." },
-  "browserAsksOpen": { "message": "Ouvrir les réglages de téléchargement du navigateur" }
+  "browserAsksOpen": { "message": "Ouvrir les réglages de téléchargement du navigateur" },
+  "set_template_hint": { "message": "Coche ce qui compose le nom. Le titre y est toujours." }
 }

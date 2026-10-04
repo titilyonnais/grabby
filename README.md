@@ -17,9 +17,15 @@
 
 ---
 
-<!-- release:1.4.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
-## Nouveautés de la version 1.4.0
+<!-- release:1.4.1 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
+## Nouveautés de la version 1.4.1
 
+- **Finitions** de l'interface de la 1.4.0 : arrondis harmonisés partout, contour de la
+  carte ouverte qui n'est plus coupé, et **animations soignées** (les réglages glissent dans
+  les deux sens, fondu entre les onglets).
+- **Section « Fichiers »** des réglages plus claire : aide, cases à cocher et aperçu du nom.
+
+**Rappel de la 1.4.0** :
 - **Suivi détaillé** : sous la barre de progression, la taille reçue et la taille totale
   (« 253 Mo / ≈ 601 Mo »), la **vitesse** (« 6,1 Mo/s ») et le **temps restant**.
 - **Liste plus claire** : une ligne par vidéo, une seule carte ouverte à la fois. Un

@@ -129,5 +129,6 @@
   "set_name_sample": { "message": "My video" },
   "browserAsksNote": { "message": "If a \"Save as\" window opens anyway, it is your browser's \"Ask where to save each file\" setting that decides: no extension can override it." },
   "browserAsksBody": { "message": "Your browser asks where to save every file: its setting comes before Grabby's. Turn off \"Ask where to save each file\" so Grabby saves directly, in the Grabby folder if you chose it." },
-  "browserAsksOpen": { "message": "Open the browser's download settings" }
+  "browserAsksOpen": { "message": "Open the browser's download settings" },
+  "set_template_hint": { "message": "Tick what the name is made of. The title is always in." }
 }

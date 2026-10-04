@@ -7,6 +7,8 @@ import { Icon } from './Icon';
 import { Select } from './Select';
 
 interface Props {
+  /** Enter/leave animation class, set by the parent. */
+  class?: string;
   settings: S;
   /** The browser was seen asking where to save, whatever Grabby's setting says. */
   browserAsks: boolean;
@@ -51,7 +53,7 @@ function Group({ title, children }: { title: string; children: preact.ComponentC
 /** Example the file name preview is built on. */
 const SAMPLE = { title: 'Ma vidéo', site: 'exemple.fr', quality: '1080p' };
 
-export function Settings({ settings, browserAsks, onChange, onOpenBrowserSettings, onClose }: Props) {
+export function Settings({ class: className, settings, browserAsks, onChange, onOpenBrowserSettings, onClose }: Props) {
   const pageRef = useRef<HTMLElement>(null);
   const parts = namePartsOf(settings.template);
   const setPart = (part: NamePart, on: boolean) => onChange({ template: templateOf(NAME_PARTS.filter((p) => (p === part ? on : parts.includes(p)))) });
@@ -70,7 +72,7 @@ export function Settings({ settings, browserAsks, onChange, onOpenBrowserSetting
   }, [onClose]);
 
   return (
-    <section ref={pageRef} tabIndex={-1} class="page" aria-labelledby="settings-title">
+    <section ref={pageRef} tabIndex={-1} class={`page${className ? ` ${className}` : ''}`} aria-labelledby="settings-title">
       <header class="top top--page">
         <button class="icon-btn" aria-label={t('back')} title={t('back')} onClick={onClose}>
           <Icon name="back" />
@@ -128,6 +130,7 @@ export function Settings({ settings, browserAsks, onChange, onOpenBrowserSetting
         <Group title={t('set_group_files')}>
           <div class="setting setting--stack">
             <span class="setting__label">{t('set_template')}</span>
+            <span class="setting__hint">{t('set_template_hint')}</span>
             <div class="chips" role="group" aria-label={t('set_template')}>
               {NAME_PARTS.map((p) => {
                 const on = p === 'title' || parts.includes(p);
@@ -140,14 +143,15 @@ export function Settings({ settings, browserAsks, onChange, onOpenBrowserSetting
                     disabled={p === 'title'}
                     onClick={() => setPart(p, !on)}
                   >
-                    {on && <Icon name="check" size={14} />}
+                    <span class="chip__tick">{on && <Icon name="check" size={13} />}</span>
                     {t(`set_name_${p}`)}
                   </button>
                 );
               })}
             </div>
             <span class="preview" title={preview}>
-              {preview}
+              <Icon name="file" size={14} />
+              <span class="preview__name">{preview}</span>
             </span>
           </div>
           <Toggle label={t('set_subfolder')} hint={t('set_subfolder_hint')} checked={settings.subfolder} onChange={(subfolder) => onChange({ subfolder })} />

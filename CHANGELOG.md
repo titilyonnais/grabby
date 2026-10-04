@@ -15,6 +15,28 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 Rien pour l'instant.
 
+## [1.4.1] — 2026-10-04
+
+Finitions de l'interface de la 1.4.0 : arrondis harmonisés, animations soignées, réglages
+plus clairs.
+
+### Corrigé
+- **Contour de la carte ouverte coupé en haut** : la liste laisse maintenant la place au
+  liseré autour de la carte dépliée.
+- **Animation des réglages** : plus de tremblement à l'ouverture. Les réglages **glissent**
+  par-dessus la liste (qui ne bouge plus), à l'ouverture **et** à la fermeture.
+
+### Modifié
+- **Arrondis harmonisés** partout : un même rayon pour les grandes cartes et les encadrés
+  de réglages, un rayon intérieur unique (vignette, listes, aperçu, encarts) qui s'emboîte
+  proprement dans le grand.
+- **Animations** ajoutées et adoucies : fondu léger en changeant d'onglet (Cette page ↔
+  Historique) et à l'ouverture des choix d'une carte, glissement des réglages dans les deux
+  sens.
+- **Section « Fichiers » des réglages** plus claire : petite aide sous « Nom du fichier »,
+  cases à cocher avec une coche animée, et aperçu du nom précédé d'une icône de fichier (il
+  ne ressemble plus à un champ de saisie).
+
 ## [1.4.0] — 2026-10-04
 
 Suivi détaillé du téléchargement, liste plus claire, page de réglages à part entière,
@@ -233,7 +255,8 @@ Première version.
 - Capture YouTube expérimentale.
 - Interface en français et en anglais, thème clair et sombre.
 
-[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.4.0...HEAD
+[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/titilyonnais/grabby/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/titilyonnais/grabby/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/titilyonnais/grabby/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/titilyonnais/grabby/compare/v1.2.0...v1.2.1

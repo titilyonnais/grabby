@@ -34,8 +34,9 @@
   --scroll-hover: rgba(0, 0, 0, 0.5);
   --ring: rgba(255, 91, 79, 0.55);
 
-  --r-card: 22px;
-  --r-inner: 14px;
+  --r-card: 20px;
+  --r-inner: 12px;
+  --r-chip: 999px;
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   color-scheme: light;
 }
@@ -135,10 +136,17 @@ p {
 
 /* -------------------------------------------------------------- app shell */
 .app {
-  display: flex;
-  flex-direction: column;
+  position: relative;
   /* Same size whatever the tab shows: the popup never jumps. */
   height: 600px;
+  overflow: hidden;
+}
+
+/* The main screen (header, tabs, list). Settings slide over it without moving it. */
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 /*
@@ -292,8 +300,8 @@ p {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  /* Room for the scrollbar on both sides: cards stay centered and never shift. */
-  padding: 0 4px 14px;
+  /* Room for the open card's ring (top + sides) and for the scrollbar on both sides. */
+  padding: 4px 4px 14px;
   scrollbar-gutter: stable both-edges;
   display: flex;
   flex-direction: column;
@@ -303,6 +311,25 @@ p {
 /* A fixed-height popup: cards keep their size and the list scrolls. */
 .content > * {
   flex-shrink: 0;
+}
+
+.panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: panel-in 200ms var(--ease);
+}
+
+/* Cards and the empty state keep their size; a short panel still fills the height
+   so the empty state (margin: auto) stays centered. */
+.panel > * {
+  flex-shrink: 0;
+}
+
+.panel > .state {
+  flex: 1;
 }
 
 .skeleton {
@@ -325,14 +352,13 @@ p {
   flex-direction: column;
   gap: 10px;
   padding: 8px;
-  border-radius: 18px;
+  border-radius: var(--r-card);
   background: var(--surface);
   box-shadow: 0 0 0 0 transparent;
-  transition: box-shadow 180ms var(--ease), background-color 180ms var(--ease);
+  transition: box-shadow 200ms var(--ease), background-color 180ms var(--ease);
 }
 
 .card--open {
-  padding: 10px 10px 12px;
   box-shadow: 0 0 0 1.5px var(--ring);
 }
 
@@ -484,7 +510,7 @@ p {
 }
 
 .card .thumb {
-  border-radius: 11px;
+  border-radius: var(--r-inner);
 }
 
 .thumb img {
@@ -818,9 +844,10 @@ p {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   text-align: center;
   gap: 8px;
-  padding: 24px 24px 32px;
+  padding: 24px 24px 40px;
   /* Centered in the space left (the popup has a fixed height). */
   margin: auto 0;
 }
@@ -930,10 +957,21 @@ p {
 
 /* -------------------------------------------------------- settings page */
 .page {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
   display: flex;
   flex-direction: column;
-  height: 100%;
-  animation: slide-in 220ms var(--ease);
+  background: var(--bg);
+  will-change: transform, opacity;
+}
+
+.page--in {
+  animation: page-in 240ms var(--ease);
+}
+
+.page--out {
+  animation: page-out 240ms var(--ease) forwards;
 }
 
 .page:focus {
@@ -977,7 +1015,7 @@ p {
   flex-direction: column;
   gap: 14px;
   padding: 14px;
-  border-radius: 18px;
+  border-radius: var(--r-card);
   background: var(--surface);
 }
 
@@ -990,15 +1028,30 @@ p {
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   height: 32px;
-  padding: 0 13px;
-  border-radius: 999px;
+  padding: 0 14px;
+  border-radius: var(--r-chip);
   border: 1px solid var(--line);
   background: var(--bg);
   font-size: 13px;
   font-weight: 600;
-  transition: background-color 120ms var(--ease), color 120ms var(--ease);
+  transition: background-color 140ms var(--ease), color 140ms var(--ease), border-color 140ms var(--ease);
+}
+
+.chip:not(:disabled):hover {
+  border-color: var(--muted);
+}
+
+.chip__tick {
+  display: inline-flex;
+  width: 0;
+  overflow: hidden;
+  transition: width 140ms var(--ease);
+}
+
+.chip--on .chip__tick {
+  width: 15px;
 }
 
 .chip--on {
@@ -1012,22 +1065,35 @@ p {
 }
 
 .preview {
-  padding: 8px 12px;
-  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 12px;
+  border-radius: var(--r-inner);
   background: var(--bg);
   font-size: 12.5px;
   color: var(--muted);
-  white-space: nowrap;
+}
+
+.preview .icon {
+  flex: none;
+  opacity: 0.8;
+}
+
+.preview__name {
+  min-width: 0;
   overflow: hidden;
+  white-space: nowrap;
   text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
 }
 
 .callout {
   display: flex;
   gap: 10px;
   align-items: flex-start;
-  padding: 10px 12px;
-  border-radius: 12px;
+  padding: 11px 12px;
+  border-radius: var(--r-inner);
   background: var(--bg);
   font-size: 12.5px;
   color: var(--muted);
@@ -1152,9 +1218,23 @@ p {
   }
 }
 
-@keyframes slide-in {
+@keyframes page-in {
   from {
-    transform: translateX(24px);
+    transform: translateX(18px);
+    opacity: 0;
+  }
+}
+
+@keyframes page-out {
+  to {
+    transform: translateX(18px);
+    opacity: 0;
+  }
+}
+
+@keyframes panel-in {
+  from {
+    transform: translateY(6px);
     opacity: 0;
   }
 }
