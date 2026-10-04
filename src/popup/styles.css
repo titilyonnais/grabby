@@ -636,9 +636,15 @@ p {
 }
 
 .hint {
-  padding: 0 6px;
+  padding: 2px 12px 0;
   font-size: 12.5px;
+  line-height: 1.45;
   color: var(--muted);
+}
+
+/* Last in a card: clear of its round bottom corners. */
+.card__drawer > .hint:last-child {
+  padding-bottom: 8px;
 }
 
 /* ----------------------------------------------------------------- thumbs */
@@ -653,8 +659,16 @@ p {
   color: var(--muted);
 }
 
+/*
+ * A row is small: its thumbnail would turn into a capsule with the big card's radius.
+ * Thumbnail 14, 8 from the edge → row 22 (still concentric).
+ */
+.card:not(.card--open) {
+  border-radius: 22px;
+}
+
 .card:not(.card--open) .thumb {
-  border-radius: var(--r-inner);
+  border-radius: 14px;
 }
 
 .thumb img {
@@ -962,7 +976,7 @@ p {
   display: flex;
   flex-wrap: wrap;
   gap: 2px 0;
-  padding: 0 6px;
+  padding: 0 12px 4px;
   font-size: 12.5px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
@@ -1603,9 +1617,10 @@ label.row-setting:hover {
   border-radius: 999px;
   background: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  /* No overshoot here: a knob that springs past its end pokes out of the track. */
   transition:
-    transform var(--t-bouncy) var(--spring-bouncy),
-    width 200ms var(--spring-bouncy);
+    transform 260ms var(--ease-out),
+    width 160ms var(--ease-out);
 }
 
 .switch:checked {

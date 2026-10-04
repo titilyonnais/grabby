@@ -17,10 +17,13 @@
 
 ---
 
-<!-- release:1.5.1 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
-## Nouveautés de la version 1.5.1
+<!-- release:1.5.2 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
+## Nouveautés de la version 1.5.2
 
-- **Corrigé** : une liste déroulante ouverte juste après avoir déplié une carte se
+- **Finitions** : interrupteurs qui ne débordent plus de leur rail, liste des formats qui
+  ne défile plus toute seule au survol, textes moins collés au bord des cartes, petites
+  miniatures moins arrondies.
+- **Corrigé en 1.5.1** : une liste déroulante ouverte juste après avoir déplié une carte se
   refermait toute seule.
 
 **Rappel de la 1.5.0** :

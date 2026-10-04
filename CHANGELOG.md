@@ -15,6 +15,25 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 Rien pour l'instant.
 
+## [1.5.2] — 2026-10-04
+
+Finitions de l'interface.
+
+### Corrigé
+- **Interrupteurs des réglages** : en passant sur « activé », le bouton rond dépassait de
+  son rail (le ressort l'envoyait trop loin). Il glisse maintenant sans dépasser, et
+  s'étire toujours un peu quand on le maintient.
+- **Liste des formats qui défilait toute seule** : descendre la souris dans la liste la
+  faisait défiler jusqu'en bas sans rien faire. Elle ne défile plus qu'au clavier (flèches,
+  Début, Fin) ou à la molette.
+- **Texte trop près du bord** : les explications sous le bouton Télécharger et les chiffres
+  sous la barre de progression ont plus de marge sur les côtés et en bas de la carte.
+
+### Modifié
+- **Lignes compactes moins arrondies** : la petite miniature ressemblait à une gélule.
+  Miniature arrondie à 14 px dans une ligne à 22 px (toujours concentriques) ; la grande
+  carte garde ses 32 px.
+
 ## [1.5.1] — 2026-10-04
 
 ### Corrigé
@@ -347,7 +366,8 @@ Première version.
 - Capture YouTube expérimentale.
 - Interface en français et en anglais, thème clair et sombre.
 
-[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.5.1...HEAD
+[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.5.2...HEAD
+[1.5.2]: https://github.com/titilyonnais/grabby/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/titilyonnais/grabby/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/titilyonnais/grabby/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/titilyonnais/grabby/compare/v1.4.0...v1.4.1

@@ -42,6 +42,9 @@ export function Select<T extends string>({ label, value, options, onChange, disa
   const btn = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLUListElement>(null);
   const id = useRef(`sel${++seq}`).current;
+  // The list scrolls to the active option only when the keyboard moved it: following the
+  // mouse would scroll under it, pick the next option, scroll again… down to the end.
+  const byKey = useRef(true);
   const current = options.find((o) => o.value === value) ?? options[0];
 
   const show = () => {
@@ -60,6 +63,7 @@ export function Select<T extends string>({ label, value, options, onChange, disa
         : { left, width, bottom: vh - r.top + 6, maxHeight: above - 6 },
     );
     setActive(Math.max(0, options.findIndex((o) => o.value === value)));
+    byKey.current = true;
     setOpen(true);
   };
 
@@ -94,13 +98,14 @@ export function Select<T extends string>({ label, value, options, onChange, disa
   }, [open]);
 
   useEffect(() => {
-    if (open) list.current?.querySelector(`#${id}-${active}`)?.scrollIntoView({ block: 'nearest' });
+    if (open && byKey.current) list.current?.querySelector(`#${id}-${active}`)?.scrollIntoView({ block: 'nearest' });
   }, [open, active]);
 
   const onListKey = (e: KeyboardEvent) => {
     const last = options.length - 1;
     const move = (i: number) => {
       e.preventDefault();
+      byKey.current = true;
       setActive(Math.max(0, Math.min(last, i)));
     };
     switch (e.key) {
@@ -180,7 +185,10 @@ export function Select<T extends string>({ label, value, options, onChange, disa
                 role="option"
                 aria-selected={o.value === value}
                 class={`menu__item${i === active ? ' menu__item--active' : ''}`}
-                onPointerMove={() => i !== active && setActive(i)}
+                onPointerMove={() => {
+                  byKey.current = false;
+                  if (i !== active) setActive(i);
+                }}
                 onClick={() => choose(i)}
               >
                 <span class="menu__check">{o.value === value && <Icon name="check" size={15} />}</span>
