@@ -80,4 +80,6 @@ export type OffscreenToBg =
       speed: number;
     }
   | { target: 'bg'; type: 'job-ready'; jobId: string; blobUrl: string; ext: OutputFormat; size: number }
-  | { target: 'bg'; type: 'job-error'; jobId: string; error: ErrorCode };
+  | { target: 'bg'; type: 'job-error'; jobId: string; error: ErrorCode }
+  /** capture-sink → SW: may this job write capture chunks? */
+  | { target: 'bg'; type: 'sink-check'; jobId: string };

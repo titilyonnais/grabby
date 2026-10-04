@@ -10,13 +10,18 @@ import { handlePageInfo } from './pageinfo';
 import { Registry, sessionKV } from './registry';
 import { forgetTab, rememberTabUrl, samePage, tabUrl } from './tabs';
 import { visibleItems } from './visible';
+import { clearAll, putChunk } from '../shared/idb';
 
 const registry = new Registry(sessionKV);
 const jobs = new JobManager(registry);
 
 startDetector(registry);
 
-chrome.runtime.onStartup.addListener(() => void resetHeaderRules());
+chrome.runtime.onStartup.addListener(() => {
+  void resetHeaderRules();
+  // Captures never survive a browser restart: drop leftovers.
+  void clearAll().catch(() => {});
+});
 chrome.runtime.onInstalled.addListener(() => void resetHeaderRules());
 
 /* ------------------------------------------------------------------ tabs */
@@ -142,9 +147,14 @@ async function onPopupMessage(port: chrome.runtime.Port, msg: PopupToBg) {
 
 /* --------------------------------------------- content scripts & offscreen */
 
-chrome.runtime.onMessage.addListener((msg: ContentToBg | OffscreenToBg, sender) => {
+chrome.runtime.onMessage.addListener((msg: ContentToBg | OffscreenToBg, sender, sendResponse) => {
   if ('target' in msg) {
-    if (msg.target === 'bg') void jobs.onOffscreenMessage(msg);
+    if (msg.target !== 'bg') return;
+    if (msg.type === 'sink-check') {
+      void jobs.ready.then(() => sendResponse(jobs.isCapturing(msg.jobId)));
+      return true;
+    }
+    void jobs.onOffscreenMessage(msg);
     return;
   }
   if (!sender.tab?.id) return;
@@ -162,4 +172,26 @@ chrome.runtime.onMessage.addListener((msg: ContentToBg | OffscreenToBg, sender) 
       void jobs.onContentMessage(msg);
       break;
   }
+});
+
+/* Capture fallback when a page blocks the hidden sink frame: chunks arrive base64-encoded. */
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'capture') return;
+  let queue = Promise.resolve();
+  port.onMessage.addListener((m: { jobId: string; track: number; seq: number; mime: string; init: boolean; b64: string }) => {
+    queue = queue.then(async () => {
+      await jobs.ready;
+      if (jobs.isCapturing(m.jobId) && Number.isInteger(m.track) && Number.isInteger(m.seq)) {
+        const bin = atob(m.b64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        await putChunk({ jobId: m.jobId, track: m.track, seq: m.seq, init: !!m.init, data: bytes.buffer }, String(m.mime).slice(0, 200)).catch(() => {});
+      }
+      try {
+        port.postMessage({ ack: true });
+      } catch {
+        /* port closed */
+      }
+    });
+  });
 });

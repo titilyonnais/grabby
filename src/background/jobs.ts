@@ -61,6 +61,10 @@ export class JobManager {
     return tabId === undefined ? all : all.filter((j) => j.tabId === tabId);
   }
 
+  isCapturing(jobId: string): boolean {
+    return this.jobs.get(jobId)?.status === 'capturing';
+  }
+
   isBusy(): boolean {
     return [...this.jobs.values()].some((j) => ACTIVE.includes(j.status) || j.status === 'queued');
   }
@@ -290,6 +294,7 @@ export class JobManager {
   }
 
   async onOffscreenMessage(msg: OffscreenToBg): Promise<void> {
+    if (msg.type === 'sink-check') return;
     const job = this.jobs.get(msg.jobId);
     if (!job || FINISHED.includes(job.status)) return;
     if (msg.type === 'job-progress') {
