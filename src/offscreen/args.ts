@@ -30,11 +30,17 @@ export function inputExt(container: Container, url?: string): string {
   }
 }
 
+/**
+ * Opus through ffmpeg's own encoder: libopus in ffmpeg.wasm 0.12 crashes ("memory access
+ * out of bounds") on anything that isn't already 48 kHz. Opus only takes 48 kHz, ≤ 2 channels.
+ */
+const OPUS = ['-c:a', 'opus', '-strict', '-2', '-ar', '48000', '-ac', '2', '-b:a', '160k'];
+
 /** Audio encoders per output, used when the source codec doesn't fit the container. */
 const AUDIO_ENCODE: Record<string, string[]> = {
   m4a: ['-c:a', 'aac', '-b:a', '192k'],
   mp3: ['-c:a', 'libmp3lame', '-q:a', '2'],
-  opus: ['-c:a', 'libopus', '-b:a', '160k'],
+  opus: OPUS,
   ogg: ['-c:a', 'libvorbis', '-q:a', '6'],
   flac: ['-c:a', 'flac'],
   wav: ['-c:a', 'pcm_s16le'],
@@ -42,7 +48,7 @@ const AUDIO_ENCODE: Record<string, string[]> = {
 
 /** Audio codec each video container falls back to when the source's doesn't fit. */
 const VIDEO_AUDIO_FALLBACK: Record<string, string[]> = {
-  webm: ['-c:a', 'libopus', '-b:a', '160k'],
+  webm: OPUS,
   avi: ['-c:a', 'libmp3lame', '-q:a', '2'],
 };
 
@@ -77,8 +83,12 @@ export function muxAttempts(
     if (!src) throw new Error('no input');
     const ext = AUDIO_ENCODE[output] ? output : 'm4a';
     const base = ['-i', src, '-vn', '-map', '0:a:0'];
-    // Lossless formats and MP3 are always encoded; the others first try a plain copy.
-    const copy = ['m4a', 'opus', 'ogg'].includes(ext) ? [mk(ext, [...base, '-c:a', 'copy'])] : [];
+    // Lossless formats and MP3 are always encoded; the others first try a plain copy. Not M4A
+    // from WebM/Ogg: that's Opus or Vorbis, which an MP4 file accepts but Apple players refuse.
+    const opusOrVorbis = /\.(webm|ogg|opus|mka)$/i.test(src);
+    // OGG means Vorbis here (Opus has its own choice): always encoded, never an Opus copy.
+    const copyable = ext === 'm4a' ? !opusOrVorbis : ext === 'opus';
+    const copy = copyable ? [mk(ext, [...base, '-c:a', 'copy'])] : [];
     return [...copy, mk(ext, [...base, ...AUDIO_ENCODE[ext]!])];
   }
 

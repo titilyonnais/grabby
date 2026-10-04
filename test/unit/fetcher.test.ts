@@ -93,6 +93,46 @@ describe('fetchInOrder', () => {
     expect(f).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps a slow but steady transfer going past the deadline, counting bytes as they come', async () => {
+    // 6 chunks, 15 ms apart: 90 ms in all, with a 40 ms silence deadline.
+    const f = fakeFetch(async () => {
+      let n = 0;
+      const body = new ReadableStream<Uint8Array>({
+        async pull(c) {
+          await sleep(15);
+          if (n++ < 6) c.enqueue(enc(String(n)));
+          else c.close();
+        },
+      });
+      return new Response(body, { headers: { 'content-length': '6' } });
+    });
+    const got: string[] = [];
+    const counted: number[] = [];
+    await fetchInOrder([{ url: 'https://x/big' }], {
+      fetchImpl: f,
+      retries: 0,
+      timeoutMs: 40,
+      onBytes: (b) => void counted.push(b),
+      onData: (_i, d) => void got.push(dec(d)),
+    });
+    expect(got).toEqual(['123456']);
+    expect(counted).toEqual([1, 1, 1, 1, 1, 1]);
+  });
+
+  it('gives up on a transfer that goes silent halfway', async () => {
+    const f = fakeFetch(async (_u, init) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(enc('a'));
+          init?.signal?.addEventListener('abort', () => c.error(init.signal!.reason));
+        },
+      });
+      return new Response(body);
+    });
+    const p = fetchInOrder([{ url: 'https://x/a' }], { fetchImpl: f, retries: 0, timeoutMs: 20, onData: () => {} });
+    await expect(p).rejects.toBeInstanceOf(TypeError);
+  });
+
   it('aborts', async () => {
     const ctl = new AbortController();
     const f = fakeFetch(async (_u, init) => {

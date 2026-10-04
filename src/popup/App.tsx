@@ -1,28 +1,72 @@
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import type { Settings as S } from '../shared/settings';
 import type { Job } from '../shared/types';
 import { Icon } from './components/Icon';
 import { MediaCard } from './components/MediaCard';
 import { FirstRun, HistoryList, StateCard } from './components/Panels';
 import { Settings } from './components/Settings';
 import { t } from './i18n';
+import { reducedMotion } from './motion';
 import { rank } from './rank';
 import { useGrabby } from './store';
+import { rememberTheme } from './theme';
 
 const prefersDark = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
-/** Long enough for the settings slide to finish before it leaves the DOM. */
-const SETTINGS_ANIM_MS = 260;
+/** How long the settings take to slide away before they leave the DOM. */
+const SETTINGS_OUT_MS = 270;
+const TABS = ['page', 'history'] as const;
+type Tab = (typeof TABS)[number];
 
 function latestJob(jobs: Job[], mediaId: string): Job | undefined {
   return jobs.filter((j) => j.mediaId === mediaId).sort((a, b) => b.startedAt - a.startedAt)[0];
 }
 
+/** Placeholder shaped like the list (a big card, then rows) while the first state arrives. */
+function Skeleton() {
+  return (
+    <div class="skeleton" aria-busy="true" aria-label={t('loading')}>
+      <div class="skeleton__hero" />
+      <div class="skeleton__row" />
+      <div class="skeleton__row" />
+    </div>
+  );
+}
+
 export function App() {
-  const { state, send } = useGrabby();
-  const [tab, setTab] = useState<'page' | 'history'>('page');
-  // Settings slide in over the list; `closing` keeps them mounted while they slide back out.
+  const { state, send: rawSend } = useGrabby();
+  // Settings changed here show at once, before the service worker sends them back: a second
+  // quick click then starts from what the user sees, not from the state before the first.
+  const [pending, setPending] = useState<Partial<S>>({});
+  const send: typeof rawSend = (m) => {
+    if (m.type === 'settings') setPending((p) => ({ ...p, ...m.patch }));
+    rawSend(m);
+  };
+  useEffect(() => {
+    if (!state) return;
+    // What the service worker now confirms is no longer pending.
+    setPending((p) => {
+      const left = Object.fromEntries(Object.entries(p).filter(([k, v]) => state.settings[k as keyof S] !== v));
+      return Object.keys(left).length === Object.keys(p).length ? p : left;
+    });
+  }, [state?.settings]);
+  useEffect(() => {
+    // Never stuck on a value the service worker didn't keep.
+    if (!Object.keys(pending).length) return;
+    const t = setTimeout(() => setPending({}), 3000);
+    return () => clearTimeout(t);
+  }, [pending]);
+  const settings = state ? { ...state.settings, ...pending } : undefined;
+  const [tab, setTab] = useState<Tab>('page');
+  // Which way the new panel slides in: towards the tab the user went to.
+  const prevTab = useRef<Tab>('page');
+  const step = TABS.indexOf(tab) - TABS.indexOf(prevTab.current);
+  const dir = step > 0 ? 'next' : step < 0 ? 'prev' : 'same';
+  // Settings slide over the list; `closing` keeps them mounted while they slide back out.
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsClosing, setSettingsClosing] = useState(false);
-  // The card showing its choices: the first one until the user opens another ('' = none).
+  const closing = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const gear = useRef<HTMLButtonElement>(null);
+  // The big card: the first one until the user opens another ('' = none).
   const [openId, setOpenId] = useState<string | undefined>();
   const [systemDark, setSystemDark] = useState(prefersDark());
 
@@ -33,33 +77,48 @@ export function App() {
     return () => mq.removeEventListener('change', on);
   }, []);
 
-  const theme = state?.settings.theme ?? 'auto';
-  const dark = theme === 'dark' || (theme === 'auto' && systemDark);
+  const theme = settings?.theme;
+  const dark = theme === 'dark' || ((theme ?? 'auto') === 'auto' && systemDark);
   useEffect(() => {
+    // Until the settings arrive, keep what main.tsx painted (the remembered theme).
+    if (!theme) return;
     document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  }, [dark]);
+    rememberTheme(theme);
+  }, [dark, theme]);
 
   const items = useMemo(() => rank(state?.items ?? []), [state?.items]);
-  const prefs = { video: state?.settings.videoFormat ?? 'mp4', audio: state?.settings.audioFormat ?? 'm4a' } as const;
+  const prefs = { video: settings?.videoFormat ?? 'mp4', audio: settings?.audioFormat ?? 'm4a' } as const;
   const openCard = openId ?? items[0]?.id;
 
+  const go = (next: Tab) => {
+    prevTab.current = tab;
+    setTab(next);
+  };
   const openSettings = () => {
+    // Reopened while still sliding away: it stays.
+    clearTimeout(closing.current);
     setSettingsClosing(false);
     setSettingsOpen(true);
   };
-  const closeSettings = () => {
-    setSettingsClosing(true);
-    setTimeout(() => {
+  // Stable, so the settings page doesn't re-run its effects (and steal focus) on every state push.
+  const closeSettings = useCallback(() => {
+    const gone = () => {
       setSettingsOpen(false);
       setSettingsClosing(false);
-    }, SETTINGS_ANIM_MS);
-  };
-  const settingsMounted = settingsOpen || settingsClosing;
+      // Focus goes back where it came from.
+      requestAnimationFrame(() => gear.current?.focus());
+    };
+    if (reducedMotion()) return gone();
+    setSettingsClosing(true);
+    closing.current = setTimeout(gone, SETTINGS_OUT_MS);
+  }, []);
+  useEffect(() => () => clearTimeout(closing.current), []);
+  const settingsShown = settingsOpen && !settingsClosing;
 
   return (
     <div class="app">
-      {/* The list stays put underneath; settings slide over it, so nothing reflows. */}
-      <div class="shell" aria-hidden={settingsMounted} {...(settingsMounted ? { inert: true } : {})}>
+      {/* The main screen steps back (and stays put) while settings slide over it. */}
+      <div class={`shell${settingsShown ? ' shell--behind' : ''}`} aria-hidden={settingsOpen} {...(settingsOpen ? { inert: true } : {})}>
         <header class="top">
           <span class="brand">
             <span class="brand__tile">
@@ -74,34 +133,59 @@ export function App() {
               title={dark ? t('switchToLight') : t('switchToDark')}
               onClick={() => send({ type: 'settings', patch: { theme: dark ? 'light' : 'dark' } })}
             >
-              <Icon name={dark ? 'sun' : 'moon'} />
+              {/* Keyed: the new icon spins in. */}
+              <span key={dark ? 'sun' : 'moon'} class="spin-in">
+                <Icon name={dark ? 'sun' : 'moon'} />
+              </span>
             </button>
-            <button class="icon-btn" aria-label={t('openSettings')} title={t('openSettings')} onClick={openSettings}>
+            <button ref={gear} class="icon-btn" aria-label={t('openSettings')} title={t('openSettings')} onClick={openSettings}>
               <Icon name="settings" />
             </button>
           </span>
         </header>
 
-        <nav class="seg" role="tablist">
-          {(['page', 'history'] as const).map((k) => (
-            <button key={k} role="tab" aria-selected={tab === k} class={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
+        <nav class="seg" role="tablist" style={{ '--n': '2', '--at': String(TABS.indexOf(tab)) }}>
+          <span class="seg__thumb" aria-hidden="true" />
+          {TABS.map((k) => (
+            <button
+              key={k}
+              id={`tab-${k}`}
+              role="tab"
+              aria-selected={tab === k}
+              aria-controls="panel"
+              tabIndex={tab === k ? 0 : -1}
+              class={tab === k ? 'on' : ''}
+              onClick={() => go(k)}
+              onKeyDown={(e) => {
+                const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+                if (!step) return;
+                e.preventDefault();
+                const next = TABS[(TABS.indexOf(k) + step + TABS.length) % TABS.length]!;
+                go(next);
+                document.getElementById(`tab-${next}`)?.focus();
+              }}
+            >
               {k === 'page' ? t('tabPage') : t('tabHistory')}
-              {k === 'page' && items.length > 0 && <span class="count">{items.length}</span>}
+              {k === 'page' && items.length > 0 && (
+                <span key={items.length} class="count">
+                  {items.length}
+                </span>
+              )}
             </button>
           ))}
         </nav>
 
         <main class="content">
           {!state ? (
-            <div class="skeleton" aria-busy="true" />
+            <Skeleton />
           ) : (
-            // Keyed by tab so switching page ↔ history fades the new panel in.
-            <div key={tab} class="panel">
+            // Keyed by tab: the new panel slides in from the side of the tab chosen.
+            <div key={tab} id="panel" role="tabpanel" aria-labelledby={`tab-${tab}`} class={`panel panel--${dir}`}>
               {tab === 'history' ? (
                 <HistoryList entries={state.history} send={send} />
               ) : (
                 <>
-                  {!state.settings.firstRunAck && <FirstRun onOk={() => send({ type: 'settings', patch: { firstRunAck: true } })} />}
+                  {!settings!.firstRunAck && <FirstRun onOk={() => send({ type: 'settings', patch: { firstRunAck: true } })} />}
                   {state.blocked === 'youtube' ? (
                     <StateCard icon="shield" title={t('ytTitle')} body={t('ytBody')} />
                   ) : state.blocked === 'restricted' ? (
@@ -110,10 +194,11 @@ export function App() {
                     <StateCard icon="film" title={t('emptyTitle')} body={t('emptyBody')} />
                   ) : (
                     <section class="list" aria-label={t('tabPage')}>
-                      {items.map((i) => (
+                      {items.map((i, n) => (
                         <MediaCard
                           key={i.id}
                           item={i}
+                          index={n}
                           job={latestJob(state.jobs, i.id)}
                           open={i.id === openCard}
                           onToggle={() => setOpenId(i.id === openCard ? '' : i.id)}
@@ -130,10 +215,10 @@ export function App() {
         </main>
       </div>
 
-      {settingsMounted && state && (
+      {settingsOpen && state && settings && (
         <Settings
           class={settingsClosing ? 'page--out' : 'page--in'}
-          settings={state.settings}
+          settings={settings}
           browserAsks={!!state.browserAsks}
           onChange={(patch) => send({ type: 'settings', patch })}
           onOpenBrowserSettings={() => send({ type: 'open-browser-downloads' })}

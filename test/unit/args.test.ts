@@ -38,14 +38,20 @@ describe('muxAttempts', () => {
     ]);
   });
 
+  it('encodes m4a from a WebM source (Opus/Vorbis) instead of copying it', () => {
+    const a = muxAttempts({ audio: '/j/a.webm' }, 'm4a', true, '/j/out');
+    expect(a.map((x) => x.args[x.args.indexOf('-c:a') + 1])).toEqual(['aac']);
+  });
+
   it('extracts mp3 from the video when there is no separate audio', () => {
     const [only] = muxAttempts({ video: '/j/v.ts' }, 'mp3', true, '/j/out');
     expect(only!.args).toEqual(['-y', '-i', '/j/v.ts', '-vn', '-map', '0:a:0', '-c:a', 'libmp3lame', '-q:a', '2', '/j/out.mp3']);
   });
 
   it.each([
-    ['opus', ['copy', 'libopus']],
-    ['ogg', ['copy', 'libvorbis']],
+    // ffmpeg's own Opus encoder: libopus crashes in ffmpeg.wasm on 44.1 kHz sources.
+    ['opus', ['copy', 'opus']],
+    ['ogg', ['libvorbis']],
     ['flac', ['flac']],
     ['wav', ['pcm_s16le']],
   ] as const)('audio %s: %j', (fmt, codecs) => {

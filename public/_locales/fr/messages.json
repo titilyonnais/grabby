@@ -3,16 +3,14 @@
   "extNameGithub": { "message": "Grabby (édition GitHub)" },
   "extDescription": { "message": "Repère les vidéos d'une page et les enregistre en un clic. Ne touche jamais aux contenus protégés par DRM." },
 
+  "loading": { "message": "Chargement…" },
   "tabPage": { "message": "Cette page" },
   "tabHistory": { "message": "Historique" },
   "openSettings": { "message": "Réglages" },
-  "closeSettings": { "message": "Fermer les réglages" },
   "switchToDark": { "message": "Passer au thème sombre" },
   "switchToLight": { "message": "Passer au thème clair" },
 
   "download": { "message": "Télécharger" },
-  "downloadVideo": { "message": "Télécharger la vidéo" },
-  "audioOnly": { "message": "Audio seul" },
   "capture": { "message": "Enregistrer la lecture" },
   "captureHint": { "message": "Ce lecteur ne donne pas accès au fichier. Grabby relance la vidéo depuis le début, en accéléré et sans le son, et l'enregistre. N'avance pas dans la vidéo pendant ce temps." },
   "finishCapture": { "message": "Arrêter et enregistrer" },
@@ -51,9 +49,7 @@
   "kind_capture": { "message": "Lecteur" },
   "kind_audio": { "message": "Audio" },
 
-  "protectedTitle": { "message": "Vidéo protégée" },
   "protectedBody": { "message": "Cette vidéo est chiffrée par son éditeur (DRM). Grabby ne contourne jamais une protection." },
-  "liveTitle": { "message": "Diffusion en direct" },
   "liveBody": { "message": "Les directs ne peuvent pas encore être téléchargés." },
   "ytTitle": { "message": "YouTube n'est pas pris en charge" },
   "ytBody": { "message": "Le règlement du Chrome Web Store interdit le téléchargement de vidéos YouTube : cette édition de Grabby reste donc inactive sur YouTube." },
@@ -127,8 +123,11 @@
   "set_name_site": { "message": "Site" },
   "set_name_date": { "message": "Date" },
   "set_name_sample": { "message": "Ma vidéo" },
-  "browserAsksNote": { "message": "Si une fenêtre « Enregistrer sous » s'ouvre quand même, c'est le réglage « Toujours demander où enregistrer les fichiers » de ton navigateur qui décide : aucune extension ne peut passer outre." },
-  "browserAsksBody": { "message": "Ton navigateur demande où enregistrer chaque fichier : son réglage passe avant celui de Grabby. Désactive « Toujours demander où enregistrer les fichiers » pour que Grabby enregistre directement, dans le dossier Grabby si tu l'as choisi." },
-  "browserAsksOpen": { "message": "Ouvrir les réglages de téléchargement du navigateur" },
-  "set_template_hint": { "message": "Coche ce qui compose le nom. Le titre y est toujours." }
+  "browserAsksNote": { "message": "C'est un réglage du navigateur, qui passe avant celui de Grabby." },
+  "browserAsksBody": { "message": "Désactive « Toujours demander où enregistrer les fichiers » pour que Grabby enregistre directement." },
+  "browserAsksOpen": { "message": "Ouvrir ce réglage" },
+  "set_template_hint": { "message": "Coche ce qui compose le nom, dans cet ordre." },
+  "browserAsksNoteTitle": { "message": "Une fenêtre « Enregistrer sous » s'ouvre quand même ?" },
+  "browserAsksTitle": { "message": "Ton navigateur demande où enregistrer" },
+  "set_folder_downloads": { "message": "Téléchargements" }
 }

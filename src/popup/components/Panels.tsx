@@ -24,7 +24,7 @@ export function FirstRun({ onOk }: { onOk: () => void }) {
       <div>
         <h2 id="fr-title">{t('firstRunTitle')}</h2>
         <p>{t('firstRunBody')}</p>
-        <button class="pill pill--small" onClick={onOk}>
+        <button class="btn btn--primary btn--small" onClick={onOk}>
           {t('firstRunOk')}
         </button>
       </div>
@@ -37,19 +37,25 @@ export function HistoryList({ entries, send }: { entries: HistoryEntry[]; send: 
   return (
     <section class="history">
       <ul>
-        {entries.map((e) => (
-          <li key={e.id}>
+        {entries.map((e, i) => (
+          <li key={e.id} style={{ '--i': String(Math.min(i, 10)) }}>
             <button
               class="history__item"
               disabled={e.downloadId === undefined}
               onClick={() => e.downloadId !== undefined && send({ type: 'show', downloadId: e.downloadId })}
               title={t('showFile')}
             >
-              <span class="history__name">{e.filename || e.title}</span>
-              <span class="history__meta">
-                <span>{size(e.size)}</span>
-                <span>{relativeTime(e.date)}</span>
+              <span class="history__icon">
+                <Icon name={/\.(mp3|m4a|opus|ogg|flac|wav)$/i.test(e.filename) ? 'audio' : 'film'} size={18} />
               </span>
+              <span class="history__text">
+                <span class="history__name">{e.filename || e.title}</span>
+                <span class="history__meta">
+                  <span>{size(e.size)}</span>
+                  <span>{relativeTime(e.date)}</span>
+                </span>
+              </span>
+              {e.downloadId !== undefined && <Icon name="folder" size={16} />}
             </button>
           </li>
         ))}

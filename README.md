@@ -17,13 +17,23 @@
 
 ---
 
-<!-- release:1.4.1 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
-## Nouveautés de la version 1.4.1
+<!-- release:1.5.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
+## Nouveautés de la version 1.5.0
 
-- **Finitions** de l'interface de la 1.4.0 : arrondis harmonisés partout, contour de la
-  carte ouverte qui n'est plus coupé, et **animations soignées** (les réglages glissent dans
-  les deux sens, fondu entre les onglets).
-- **Section « Fichiers »** des réglages plus claire : aide, cases à cocher et aperçu du nom.
+- **Nouvelle interface** : la vidéo ouverte s'affiche en **grande carte avec sa miniature**,
+  les autres en lignes compactes ; cliquer sur une ligne la déplie en grand.
+- **Tout est rond et harmonisé** : boutons, listes et barres en pilules, cartes aux
+  arrondis assortis.
+- **Animations à ressort** un peu cartoon partout où l'on agit (boutons, onglets,
+  interrupteurs, menus, confettis à la fin d'un téléchargement), mode clair plus lisible.
+- **Audit complet** et nombreux correctifs : Opus qui échouait sur la plupart des vidéos,
+  gros fichiers convertis coupés au bout d'une minute, enregistrement mis en pause, Annuler
+  qui laissait tourner la conversion, réglages qui s'annulaient en cliquant vite.
+- **Chaque format vérifié** par de nouveaux tests de bout en bout (signature, conteneur et
+  codecs de chaque fichier produit).
+
+**Rappel de la 1.4.1** :
+- Finitions de l'interface de la 1.4.0 et section « Fichiers » des réglages plus claire.
 
 **Rappel de la 1.4.0** :
 - **Suivi détaillé** : sous la barre de progression, la taille reçue et la taille totale

@@ -202,6 +202,16 @@ describe('buildPlan — files and capture', () => {
     expect(p.video!.segments).toEqual([{ url: 'https://cdn.com/v.webm' }]);
   });
 
+  it('refuses the sound of a video too big to load in memory', async () => {
+    const item = base({ kind: 'file', url: 'https://cdn.com/v.mp4', mime: 'video/mp4', size: 2e9 });
+    await expect(buildPlan(item, { mode: 'audio', settings: DEFAULT_SETTINGS, fetchText: fetcher({}) })).rejects.toMatchObject({
+      code: 'too_large',
+    });
+    // The video itself is still saved as it is.
+    const v = await buildPlan(item, { mode: 'video', settings: DEFAULT_SETTINGS, fetchText: fetcher({}) });
+    expect(v).toMatchObject({ direct: true });
+  });
+
   it('capture plans defer container choice to the assembler', async () => {
     const item = base({ kind: 'capture', url: 'https://site.com/' });
     const p = await buildPlan(item, { mode: 'video', settings: DEFAULT_SETTINGS, fetchText: fetcher({}) });

@@ -87,7 +87,9 @@ export function parseHls(text: string, baseUrl: string): HlsMaster | HlsMedia {
         const [w, h] = (a.RESOLUTION ?? '').split('x').map(Number);
         variants.push({
           url: resolveUrl(uri, baseUrl),
-          bandwidth: Number(a.BANDWIDTH ?? 0),
+          // The average bitrate when told: BANDWIDTH is the peak, and sizes estimated from it
+          // come out far too big (an 1.1 GB episode announced at 1.8 GB).
+          bandwidth: Number(a['AVERAGE-BANDWIDTH'] ?? a.BANDWIDTH ?? 0),
           ...(w && h ? { width: w, height: h } : {}),
           ...(a.CODECS ? { codecs: a.CODECS } : {}),
           ...(a.AUDIO ? { audio: a.AUDIO } : {}),

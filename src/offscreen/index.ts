@@ -119,6 +119,7 @@ async function run(jobId: string, plan: Plan) {
   const rep = reporter(jobId);
   const dir = `/j${jobId}`;
   const ff = plan.raw ? null : getFFmpeg();
+  if (ff) ff.users++;
   // Share of the progress bar for fetching: shrinking the picture is the long part.
   const fetched = plan.scale ? 0.3 : 0.9;
   // A recording is already stored: its bar continues from where the recording left it.
@@ -183,7 +184,7 @@ async function run(jobId: string, plan: Plan) {
       rep.send('processing', fetched, true);
       let made: { out: string; ext: string } | null = null;
       for (const attempt of muxAttempts(inputs, output, plan.audioOnly, `${dir}/out`, plan.scale)) {
-        const code = await f.exec(attempt.args, (p) => rep.send('processing', fetched + p * (1 - fetched)));
+        const code = await f.exec(attempt.args, (p) => rep.send('processing', fetched + p * (1 - fetched)), signal);
         if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
         if (code === 0) {
           made = attempt;
@@ -208,6 +209,7 @@ async function run(jobId: string, plan: Plan) {
     await toBg({ type: 'job-error', jobId, error: code });
     if (ff) await ff.rmdir(dir).catch(() => {});
   } finally {
+    if (ff) ff.users--;
     clearInterval(heartbeat);
     controllers.delete(jobId);
   }

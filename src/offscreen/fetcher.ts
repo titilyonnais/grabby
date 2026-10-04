@@ -12,7 +12,7 @@ export interface FetchOptions {
   retryDelayMs?: number;
   signal?: AbortSignal;
   fetchImpl?: typeof fetch;
-  /** Per-segment deadline: a server that stops answering counts as a network error. */
+  /** How long a segment may go without receiving data before it counts as a network error. */
   timeoutMs?: number;
   /** Called strictly in segment order; awaited before the next one (backpressure). */
   onData: (index: number, data: Uint8Array<ArrayBuffer>) => void | Promise<void>;
@@ -57,9 +57,45 @@ const sleep = (ms: number, signal?: AbortSignal) =>
     }, { once: true });
   });
 
+/** Reads a body to the end, calling `tick` on every chunk (that's what keeps it alive). */
+async function readBody(res: Response, tick: (n: number) => void): Promise<Uint8Array<ArrayBuffer>> {
+  if (!res.body) {
+    const all = new Uint8Array(await res.arrayBuffer());
+    tick(all.length);
+    return all;
+  }
+  const told = Number(res.headers.get('content-length')) || 0;
+  const reader = res.body.getReader();
+  // Size known (the usual case): fill one buffer, no copy at the end.
+  let out: Uint8Array<ArrayBuffer> | null = told > 0 ? new Uint8Array(told) : null;
+  const parts: Uint8Array[] = [];
+  let len = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    tick(value.length);
+    if (out && len + value.length <= out.length) out.set(value, len);
+    else {
+      // More than announced (or nothing announced): collect the pieces instead.
+      if (out) parts.push(out.subarray(0, len));
+      out = null;
+      parts.push(value);
+    }
+    len += value.length;
+  }
+  if (out) return len === out.length ? out : out.slice(0, len);
+  const all = new Uint8Array(len);
+  let at = 0;
+  for (const p of parts) {
+    all.set(p, at);
+    at += p.length;
+  }
+  return all;
+}
+
 export async function fetchSegment(
   seg: SegRef,
-  opts: Pick<FetchOptions, 'signal' | 'fetchImpl' | 'timeoutMs'>,
+  opts: Pick<FetchOptions, 'signal' | 'fetchImpl' | 'timeoutMs'> & { onChunk?: (n: number) => void },
 ): Promise<Uint8Array<ArrayBuffer>> {
   const f = opts.fetchImpl ?? fetch;
   const headers: Record<string, string> = {};
@@ -70,7 +106,12 @@ export async function fetchSegment(
   try {
     res = await f(seg.url, { credentials: 'include', headers, signal: dl.signal });
     if (!res.ok) throw new HttpError(res.status);
-    buf = new Uint8Array(await res.arrayBuffer());
+    // The deadline is for silence, not for the whole transfer: a big file (a whole video in
+    // one piece) may take many minutes and that's fine as long as data keeps coming.
+    buf = await readBody(res, (n) => {
+      dl.arm();
+      opts.onChunk?.(n);
+    });
   } catch (e) {
     // Report our own timeout as a network error, not as the user's cancel.
     throw dl.signal.aborted && !opts.signal?.aborted ? dl.signal.reason : e;
@@ -121,7 +162,7 @@ async function withRetry(seg: SegRef, o: FetchOptions): Promise<Uint8Array<Array
   const delay = o.retryDelayMs ?? 500;
   for (let attempt = 0; ; attempt++) {
     try {
-      return await fetchSegment(seg, o);
+      return await fetchSegment(seg, { ...o, ...(o.onBytes ? { onChunk: o.onBytes } : {}) });
     } catch (e) {
       if (o.signal?.aborted) throw e;
       const fatal = e instanceof HttpError && FATAL.has(e.status);
@@ -175,8 +216,8 @@ export async function fetchInOrder(segs: SegRef[], o: FetchOptions): Promise<voi
       while (next - delivered >= concurrency * 2 && !failed) await waitChange();
       const i = next++;
       if (i >= segs.length) return;
+      // Bytes are counted as they arrive (withRetry → onChunk): a one-piece file shows progress too.
       const data = await withRetry(segs[i]!, o);
-      o.onBytes?.(data.length);
       ready.set(i, data);
       await flush();
     }

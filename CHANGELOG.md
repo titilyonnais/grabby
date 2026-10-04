@@ -15,6 +15,89 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 Rien pour l'instant.
 
+## [1.5.0] — 2026-10-04
+
+Nouvelle interface (grande miniature, tout en pilules, animations à ressort), audit complet
+du code et une série de correctifs trouvés par de nouveaux tests de bout en bout.
+
+### Ajouté
+- **Grande carte avec miniature** : la vidéo ouverte s'affiche en grand (miniature pleine
+  largeur, titre, choix de qualité et de format, bouton Télécharger) ; les autres vidéos
+  sont des lignes compactes. Cliquer sur une ligne la **déplie en grande carte** : la
+  miniature grandit depuis sa place et la carte s'agrandit en douceur, l'autre se replie.
+- **Animations « à ressort »**, un peu cartoon, partout où l'on agit : les boutons
+  s'écrasent quand on appuie et rebondissent quand on relâche, la pastille des onglets et
+  des choix (Auto / Clair / Sombre) glisse d'un choix à l'autre, les interrupteurs
+  s'étirent quand on les tient, les menus jaillissent depuis leur bouton, l'icône du thème
+  tourne, le logo sautille à l'ouverture, une petite gerbe de confettis entoure la coche
+  « Enregistré ». Le réglage système « réduire les animations » est respecté.
+- **Nom du fichier en touches** : les quatre parties (Titre, Qualité, Site, Date) tiennent
+  sur une seule ligne, centrées, avec une pastille de coche qui saute dessus. La dernière
+  partie cochée refuse de partir en **secouant la tête**.
+- **Aperçu du nom en petite fiche de fichier** (extension, nom, dossier de destination) et
+  **encart d'aide redessiné** pour « Enregistrer sous ».
+- **Navigation au clavier** : flèches gauche / droite entre les onglets et dans les choix du
+  thème ; à la fermeture des réglages, le focus revient sur le bouton Réglages.
+
+### Modifié
+- **Tout est rond et harmonisé** : chaque bouton, liste déroulante, barre de progression et
+  touche est une pilule. Les cartes ont un rayon de 32 px : une pilule de 48 px placée à
+  8 px du bord suit exactement l'arrondi de sa carte (24 + 8 = 32). Même règle dans les
+  réglages et les menus.
+- **Carte ouverte sobre** : plus de contour coloré, c'est sa taille qui la distingue.
+- **Mode clair plus lisible** : textes secondaires, traits, contours des listes et piste
+  des interrupteurs plus contrastés ; anneau de focus plus foncé.
+- **Ouverture de la popup** sans flash : le thème est appliqué avant le premier affichage, et
+  l'emplacement de chargement a la forme de la liste (une grande carte, puis des lignes),
+  donc rien ne saute à l'arrivée des vidéos.
+- **Réglages instantanés** : un réglage changé s'affiche tout de suite, sans attendre l'aller-
+  retour avec le reste de l'extension.
+- **Noms de fichiers lisibles** : les caractères interdits par Windows sont remplacés comme
+  on l'écrirait à la main (« Film : la suite » → « Film - la suite », « AC/DC » → « AC-DC »)
+  au lieu d'un tiret bas.
+- **Taille des flux HLS** estimée sur le débit moyen annoncé par le site (et non le débit de
+  pointe) : un épisode de 1,1 Go n'est plus annoncé à 1,8 Go ni refusé à tort.
+- **Format OGG** : toujours en Vorbis (l'Opus a son propre choix).
+- **Flux DASH en plusieurs parties** (publicité avant l'émission) : Grabby prend la partie
+  principale, avec sa vraie durée.
+
+### Corrigé
+- **Opus** : l'enregistrement en Opus (et l'audio des WebM) échouait pour toute source qui
+  n'était pas déjà en 48 kHz (la plupart des MP4) — l'encodeur libopus de ffmpeg.wasm
+  plante. Grabby utilise maintenant l'encodeur Opus intégré à ffmpeg.
+- **Gros fichiers convertis** : un fichier d'un seul morceau (conversion, extraction du son,
+  réduction de qualité) échouait s'il mettait plus de 60 secondes à arriver. Le délai ne
+  compte plus que les silences du serveur, et la taille reçue s'affiche pendant le
+  transfert.
+- **Pause pendant un enregistrement** : plus de minute de pause coupait l'enregistrement et
+  laissait la vidéo de la page muette en accéléré. La page est maintenant prévenue, rend sa
+  vitesse et son son à la vidéo, et l'enregistrement en pause n'est plus pris pour un
+  plantage.
+- **Annuler** arrête vraiment ffmpeg (le processeur est libéré tout de suite), et un
+  téléchargement annulé pendant son attente ne lance plus sa conversion.
+- **Format choisi ignoré** lors d'une réduction de qualité (MOV, AVI, TS sur une source
+  WebM), et format affiché différent de celui envoyé après un changement de qualité.
+- **« Réessayer »** sans effet quand la vidéo n'était plus sur la page ; un téléchargement
+  en file d'attente échouait si la page changeait entre-temps.
+- **Deux clics rapides dans les réglages** pouvaient s'annuler (par exemple décocher
+  « Titre » juste après avoir coché « Qualité »), et un ancien état pouvait écraser le
+  nouveau.
+- **Les réglages volaient le focus** à chaque mise à jour (une liste ouverte se refermait
+  pendant un téléchargement) ; les rouvrir juste après les avoir fermés les refermait.
+- **Date du nom de fichier** en heure locale (entre minuit et 2 h, c'était la veille).
+- **M4A depuis une source WebM** : le son est converti en AAC au lieu d'un Opus glissé dans
+  un .m4a illisible par les lecteurs Apple.
+- **Son d'une vidéo de plus de 1,5 Go** : refus clair au lieu d'un échec après le
+  téléchargement complet.
+- État « Enregistré » : le bouton « Afficher dans le dossier » ne recouvre plus le texte.
+
+### Tests
+- Nouveaux tests de bout en bout : **chaque format proposé** (11 pour une source MP4, 9 pour
+  une source WebM) est téléchargé puis vérifié (signature du fichier, conteneur et codecs
+  avec ffprobe) ; options de fichier (dossier Grabby, parties du nom, « Enregistrer sous »,
+  notification désactivée) ; dépliage et repli des cartes ; case « Titre » décochable et
+  dernière case gardée. 25 tests de bout en bout et 238 tests unitaires.
+
 ## [1.4.1] — 2026-10-04
 
 Finitions de l'interface de la 1.4.0 : arrondis harmonisés, animations soignées, réglages
@@ -69,8 +152,9 @@ réglages vérifiés un à un.
   assemblage).
 - Le réglage **« Ranger dans un dossier Grabby »** était ignoré quand le navigateur imposait
   sa fenêtre « Enregistrer sous » ; c'est maintenant détecté et expliqué (voir ci-dessus).
-- Vérification de **tous les formats** (6 vidéo, 6 audio) et des options dans les tests de
-  bout en bout.
+- *Rectificatif : cette version annonçait à tort des tests de bout en bout couvrant tous les
+  formats et les options. Ils n'existaient pas encore ; ils sont arrivés avec la 1.5.0, et
+  ont révélé un échec de l'Opus corrigé à ce moment-là.*
 
 ## [1.3.0] — 2026-10-04
 
@@ -255,7 +339,8 @@ Première version.
 - Capture YouTube expérimentale.
 - Interface en français et en anglais, thème clair et sombre.
 
-[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.4.1...HEAD
+[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/titilyonnais/grabby/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/titilyonnais/grabby/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/titilyonnais/grabby/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/titilyonnais/grabby/compare/v1.2.1...v1.3.0

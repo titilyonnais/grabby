@@ -196,6 +196,10 @@ const LOG_BUDGET = 48 * 1024 * 1024;
     video: HTMLVideoElement;
     tracks: Map<SourceBuffer, number>;
     rate: number;
+    /** The page's own sound setting, given back when the recording ends. */
+    wasMuted: boolean;
+    /** Progress even while the video is paused or waiting: silence would mean the page died. */
+    beat?: ReturnType<typeof setInterval>;
     onTime: () => void;
     onEnd: () => void;
     onRate: () => void;
@@ -244,11 +248,13 @@ const LOG_BUDGET = 48 * 1024 * 1024;
     if (!capture) return;
     const c = capture;
     capture = null;
+    clearInterval(c.beat);
     c.video.removeEventListener('timeupdate', c.onTime);
     c.video.removeEventListener('ended', c.onEnd);
     c.video.removeEventListener('ratechange', c.onRate);
     try {
       c.video.playbackRate = 1;
+      c.video.muted = c.wasMuted;
     } catch {
       /* ignore */
     }
@@ -301,6 +307,7 @@ const LOG_BUDGET = 48 * 1024 * 1024;
       video,
       tracks,
       rate: 1,
+      wasMuted: video.muted,
       onTime: () => {
         const d = video.duration;
         if (Number.isFinite(d) && d > 0) post({ type: 'progress', progress: Math.min(1, video.currentTime / d) });
@@ -350,6 +357,7 @@ const LOG_BUDGET = 48 * 1024 * 1024;
       video.currentTime = 0;
     }
     video.addEventListener('timeupdate', c.onTime);
+    c.beat = setInterval(c.onTime, 5000);
     video.addEventListener('ended', c.onEnd);
     video.addEventListener('ratechange', c.onRate);
     void video.play().catch(() => {});

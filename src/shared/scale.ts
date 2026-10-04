@@ -1,5 +1,9 @@
 import { qualityLabel } from './format';
+import type { VideoFormat } from './plan';
 import type { MediaItem, Variant } from './types';
+
+/** A shrunk picture is H.264: these hold it (WebM doesn't), whatever the source's codec. */
+export const SHRUNK_FORMATS: VideoFormat[] = ['mp4', 'mkv', 'mov', 'avi', 'ts'];
 
 /** Qualities Grabby can make itself by shrinking a bigger one. */
 export const SCALE_LINES = [1440, 1080, 720, 480, 360, 240, 144];

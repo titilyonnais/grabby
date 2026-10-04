@@ -30,8 +30,15 @@ export async function getSettings(): Promise<Settings> {
   return { ...DEFAULT_SETTINGS, ...((res[KEY] as Partial<Settings>) ?? {}) };
 }
 
-export async function setSettings(patch: Partial<Settings>): Promise<Settings> {
-  const next = { ...(await getSettings()), ...patch };
-  await chrome.storage.local.set({ [KEY]: next });
-  return next;
+let writing: Promise<unknown> = Promise.resolve();
+
+/** Changes some settings. One write at a time: two quick changes can't undo each other. */
+export function setSettings(patch: Partial<Settings>): Promise<Settings> {
+  const done = writing.then(async () => {
+    const next = { ...(await getSettings()), ...patch };
+    await chrome.storage.local.set({ [KEY]: next });
+    return next;
+  });
+  writing = done.catch(() => undefined);
+  return done;
 }

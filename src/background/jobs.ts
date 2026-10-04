@@ -1,6 +1,6 @@
 import { hostOf } from '../parsers/url';
 import { isAudioFormat, VIDEO_FORMATS } from '../shared/formats';
-import { canShrink, scaleChoices } from '../shared/scale';
+import { canShrink, scaleChoices, SHRUNK_FORMATS } from '../shared/scale';
 import { buildFilename } from '../shared/filename';
 import { uid } from '../shared/ids';
 import type { BgToContent, ContentToBg, OffscreenToBg } from '../shared/messages';
@@ -64,6 +64,10 @@ export class JobManager {
   /** Header rules held by running jobs (in memory; orphans are swept once idle). */
   private releases = new Map<string, () => Promise<void>>();
   private lastUpdate = new Map<string, number>();
+  /** What each download was asked for ("tab:media"), in case the page drops it meanwhile. */
+  private items = new Map<string, MediaItem>();
+  /** Stalled recordings the page was asked to end. */
+  private stopAsked = new Set<string>();
   /** Last byte count of each job and when it was seen, to measure the speed. */
   private rate = new Map<string, { at: number; bytes: number }>();
   private listeners: (() => void)[] = [];
@@ -170,7 +174,7 @@ export class JobManager {
     scale?: number,
   ): Promise<Job | undefined> {
     await this.ready;
-    const item = findVisible(await this.registry.get(tabId), mediaId);
+    const item = findVisible(await this.registry.get(tabId), mediaId) ?? this.items.get(`${tabId}:${mediaId}`);
     if (!item) return undefined;
     // Only the smaller qualities the card offers.
     if (scale !== undefined && (mode !== 'video' || !canShrink(item) || !scaleChoices(item.variants).includes(scale))) scale = undefined;
@@ -202,12 +206,17 @@ export class JobManager {
       ...(item.kind === 'capture' && mode === 'video' && (variant?.sizes?.[format as VideoFormat] ?? item.size)
         ? { total: variant?.sizes?.[format as VideoFormat] ?? item.size, totalApprox: true }
         : {}),
-      ...(format && (mode === 'audio' ? isAudioFormat(format) : (item.formats ?? VIDEO_FORMATS).includes(format as VideoFormat)) ? { format } : {}),
+      ...(format && (mode === 'audio' ? isAudioFormat(format) : (scale ? SHRUNK_FORMATS : (item.formats ?? VIDEO_FORMATS)).includes(format as VideoFormat))
+        ? { format }
+        : {}),
       ...(item.ytId ? { hidden: true } : {}),
       ...(item.frameId !== undefined ? { frameId: item.frameId } : {}),
       ...(item.videoIndex !== undefined ? { videoIndex: item.videoIndex } : {}),
     };
     this.jobs.set(job.id, job);
+    this.items.delete(`${tabId}:${mediaId}`);
+    this.items.set(`${tabId}:${mediaId}`, item);
+    if (this.items.size > 40) this.items.delete(this.items.keys().next().value!);
     this.lastUpdate.set(job.id, Date.now());
     this.changed();
     this.pump();
@@ -219,7 +228,8 @@ export class JobManager {
     const j = this.jobs.get(jobId);
     if (!j || !FINISHED.includes(j.status)) return;
     this.jobs.delete(jobId);
-    await this.start(j.tabId, j.mediaId, j.variantId, j.mode, j.format, j.scale);
+    // The video may be gone from the page: the card still has to update.
+    if (!(await this.start(j.tabId, j.mediaId, j.variantId, j.mode, j.format, j.scale))) this.changed();
   }
 
   async dismiss(jobId: string): Promise<void> {
@@ -283,7 +293,8 @@ export class JobManager {
   private async run(job: Job) {
     this.update(job.id, { status: 'downloading', progress: 0 });
     try {
-      const item = findVisible(await this.registry.get(job.tabId), job.mediaId);
+      // Queued while the page moved on (a new page in the same tab): what was asked still stands.
+      const item = findVisible(await this.registry.get(job.tabId), job.mediaId) ?? this.items.get(`${job.tabId}:${job.mediaId}`);
       if (!item) return this.fail(job.id, 'unknown');
       const settings = await getSettings();
       const plan = await buildPlan(item, {
@@ -402,7 +413,10 @@ export class JobManager {
   private async assembleCapture(job: Job, hasTracks = job.bytes > 0, keep?: number[]) {
     if (job.status !== 'capturing') return;
     const plan = job.capturePlan;
+    this.stopAsked.delete(job.id);
     if (job.hidden) void sendOffscreen({ target: 'offscreen', type: 'yt-stop', jobId: job.id }).catch(() => {});
+    // The page gives its video back (normal speed, its sound) and stops recording.
+    else void this.toContent(job, { type: 'capture-stop', jobId: job.id });
     if (!plan || !hasTracks) return this.fail(job.id, 'capture_failed');
     // A hidden player may also have recorded ads: keep only the tracks of the video itself.
     const final: Plan = { ...plan, ...(keep?.length ? { keepTracks: keep } : {}) };
@@ -529,7 +543,12 @@ export class JobManager {
         if (['downloading', 'processing'].includes(j.status) && j.downloadId === undefined && idle > STALL_MS) {
           this.fail(j.id, 'network');
         } else if (j.status === 'capturing' && idle > CAPTURE_STALL_MS) {
-          void this.assembleCapture(j);
+          if (!this.stopAsked.has(j.id)) {
+            // Ask the page to stop and hand over what it has; give it 10 s before assembling anyway.
+            this.stopAsked.add(j.id);
+            this.lastUpdate.set(j.id, now - CAPTURE_STALL_MS + 10_000);
+            void this.finishCapture(j.id);
+          } else void this.assembleCapture(j);
         }
       }
       if (!this.isBusy()) {

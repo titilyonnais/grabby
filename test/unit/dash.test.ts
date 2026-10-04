@@ -53,6 +53,19 @@ describe('parseDash', () => {
     expect(a.segments[0]!.url).toBe('https://cdn.x.com/v/media/a/0.m4s');
   });
 
+  it('takes the programme out of several periods (an ad before it), with its own length', () => {
+    const rep = (name: string) =>
+      `<AdaptationSet mimeType="video/mp4"><SegmentTemplate initialization="${name}-init.mp4" media="${name}-$Number$.m4s" duration="4" startNumber="1"/><Representation id="${name}" bandwidth="1000" width="640" height="360"/></AdaptationSet>`;
+    const m = parseDash(
+      `<MPD type="static" mediaPresentationDuration="PT40S"><Period id="ad" start="PT0S">${rep('ad')}</Period><Period id="main" start="PT8S">${rep('main')}</Period></MPD>`,
+      'https://x/m.mpd',
+    );
+    expect(m.duration).toBe(32);
+    expect(m.video.map((r) => r.id)).toEqual(['main']);
+    // 32 s in 4 s pieces: 8 segments, not 10 (the whole presentation).
+    expect(m.video[0]!.segments).toHaveLength(8);
+  });
+
   it('expands SegmentTimeline with $Time$ and repeats', () => {
     const xml = `<MPD type="static" mediaPresentationDuration="PT6S"><Period>
       <AdaptationSet contentType="video" mimeType="video/mp4">

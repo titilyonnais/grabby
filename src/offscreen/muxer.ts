@@ -11,6 +11,8 @@ export class FFmpeg {
   private loaded: Promise<void>;
   /** Set once the wasm module aborted (e.g. out of memory): it can't be reused. */
   broken = false;
+  /** Jobs currently keeping files in this instance (a cancel may only kill it when alone). */
+  users = 0;
 
   constructor() {
     this.worker = new Worker(new URL('./ffmpeg-worker.ts', import.meta.url), { type: 'module' });
@@ -84,15 +86,26 @@ export class FFmpeg {
     await this.call('rmdir', { path });
   }
 
-  /** Runs ffmpeg; returns its exit code. Calls are serialized. */
-  exec(args: string[], onProgress?: (p: number) => void): Promise<number> {
+  /**
+   * Runs ffmpeg; returns its exit code. Calls are serialized. Canceled while waiting its
+   * turn, it doesn't run; canceled while running, the worker is stopped (when no other job
+   * keeps files in it), so the processor is freed at once.
+   */
+  exec(args: string[], onProgress?: (p: number) => void, signal?: AbortSignal): Promise<number> {
     const run = this.lock.then(async () => {
       await this.loaded;
+      const aborted = () => signal?.reason ?? new DOMException('Aborted', 'AbortError');
+      if (signal?.aborted) throw aborted();
       this.logs = [];
       this.progressCb = onProgress ?? null;
+      const stop = () => this.users <= 1 && this.terminate();
+      signal?.addEventListener('abort', stop, { once: true });
       try {
         return await this.call<number>('exec', { args });
+      } catch (e) {
+        throw signal?.aborted ? aborted() : e;
       } finally {
+        signal?.removeEventListener('abort', stop);
         this.progressCb = null;
       }
     });

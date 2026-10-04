@@ -5,13 +5,25 @@ const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
 const MAX_TOTAL = 120;
 const MAX_STEM = 110;
 
+/**
+ * Characters Windows refuses, turned into what a person would type instead: "Film: la
+ * suite" → "Film - la suite", "AC/DC" → "AC-DC", quotes → apostrophes; ? * < > dropped.
+ */
+function readable(s: string): string {
+  return s
+    .replace(/\s*:\s+/g, ' - ')
+    .replace(/[:/\\|]/g, '-')
+    .replace(/"/g, "'")
+    .replace(/[<>?*]/g, '');
+}
+
 function truncate(s: string, max: number): string {
   const chars = [...s];
   return chars.length <= max ? s : chars.slice(0, max).join('');
 }
 
 export function sanitizeFilename(name: string, fallback = 'video', max = MAX_STEM): string {
-  let s = name.replace(CONTROL, ' ').replace(FORBIDDEN, '_').replace(/\s+/g, ' ');
+  let s = readable(name.replace(CONTROL, ' ')).replace(FORBIDDEN, '_').replace(/\s+/g, ' ');
   s = truncate(s.trim(), max);
   s = s.replace(/[. ]+$/, '').replace(/^[. ]+/, '');
   if (!s) return fallback;
@@ -30,16 +42,16 @@ export interface FilenameContext {
 export const NAME_PARTS = ['title', 'quality', 'site', 'date'] as const;
 export type NamePart = (typeof NAME_PARTS)[number];
 
-/** The parts a name template uses (the title is always there). */
+/** The parts a name template uses; a template naming none of them counts as the title alone. */
 export function namePartsOf(template: string): NamePart[] {
-  return NAME_PARTS.filter((p) => p === 'title' || template.includes(`{${p}}`));
+  const parts = NAME_PARTS.filter((p) => template.includes(`{${p}}`));
+  return parts.length ? parts : ['title'];
 }
 
-/** The template for a set of parts, joined by " - ". */
+/** The template for a set of parts (in the fixed order), joined by " - "; never empty. */
 export function templateOf(parts: readonly NamePart[]): string {
-  return NAME_PARTS.filter((p) => p === 'title' || parts.includes(p))
-    .map((p) => `{${p}}`)
-    .join(' - ');
+  const kept = NAME_PARTS.filter((p) => parts.includes(p));
+  return (kept.length ? kept : ['title']).map((p) => `{${p}}`).join(' - ');
 }
 
 export function buildFilename(
@@ -52,7 +64,9 @@ export function buildFilename(
     title: ctx.title,
     site: ctx.site,
     quality: ctx.quality ?? '',
-    date: ctx.date.toISOString().slice(0, 10),
+    // The user's own calendar day (toISOString is UTC: in Paris just after midnight it
+    // would still be yesterday).
+    date: `${ctx.date.getFullYear()}-${String(ctx.date.getMonth() + 1).padStart(2, '0')}-${String(ctx.date.getDate()).padStart(2, '0')}`,
   };
   let raw = (template || '{title}').replace(/\{(\w+)\}/g, (_, k: string) => values[k] ?? '');
   // Remove brackets/parentheses and " - " separators left empty by missing values.

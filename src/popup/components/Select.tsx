@@ -155,7 +155,7 @@ export function Select<T extends string>({ label, value, options, onChange, disa
         <ul
           ref={list}
           id={`${id}-list`}
-          class="menu"
+          class={`menu${place.bottom !== undefined ? ' menu--up' : ''}`}
           role="listbox"
           aria-label={label}
           tabIndex={-1}

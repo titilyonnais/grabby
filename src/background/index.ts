@@ -93,6 +93,8 @@ async function buildState(tabId: number): Promise<PopupState> {
   };
 }
 
+const pushSeq = new WeakMap<chrome.runtime.Port, number>();
+
 function schedulePush(port: chrome.runtime.Port) {
   if (pushTimers.has(port)) return;
   pushTimers.set(
@@ -101,7 +103,13 @@ function schedulePush(port: chrome.runtime.Port) {
       pushTimers.delete(port);
       const tabId = ports.get(port);
       if (tabId === undefined) return;
-      const msg: BgToPopup = { type: 'state', state: await buildState(tabId) };
+      // Two builds can overlap (a change lands while one is reading): only the one started
+      // last — the freshest — is sent, or an older state would undo what the user just did.
+      const seq = (pushSeq.get(port) ?? 0) + 1;
+      pushSeq.set(port, seq);
+      const state = await buildState(tabId);
+      if (pushSeq.get(port) !== seq) return;
+      const msg: BgToPopup = { type: 'state', state };
       try {
         port.postMessage(msg);
       } catch {

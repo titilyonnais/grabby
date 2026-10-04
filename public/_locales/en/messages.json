@@ -3,16 +3,14 @@
   "extNameGithub": { "message": "Grabby (GitHub edition)" },
   "extDescription": { "message": "Spots the videos playing on any page and saves them in one click. Never touches DRM-protected content." },
 
+  "loading": { "message": "Loading…" },
   "tabPage": { "message": "This page" },
   "tabHistory": { "message": "History" },
   "openSettings": { "message": "Settings" },
-  "closeSettings": { "message": "Close settings" },
   "switchToDark": { "message": "Switch to dark theme" },
   "switchToLight": { "message": "Switch to light theme" },
 
   "download": { "message": "Download" },
-  "downloadVideo": { "message": "Download video" },
-  "audioOnly": { "message": "Audio only" },
   "capture": { "message": "Record playback" },
   "captureHint": { "message": "This player doesn't expose a file. Grabby replays the video from the start, muted and sped up, and records it. Don't skip ahead while it runs." },
   "finishCapture": { "message": "Stop and save" },
@@ -51,9 +49,7 @@
   "kind_capture": { "message": "Player" },
   "kind_audio": { "message": "Audio" },
 
-  "protectedTitle": { "message": "Protected video" },
   "protectedBody": { "message": "This video is encrypted by its publisher (DRM). Grabby never bypasses protection." },
-  "liveTitle": { "message": "Live stream" },
   "liveBody": { "message": "Live streams can't be downloaded yet." },
   "ytTitle": { "message": "YouTube isn't supported" },
   "ytBody": { "message": "Chrome Web Store rules don't allow downloading YouTube videos, so this edition of Grabby stays off on YouTube." },
@@ -127,8 +123,11 @@
   "set_name_site": { "message": "Site" },
   "set_name_date": { "message": "Date" },
   "set_name_sample": { "message": "My video" },
-  "browserAsksNote": { "message": "If a \"Save as\" window opens anyway, it is your browser's \"Ask where to save each file\" setting that decides: no extension can override it." },
-  "browserAsksBody": { "message": "Your browser asks where to save every file: its setting comes before Grabby's. Turn off \"Ask where to save each file\" so Grabby saves directly, in the Grabby folder if you chose it." },
-  "browserAsksOpen": { "message": "Open the browser's download settings" },
-  "set_template_hint": { "message": "Tick what the name is made of. The title is always in." }
+  "browserAsksNote": { "message": "It's a browser setting, and it comes before Grabby's." },
+  "browserAsksBody": { "message": "Turn off \"Ask where to save each file\" so Grabby saves directly." },
+  "browserAsksOpen": { "message": "Open this setting" },
+  "set_template_hint": { "message": "Tick what the name is made of, in this order." },
+  "browserAsksNoteTitle": { "message": "A \"Save as\" window opens anyway?" },
+  "browserAsksTitle": { "message": "Your browser asks where to save" },
+  "set_folder_downloads": { "message": "Downloads" }
 }

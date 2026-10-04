@@ -198,6 +198,8 @@ export async function buildPlan(item: MediaItem, o: PlanOptions): Promise<Plan> 
       const scale = scaled(o, variant, size);
       // Converting works in memory: past ~1.5 GB the file is saved as it is.
       const big = (size ?? 0) > RAW_THRESHOLD;
+      // The sound of a huge video would mean loading all of it in memory first.
+      if (big && o.mode === 'audio' && !item.audioOnly) throw new PlanError('too_large');
       const keep = !scale.scale && (wanted === src || big) && (o.mode === 'video' || !!item.audioOnly);
       return {
         kind: 'file',

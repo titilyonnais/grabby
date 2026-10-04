@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'preact/hooks';
-import { AUDIO_FORMATS, FORMAT_NAMES, VIDEO_FORMATS } from '../../shared/formats';
+import type { ComponentChildren } from 'preact';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { buildFilename, NAME_PARTS, namePartsOf, templateOf, type NamePart } from '../../shared/filename';
+import { AUDIO_FORMATS, FORMAT_NAMES, VIDEO_FORMATS } from '../../shared/formats';
 import type { Settings as S } from '../../shared/settings';
 import { t } from '../i18n';
-import { Icon } from './Icon';
+import { Icon, type IconName } from './Icon';
 import { Select } from './Select';
 
 interface Props {
@@ -18,10 +19,27 @@ interface Props {
 }
 
 function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: [T, string][]; onChange: (v: T) => void; label: string }) {
+  const at = Math.max(0, options.findIndex(([v]) => v === value));
   return (
-    <div class="seg seg--small" role="radiogroup" aria-label={label}>
+    <div class="seg seg--small" role="radiogroup" aria-label={label} style={{ '--n': String(options.length), '--at': String(at) }}>
+      <span class="seg__thumb" aria-hidden="true" />
       {options.map(([v, text]) => (
-        <button key={v} role="radio" aria-checked={v === value} class={v === value ? 'on' : ''} onClick={() => onChange(v)}>
+        <button
+          key={v}
+          role="radio"
+          aria-checked={v === value}
+          tabIndex={v === value ? 0 : -1}
+          class={v === value ? 'on' : ''}
+          onClick={() => onChange(v)}
+          onKeyDown={(e) => {
+            const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+            if (!step) return;
+            e.preventDefault();
+            const i = (options.findIndex(([o]) => o === v) + step + options.length) % options.length;
+            onChange(options[i]![0]);
+            ((e.currentTarget as HTMLElement).parentElement?.children[i + 1] as HTMLElement | undefined)?.focus();
+          }}
+        >
           {text}
         </button>
       ))}
@@ -31,45 +49,124 @@ function Segmented<T extends string>({ value, options, onChange, label }: { valu
 
 function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint: string }) {
   return (
-    <label class="setting setting--toggle">
-      <span>
+    <label class="row-setting">
+      <span class="row-setting__text">
         <span class="setting__label">{label}</span>
         <span class="setting__hint">{hint}</span>
       </span>
-      <input type="checkbox" role="switch" checked={checked} onChange={(e) => onChange((e.target as HTMLInputElement).checked)} />
+      <input class="switch" type="checkbox" role="switch" checked={checked} onChange={(e) => onChange((e.target as HTMLInputElement).checked)} />
     </label>
   );
 }
 
-function Group({ title, children }: { title: string; children: preact.ComponentChildren }) {
+function Group({ title, icon, index, children }: { title: string; icon: IconName; index: number; children: ComponentChildren }) {
   return (
-    <section class="group">
-      <h3 class="group__title">{title}</h3>
+    <section class="group" style={{ '--i': String(index) }}>
+      <h3 class="group__title">
+        <Icon name={icon} size={14} />
+        {title}
+      </h3>
       <div class="group__body">{children}</div>
     </section>
   );
 }
 
 /** Example the file name preview is built on. */
-const SAMPLE = { title: 'Ma vidéo', site: 'exemple.fr', quality: '1080p' };
+const SAMPLE = { site: 'exemple.fr', quality: '1080p' };
+
+/** Four tiles on one line: what the file name is made of. At least one stays ticked. */
+function NameTiles({ template, onChange }: { template: string; onChange: (template: string) => void }) {
+  const parts = namePartsOf(template);
+  // The tile the user tried to untick while it was the last one: it shakes "no".
+  const [refused, setRefused] = useState<NamePart | null>(null);
+  const toggle = (p: NamePart) => {
+    const on = parts.includes(p);
+    if (on && parts.length === 1) {
+      // Off then on again on the next frame: the shake replays on every try.
+      setRefused(null);
+      requestAnimationFrame(() => setRefused(p));
+      return;
+    }
+    onChange(templateOf(on ? parts.filter((x) => x !== p) : [...parts, p]));
+  };
+  return (
+    <div class="tiles" role="group" aria-label={t('set_template')}>
+      {NAME_PARTS.map((p) => {
+        const on = parts.includes(p);
+        return (
+          <button
+            key={p}
+            class={`tile${on ? ' tile--on' : ''}${refused === p ? ' tile--no' : ''}`}
+            role="checkbox"
+            aria-checked={on}
+            onClick={() => toggle(p)}
+            onAnimationEnd={(e) => e.animationName === 'no' && setRefused(null)}
+          >
+            <span class="tile__label">{t(`set_name_${p}`)}</span>
+            <span class="tile__tick" aria-hidden="true">
+              <Icon name="check" size={11} />
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** The name a file will get, shown as a small file card (extension badge, folder). */
+function FilePreview({ name, ext, folder }: { name: string; ext: string; folder: string }) {
+  return (
+    <div class="file" title={`${folder}/${name}`}>
+      <span class="file__badge">{ext.toUpperCase()}</span>
+      <span class="file__text">
+        {/* Keyed by the name: a new name slides in. */}
+        <span key={name} class="file__name">
+          {name}
+        </span>
+        <span class="file__folder">
+          <Icon name="folder" size={12} />
+          {folder}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+function Help({ warn, onOpen }: { warn: boolean; onOpen: () => void }) {
+  return (
+    <div class={`help${warn ? ' help--warn' : ''}`} role={warn ? 'alert' : undefined}>
+      <span class="help__icon">
+        <Icon name={warn ? 'alert' : 'info'} size={16} />
+      </span>
+      <div class="help__text">
+        <p class="help__title">{t(warn ? 'browserAsksTitle' : 'browserAsksNoteTitle')}</p>
+        <p class="help__body">{t(warn ? 'browserAsksBody' : 'browserAsksNote')}</p>
+        <button class="btn btn--soft btn--small" onClick={onOpen}>
+          {t('browserAsksOpen')}
+          <Icon name="external" size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function Settings({ class: className, settings, browserAsks, onChange, onOpenBrowserSettings, onClose }: Props) {
   const pageRef = useRef<HTMLElement>(null);
-  const parts = namePartsOf(settings.template);
-  const setPart = (part: NamePart, on: boolean) => onChange({ template: templateOf(NAME_PARTS.filter((p) => (p === part ? on : parts.includes(p)))) });
-  const preview = buildFilename(
-    settings.template,
-    { title: t('set_name_sample') === 'set_name_sample' ? SAMPLE.title : t('set_name_sample'), site: SAMPLE.site, quality: SAMPLE.quality, date: new Date() },
-    settings.videoFormat,
-    settings.subfolder ? 'Grabby' : undefined,
-  );
+  const title = t('set_name_sample') === 'set_name_sample' ? 'Ma vidéo' : t('set_name_sample');
+  const path = buildFilename(settings.template, { title, ...SAMPLE, date: new Date() }, settings.videoFormat, settings.subfolder ? 'Grabby' : undefined);
+  const name = path.split('/').pop() ?? path;
+  const downloads = t('set_folder_downloads') === 'set_folder_downloads' ? 'Téléchargements' : t('set_folder_downloads');
+  const folder = settings.subfolder ? `${downloads}/Grabby` : downloads;
 
+  // Read through a ref: a new onClose never re-runs the effects below.
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => pageRef.current?.focus(), []);
   useEffect(() => {
-    pageRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !e.defaultPrevented && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !e.defaultPrevented && close.current();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, []);
 
   return (
     <section ref={pageRef} tabIndex={-1} class={`page${className ? ` ${className}` : ''}`} aria-labelledby="settings-title">
@@ -80,12 +177,12 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
         <h2 id="settings-title" class="page__title">
           {t('openSettings')}
         </h2>
-        <span class="top__spacer" />
+        <span />
       </header>
 
       <div class="page__body">
-        <Group title={t('set_group_look')}>
-          <div class="setting">
+        <Group title={t('set_group_look')} icon="sun" index={0}>
+          <div class="row-setting">
             <span class="setting__label">{t('set_theme')}</span>
             <Segmented
               label={t('set_theme')}
@@ -100,8 +197,8 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
           </div>
         </Group>
 
-        <Group title={t('set_group_formats')}>
-          <div class="setting">
+        <Group title={t('set_group_formats')} icon="film" index={1}>
+          <div class="row-setting">
             <span class="setting__label">{t('set_video')}</span>
             <span class="setting__control">
               <Select
@@ -113,7 +210,7 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
               />
             </span>
           </div>
-          <div class="setting">
+          <div class="row-setting">
             <span class="setting__label">{t('set_audio')}</span>
             <span class="setting__control">
               <Select
@@ -127,49 +224,21 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
           </div>
         </Group>
 
-        <Group title={t('set_group_files')}>
-          <div class="setting setting--stack">
-            <span class="setting__label">{t('set_template')}</span>
-            <span class="setting__hint">{t('set_template_hint')}</span>
-            <div class="chips" role="group" aria-label={t('set_template')}>
-              {NAME_PARTS.map((p) => {
-                const on = p === 'title' || parts.includes(p);
-                return (
-                  <button
-                    key={p}
-                    class={`chip${on ? ' chip--on' : ''}`}
-                    role="checkbox"
-                    aria-checked={on}
-                    disabled={p === 'title'}
-                    onClick={() => setPart(p, !on)}
-                  >
-                    <span class="chip__tick">{on && <Icon name="check" size={13} />}</span>
-                    {t(`set_name_${p}`)}
-                  </button>
-                );
-              })}
-            </div>
-            <span class="preview" title={preview}>
-              <Icon name="file" size={14} />
-              <span class="preview__name">{preview}</span>
+        <Group title={t('set_group_files')} icon="folder" index={2}>
+          <div class="row-setting row-setting--stack">
+            <span class="row-setting__text">
+              <span class="setting__label">{t('set_template')}</span>
+              <span class="setting__hint">{t('set_template_hint')}</span>
             </span>
+            <NameTiles template={settings.template} onChange={(template) => onChange({ template })} />
+            <FilePreview name={name} ext={settings.videoFormat} folder={folder} />
           </div>
           <Toggle label={t('set_subfolder')} hint={t('set_subfolder_hint')} checked={settings.subfolder} onChange={(subfolder) => onChange({ subfolder })} />
           <Toggle label={t('set_saveAs')} hint={t('set_saveAs_hint')} checked={settings.saveAs} onChange={(saveAs) => onChange({ saveAs })} />
-          {!settings.saveAs && (
-            <div class={`callout${browserAsks ? ' callout--warn' : ''}`} role={browserAsks ? 'alert' : undefined}>
-              <Icon name={browserAsks ? 'alert' : 'info'} size={16} />
-              <div>
-                <p>{t(browserAsks ? 'browserAsksBody' : 'browserAsksNote')}</p>
-                <button class="link" onClick={onOpenBrowserSettings}>
-                  {t('browserAsksOpen')}
-                </button>
-              </div>
-            </div>
-          )}
+          {!settings.saveAs && <Help warn={browserAsks} onOpen={onOpenBrowserSettings} />}
         </Group>
 
-        <Group title={t('set_group_end')}>
+        <Group title={t('set_group_end')} icon="check" index={3}>
           <Toggle label={t('set_notify')} hint={t('set_notify_hint')} checked={settings.notify} onChange={(notify) => onChange({ notify })} />
         </Group>
 

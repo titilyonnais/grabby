@@ -151,10 +151,23 @@ export function parseDash(text: string, baseUrl: string): DashManifest {
     audio: [],
   };
 
-  const period = child(mpd, 'Period');
-  if (!period) return result;
-  const periodDuration = parseIsoDuration(period.attrs.duration) || result.duration;
-  if (!result.duration) result.duration = periodDuration;
+  // Several periods are usually ads or bumpers around the programme, each with its own
+  // init segment (they can't simply be glued). Take the longest one: the programme.
+  const periods = children(mpd, 'Period');
+  if (!periods.length) return result;
+  const total = result.duration;
+  const spans = periods.map((p, i) => {
+    const told = parseIsoDuration(p.attrs.duration);
+    if (told) return told;
+    const start = parseIsoDuration(p.attrs.start);
+    const next = periods[i + 1] ? parseIsoDuration(periods[i + 1]!.attrs.start) : total;
+    return next > start ? next - start : 0;
+  });
+  const at = spans.reduce((best, d, i) => (d > spans[best]! ? i : best), 0);
+  const period = periods[at]!;
+  const periodDuration = spans[at] || total;
+  // The duration shown is the one saved.
+  if (periods.length > 1 || !result.duration) result.duration = periodDuration;
 
   const mpdBase = withBase(mpd, baseUrl);
   const periodBase = withBase(period, mpdBase);

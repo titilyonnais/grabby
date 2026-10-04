@@ -32,7 +32,9 @@ describe('parseHls master', () => {
   });
   it('parses attributes', () => {
     const hi = r.variants[1]!;
-    expect(hi).toMatchObject({ bandwidth: 5000000, width: 1920, height: 1080, audio: 'aud' });
+    // The average bitrate (sizes are estimated from it), not the peak.
+    expect(hi).toMatchObject({ bandwidth: 4500000, width: 1920, height: 1080, audio: 'aud' });
+    expect(r.variants[0]!.bandwidth).toBe(800000);
     expect(hi.codecs).toBe('avc1.640028,mp4a.40.2');
   });
   it('ignores I-frame playlists', () => {

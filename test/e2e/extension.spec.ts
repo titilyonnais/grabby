@@ -106,6 +106,48 @@ function probe(file: string): { streams: string[]; duration: number } | null {
 
 const isMp4 = (b: Buffer) => b.subarray(4, 8).toString('latin1') === 'ftyp';
 
+/** Container and codecs of a saved file, as ffprobe sees them (null without ffprobe). */
+function probeFormat(file: string): { format: string; codecs: string[] } | null {
+  try {
+    const out = execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_name:format=format_name', '-of', 'json', file], {
+      encoding: 'utf8',
+    });
+    const j = JSON.parse(out) as { streams: { codec_name: string }[]; format: { format_name: string } };
+    return { format: j.format.format_name, codecs: j.streams.map((s) => s.codec_name).sort() };
+  } catch {
+    return null;
+  }
+}
+
+const completed = (sw: Worker) => sw.evaluate(async () => (await chrome.downloads.search({ state: 'complete' })).length);
+
+/** Waits for one more completed download than `before` and returns the newest. */
+async function nextDownload(sw: Worker, before: number): Promise<{ filename: string; bytes: Buffer }> {
+  await expect.poll(() => completed(sw), { timeout: 60_000 }).toBeGreaterThan(before);
+  return lastDownload(sw);
+}
+
+/** Records what Grabby asks chrome.downloads for (requested name, Save As). */
+async function recordDownloads(sw: Worker) {
+  await sw.evaluate(() => {
+    const g = globalThis as unknown as { __asked: chrome.downloads.DownloadOptions[] };
+    g.__asked = [];
+    const real = chrome.downloads.download.bind(chrome.downloads);
+    (chrome.downloads as { download: typeof real }).download = ((o: chrome.downloads.DownloadOptions) => {
+      g.__asked.push(o);
+      return real(o);
+    }) as typeof real;
+  });
+  return () => sw.evaluate(() => (globalThis as unknown as { __asked: chrome.downloads.DownloadOptions[] }).__asked);
+}
+
+async function setSettings(sw: Worker, patch: Record<string, unknown>) {
+  await sw.evaluate(async (p) => {
+    const cur = ((await chrome.storage.local.get('settings')) as { settings?: object }).settings ?? {};
+    await chrome.storage.local.set({ settings: { ...cur, ...p } });
+  }, patch);
+}
+
 test('direct MP4: detected, badge shown, downloaded as a valid file', async ({ context, sw, extId }) => {
   const { tabId } = await openFixture(context, sw, 'direct.html');
   await expect.poll(() => badge(sw, tabId)).toBe('1');
@@ -362,6 +404,150 @@ test('settings open as a full page; the file name is built from checkboxes', asy
   // Back returns to the list, same popup size.
   await popup.getByRole('button', { name: 'Back' }).click();
   await expect(popup.getByRole('heading', { name: 'Sample: direct clip' })).toBeVisible();
+});
+
+/** What each format must really be: magic bytes, and (with ffprobe) container and codecs. */
+const FORMAT_CHECKS: Record<string, { magic: (b: Buffer) => boolean; format?: RegExp; codecs?: (c: string[]) => boolean }> = {
+  MP4: { magic: (b) => isMp4(b) && !/^qt/.test(b.subarray(8, 12).toString('latin1')), format: /mp4/ },
+  MKV: { magic: (b) => b.readUInt32BE(0) === 0x1a45dfa3, format: /matroska/ },
+  WebM: { magic: (b) => b.readUInt32BE(0) === 0x1a45dfa3, format: /webm/, codecs: (c) => c.every((x) => /vp8|vp9|av1|opus|vorbis/.test(x)) },
+  MOV: { magic: (b) => /^ftypqt/.test(b.subarray(4, 12).toString('latin1')), format: /mov/ },
+  AVI: { magic: (b) => b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'AVI ', format: /avi/ },
+  TS: { magic: (b) => b[0] === 0x47, format: /mpegts/ },
+  M4A: { magic: isMp4, codecs: (c) => c.length === 1 && c[0] === 'aac' },
+  MP3: { magic: (b) => b.subarray(0, 3).toString('latin1') === 'ID3' || b[0] === 0xff, format: /mp3/, codecs: (c) => c[0] === 'mp3' },
+  Opus: { magic: (b) => b.subarray(0, 4).toString('latin1') === 'OggS', codecs: (c) => c.length === 1 && c[0] === 'opus' },
+  OGG: { magic: (b) => b.subarray(0, 4).toString('latin1') === 'OggS', codecs: (c) => c.length === 1 && c[0] === 'vorbis' },
+  FLAC: { magic: (b) => b.subarray(0, 4).toString('latin1') === 'fLaC', codecs: (c) => c[0] === 'flac' },
+  WAV: {
+    magic: (b) => b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WAVE',
+    codecs: (c) => /^pcm/.test(c[0] ?? ''),
+  },
+};
+
+/** The formats the open card offers, in order. */
+async function offeredFormats(popup: Page): Promise<string[]> {
+  await popup.getByRole('button', { name: /^Format/ }).first().click();
+  const texts = await popup.getByRole('option').allTextContents();
+  await popup.keyboard.press('Escape');
+  return texts.map((t) => Object.keys(FORMAT_CHECKS).find((k) => t.startsWith(k)) ?? t);
+}
+
+/** Every format the open card offers is downloaded and checked to be really that format. */
+async function everyFormat(popup: Page, sw: Worker, expected: string[]) {
+  const offered = await offeredFormats(popup);
+  expect(offered).toEqual(expected);
+  for (const fmt of offered) {
+    const before = await completed(sw);
+    await pick(popup, 'Format', fmt);
+    await popup.getByRole('button', { name: 'Download', exact: true }).click();
+    await expect(popup.getByText('Saved'), `${fmt}: saved`).toBeVisible({ timeout: 60_000 });
+    const { bytes, filename } = await nextDownload(sw, before);
+    const check = FORMAT_CHECKS[fmt]!;
+    expect(check.magic(bytes), `${fmt}: magic bytes`).toBe(true);
+    const info = probeFormat(filename);
+    if (info) {
+      if (check.format) expect(info.format, `${fmt}: container`).toMatch(check.format);
+      if (check.codecs) expect(check.codecs(info.codecs), `${fmt}: codecs ${info.codecs.join(',')}`).toBe(true);
+    }
+    // Back to the choices for the next one.
+    await popup.getByRole('button', { name: 'Download again' }).click();
+  }
+}
+
+test('every format offered for an MP4 video is really saved in that format', async ({ context, sw, extId }) => {
+  test.setTimeout(300_000);
+  const { tabId } = await openFixture(context, sw, 'direct.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  await everyFormat(popup, sw, ['MP4', 'MKV', 'MOV', 'AVI', 'TS', 'M4A', 'MP3', 'Opus', 'OGG', 'FLAC', 'WAV']);
+});
+
+test('a WebM video can be saved as WebM, MP4 and MKV, and its sound in every audio format', async ({ context, sw, extId }) => {
+  test.setTimeout(300_000);
+  const { tabId } = await openFixture(context, sw, 'two.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('2');
+  const popup = await openPopup(context, extId, tabId);
+  // Open the card that offers WebM (the WebM file's).
+  if (!(await offeredFormats(popup)).includes('WebM')) await popup.getByRole('button', { name: 'Show options' }).click();
+  await everyFormat(popup, sw, ['MP4', 'WebM', 'MKV', 'M4A', 'MP3', 'Opus', 'OGG', 'FLAC', 'WAV']);
+});
+
+test('file options: Grabby folder, name parts, Save As and notification off', async ({ context, sw, extId }) => {
+  const asked = await recordDownloads(sw);
+  await setSettings(sw, { subfolder: true, template: '{site} - {title}', saveAs: false, notify: false, firstRunAck: true });
+  const { page, tabId } = await openFixture(context, sw, 'direct.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
+  await expect(popup.getByText('Saved')).toBeVisible();
+  let got = await asked();
+  expect(got).toHaveLength(1);
+  // "Sample: direct clip": the colon Windows refuses becomes a dash.
+  expect(got[0]!.filename).toBe('Grabby/127.0.0.1 - Sample - direct clip.mp4');
+  expect(got[0]!.saveAs).toBe(false);
+  // Notifications off: no bubble in the page.
+  await page.waitForTimeout(1500);
+  await expect(page.locator('grabby-toast')).toHaveCount(0);
+
+  // Other choices: no folder, title then date, Save As on (the request carries it).
+  await setSettings(sw, { subfolder: false, template: '{title} - {date}', saveAs: true });
+  await popup.getByRole('button', { name: 'Download again' }).click();
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
+  await expect.poll(async () => (await asked()).length).toBe(2);
+  got = await asked();
+  expect(got[1]!.filename).toMatch(/^Sample - direct clip - \d{4}-\d{2}-\d{2}\.mp4$/);
+  expect(got[1]!.saveAs).toBe(true);
+});
+
+test('cards unfold one at a time and fold back', async ({ context, sw, extId }) => {
+  const { tabId } = await openFixture(context, sw, 'two.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('2');
+  const popup = await openPopup(context, extId, tabId);
+  const cards = popup.locator('.card');
+  await expect(cards).toHaveCount(2);
+  // The first card is open (big), the other one is a row.
+  await expect(cards.nth(0)).toHaveClass(/card--open/);
+  await expect(cards.nth(1)).not.toHaveClass(/card--open/);
+  await expect(popup.getByRole('button', { name: 'Download', exact: true })).toHaveCount(1);
+  // Clicking the row opens it and closes the other.
+  await cards.nth(1).locator('.card__head').click();
+  await expect(cards.nth(1)).toHaveClass(/card--open/);
+  await expect(cards.nth(0)).not.toHaveClass(/card--open/);
+  await expect(popup.getByRole('button', { name: 'Download', exact: true })).toHaveCount(1);
+  // Its chevron folds it back: no card open, no button.
+  await cards.nth(1).getByRole('button', { name: 'Hide options' }).click();
+  await expect(popup.locator('.card--open')).toHaveCount(0);
+  await expect(popup.getByRole('button', { name: 'Download', exact: true })).toHaveCount(0);
+  // Once the animation is over, the card is a row again (nothing stuck halfway).
+  await popup.waitForTimeout(1000);
+  const h = await cards.nth(1).evaluate((el) => el.getBoundingClientRect().height);
+  expect(h).toBeLessThan(100);
+});
+
+test('the file name keeps at least one part; the title can be unticked', async ({ context, sw, extId }) => {
+  const { tabId } = await openFixture(context, sw, 'direct.html');
+  const popup = await openPopup(context, extId, tabId);
+  await popup.getByRole('button', { name: 'Settings' }).click();
+  const template = async () =>
+    ((await sw.evaluate(() => chrome.storage.local.get('settings'))) as { settings?: { template?: string } }).settings?.template;
+  // Title + Quality, then untick Title: Quality alone.
+  await popup.getByRole('checkbox', { name: 'Quality' }).click();
+  await expect.poll(template).toBe('{title} - {quality}');
+  await popup.getByRole('checkbox', { name: 'Title' }).click();
+  await expect.poll(template).toBe('{quality}');
+  await expect(popup.getByRole('checkbox', { name: 'Title' })).toHaveAttribute('aria-checked', 'false');
+  // The last one refuses to go (it shakes) and stays ticked.
+  await popup.getByRole('checkbox', { name: 'Quality' }).click();
+  await expect(popup.getByRole('checkbox', { name: 'Quality' })).toHaveAttribute('aria-checked', 'true');
+  expect(await template()).toBe('{quality}');
+  // All four fit on one line.
+  await popup.getByRole('checkbox', { name: 'Site' }).click();
+  await popup.getByRole('checkbox', { name: 'Date' }).click();
+  await popup.getByRole('checkbox', { name: 'Title' }).click();
+  await expect.poll(template).toBe('{title} - {quality} - {site} - {date}');
+  const tops = await popup.locator('.tile').evaluateAll((els) => els.map((e) => (e as HTMLElement).offsetTop));
+  expect(new Set(tops).size).toBe(1);
 });
 
 test('restricted pages show an explanation instead of an empty list', async ({ context, sw, extId }) => {

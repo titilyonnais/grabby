@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { buildFilename, namePartsOf, sanitizeFilename, templateOf } from '../../src/shared/filename';
 
 describe('sanitizeFilename', () => {
-  it('replaces Windows-forbidden characters', () => {
-    expect(sanitizeFilename('a:b?c*d"e<f>g|h/i\\j')).toBe('a_b_c_d_e_f_g_h_i_j');
+  it('replaces Windows-forbidden characters with what a person would type', () => {
+    expect(sanitizeFilename('a:b?c*d"e<f>g|h/i\\j')).toBe("a-bcd'efg-h-i-j");
+    expect(sanitizeFilename('Film : la suite')).toBe('Film - la suite');
+    expect(sanitizeFilename('AC/DC: Live')).toBe('AC-DC - Live');
   });
   it('keeps unicode and emoji', () => {
     expect(sanitizeFilename('Été à Paris 🎬')).toBe('Été à Paris 🎬');
@@ -30,37 +32,46 @@ describe('sanitizeFilename', () => {
 describe('buildFilename', () => {
   const ctx = { title: 'My: Video', site: 'example.com', quality: '720p', date: new Date('2026-10-04T12:00:00Z') };
   it('applies the default template', () => {
-    expect(buildFilename('{title}', ctx, 'mp4')).toBe('My_ Video.mp4');
+    expect(buildFilename('{title}', ctx, 'mp4')).toBe('My - Video.mp4');
   });
   it('supports all tokens', () => {
     expect(buildFilename('{site} - {title} [{quality}] {date}', ctx, 'mp3')).toBe(
-      'example.com - My_ Video [720p] 2026-10-04.mp3',
+      'example.com - My - Video [720p] 2026-10-04.mp3',
     );
   });
   it('drops empty tokens cleanly', () => {
-    expect(buildFilename('{title} [{quality}]', { ...ctx, quality: undefined }, 'mp4')).toBe('My_ Video.mp4');
+    expect(buildFilename('{title} [{quality}]', { ...ctx, quality: undefined }, 'mp4')).toBe('My - Video.mp4');
   });
   it('total length stays under 120 chars', () => {
     expect(buildFilename('{title}', { ...ctx, title: 'x'.repeat(400) }, 'mp4').length).toBeLessThanOrEqual(120);
   });
   it('prefixes subfolder when given', () => {
-    expect(buildFilename('{title}', ctx, 'mp4', 'Grabby')).toBe('Grabby/My_ Video.mp4');
+    expect(buildFilename('{title}', ctx, 'mp4', 'Grabby')).toBe('Grabby/My - Video.mp4');
   });
 });
 
 describe('file name parts (checkboxes in the settings)', () => {
   const ctx = { title: 'Film', site: 'site.fr', quality: '1080p', date: new Date('2026-10-04T12:00:00Z') };
   it('builds the name from the ticked parts, in a fixed order', () => {
-    expect(templateOf(['date', 'quality'])).toBe('{title} - {quality} - {date}');
-    expect(buildFilename(templateOf(['quality', 'site', 'date']), ctx, 'mp4')).toBe('Film - 1080p - site.fr - 2026-10-04.mp4');
-    expect(templateOf([])).toBe('{title}');
+    expect(templateOf(['date', 'title', 'quality'])).toBe('{title} - {quality} - {date}');
+    expect(buildFilename(templateOf(['title', 'quality', 'site', 'date']), ctx, 'mp4')).toBe('Film - 1080p - site.fr - 2026-10-04.mp4');
   });
-  it('reads the ticked parts back from a template, the title always on', () => {
+  it('reads the ticked parts back from a template; the title can be left out', () => {
     expect(namePartsOf('{title} - {site}')).toEqual(['title', 'site']);
-    expect(namePartsOf('{site} {date}')).toEqual(['title', 'site', 'date']);
+    expect(namePartsOf('{site} {date}')).toEqual(['site', 'date']);
+    expect(namePartsOf('no token')).toEqual(['title']);
+  });
+  it('never builds an empty template, and names files without their title when asked', () => {
+    expect(templateOf([])).toBe('{title}');
+    expect(templateOf(['quality', 'date'])).toBe('{quality} - {date}');
+    expect(buildFilename(templateOf(['site', 'date']), ctx, 'mp4')).toBe('site.fr - 2026-10-04.mp4');
+    // The local day, even when it is already another day in UTC.
+    expect(buildFilename('{date}', { ...ctx, date: new Date(2026, 9, 5, 0, 30) }, 'mp4')).toBe('2026-10-05.mp4');
   });
   it('leaves no empty separator when a value is missing (no quality for a recording)', () => {
-    expect(buildFilename(templateOf(['quality', 'site']), { ...ctx, quality: undefined }, 'mp4')).toBe('Film - site.fr.mp4');
+    expect(buildFilename(templateOf(['title', 'quality', 'site']), { ...ctx, quality: undefined }, 'mp4')).toBe('Film - site.fr.mp4');
+    expect(buildFilename(templateOf(['title', 'quality']), { ...ctx, quality: undefined }, 'mp4')).toBe('Film.mp4');
+    // Only the quality, and there is none (a recording): the title stands in.
     expect(buildFilename(templateOf(['quality']), { ...ctx, quality: undefined }, 'mp4')).toBe('Film.mp4');
   });
 });
