@@ -428,8 +428,13 @@ const FORMAT_CHECKS: Record<string, { magic: (b: Buffer) => boolean; format?: Re
 /** The formats the open card offers, in order. */
 async function offeredFormats(popup: Page): Promise<string[]> {
   await popup.getByRole('button', { name: /^Format/ }).first().click();
+  const list = popup.getByRole('listbox');
+  await expect(list).toBeVisible();
+  // The list takes the focus: Escape closes it (and only it).
+  await expect(list).toBeFocused();
   const texts = await popup.getByRole('option').allTextContents();
   await popup.keyboard.press('Escape');
+  await expect(list).toHaveCount(0);
   return texts.map((t) => Object.keys(FORMAT_CHECKS).find((k) => t.startsWith(k)) ?? t);
 }
 
