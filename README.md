@@ -17,23 +17,29 @@
 
 ---
 
-<!-- release:1.3.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
-## Nouveautés de la version 1.3.0
+<!-- release:1.4.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
+## Nouveautés de la version 1.4.0
 
-- **Toutes les qualités d'un lecteur** dans une seule carte : quand un site propose la même
-  vidéo en plusieurs fichiers ou flux, tu choisis la qualité dans la liste, et la meilleure
-  est choisie par défaut.
-- **Réduire la qualité** : une vidéo proposée seulement en 4K (ou en 1080p) peut être
-  enregistrée en 720p, 480p, 360p, 240p ou 144p. Grabby réduit l'image lui-même, c'est plus
-  lent qu'un simple téléchargement.
-- **Résolution réelle** des fichiers affichée, et films au format cinéma nommés comme sur
-  les lecteurs (1920 × 800 = 1080p).
-- **Corrigé** : fausses alertes « Protégé » et avertissement PlayReady dans les erreurs de
-  l'extension ; messages vides centrés dans la popup.
+- **Suivi détaillé** : sous la barre de progression, la taille reçue et la taille totale
+  (« 253 Mo / ≈ 601 Mo »), la **vitesse** (« 6,1 Mo/s ») et le **temps restant**.
+- **Liste plus claire** : une ligne par vidéo, une seule carte ouverte à la fois. Un
+  téléchargement en cours reste visible sur sa ligne même repliée.
+- **Réglages en vraie page**, avec le **nom du fichier par cases à cocher** (Titre, Qualité,
+  Site, Date) et un aperçu en direct.
+- **Barres de défilement** redessinées, bien visibles et sans les flèches.
+- **Corrigé** : saccade de l'icône en fin de téléchargement ; le dossier Grabby était ignoré
+  quand le navigateur imposait sa fenêtre « Enregistrer sous » (maintenant détecté et
+  expliqué).
+
+**Rappel de la 1.3.0** :
+- **Toutes les qualités d'un lecteur** dans une seule carte, la meilleure par défaut.
+- **Réduire la qualité** : une vidéo en 4K peut être enregistrée en 720p, 480p… jusqu'à 144p
+  (Grabby réduit l'image lui-même, c'est plus lent).
+- **Résolution réelle** affichée, films au format cinéma nommés comme sur les lecteurs.
+- **Corrigé** : fausses alertes « Protégé » et avertissement PlayReady dans les erreurs.
 
 **Rappel de la 1.2.0** :
-- **Popup stable** : elle garde la même taille partout, les cartes sont centrées et la
-  qualité et le format se choisissent dans deux listes déroulantes.
+- **Popup stable**, qualité et format dans des listes déroulantes.
 - **12 formats** : vidéo MP4, MKV, WebM, MOV, AVI, TS ; audio seul M4A, MP3, Opus, OGG,
   FLAC, WAV.
 - **Suivi du téléchargement** : pourcentage sur l'icône, puis ✓, et une bulle
@@ -135,14 +141,16 @@ npm run zip        # → release/*.zip
 
 1. Ouvre une page avec une vidéo. Le **nombre de vidéos trouvées** s'affiche sur l'icône
    Grabby.
-2. Clique sur l'icône. La vidéo principale est en haut, les autres en dessous.
+2. Clique sur l'icône. Chaque vidéo est une ligne ; clique dessus pour voir ses choix (une
+   seule carte ouverte à la fois).
 3. Choisis la **qualité** et le **format** dans les deux listes, puis **Télécharger** (ou
    **Enregistrer la lecture** pour un lecteur sans fichier). La liste des qualités a deux
    groupes :
    - **Proposées par le site** : téléchargées telles quelles, rapide ;
    - **Réduire (conversion, plus lent)** : des qualités plus petites, fabriquées par
      Grabby à partir de la source (taille approximative indiquée).
-4. Pendant le téléchargement, l'icône affiche le **pourcentage**. À la fin, elle affiche
+4. Pendant le téléchargement, la carte affiche la **taille** (reçue / totale), la
+   **vitesse** et le **temps restant**, et l'icône le **pourcentage**. À la fin, elle affiche
    **✓**, une **bulle** apparaît en bas à droite de la page et une notification système
    est envoyée. Le bouton **Afficher** ouvre le dossier du fichier.
 
@@ -155,7 +163,7 @@ npm run zip        # → release/*.zip
 | Me prévenir à la fin | Bulle dans la page et notification système |
 | Demander où enregistrer | Ouvre la fenêtre d'enregistrement à chaque fichier |
 | Ranger dans un dossier Grabby | Sous-dossier `Grabby` dans Téléchargements |
-| Nom du fichier | Modèle avec `{title}`, `{site}`, `{quality}`, `{date}` |
+| Nom du fichier | Cases à cocher : Titre (toujours), Qualité, Site, Date, avec aperçu |
 
 ## Formats d'enregistrement
 
@@ -183,8 +191,9 @@ enregistré dans son format d'origine (la conversion se fait en mémoire).
 
 **La fenêtre « Enregistrer sous » s'ouvre alors que le réglage est désactivé.**
 Le réglage du navigateur passe avant celui de Grabby, et aucune extension ne peut le
-contourner. Dans Brave, ouvre `brave://settings/downloads` et désactive « Toujours demander
-où enregistrer les fichiers » (dans Chrome : `chrome://settings/downloads`).
+contourner. Grabby le détecte et l'explique dans ses réglages, avec un bouton qui ouvre
+directement les réglages de téléchargement du navigateur : désactive « Toujours demander où
+enregistrer les fichiers » (`brave://settings/downloads`, `chrome://settings/downloads`…).
 
 **Je ne vois pas de notification à la fin.**
 La bulle dans la page s'affiche toujours (si « Me prévenir à la fin » est activé). Pour la

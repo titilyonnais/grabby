@@ -343,6 +343,24 @@ test('a smaller quality the site lacks is made by shrinking the picture', async 
   if (info) expect(info.streams).toEqual(['audio', 'video']);
 });
 
+test('settings open as a full page; the file name is built from checkboxes', async ({ context, sw, extId }) => {
+  const { tabId } = await openFixture(context, sw, 'direct.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  // A page, not a sheet over the list: the video card is gone while settings show.
+  await popup.getByRole('button', { name: 'Settings' }).click();
+  await expect(popup.getByRole('heading', { name: 'Settings' })).toBeVisible();
+  await expect(popup.getByRole('heading', { name: 'Sample: direct clip' })).toHaveCount(0);
+  // Tick "Site": the saved template gains {site}.
+  await popup.getByRole('checkbox', { name: 'Site' }).click();
+  await expect
+    .poll(async () => (await sw.evaluate(() => chrome.storage.local.get('settings'))).settings?.template)
+    .toBe('{title} - {site}');
+  // Back returns to the list, same popup size.
+  await popup.getByRole('button', { name: 'Back' }).click();
+  await expect(popup.getByRole('heading', { name: 'Sample: direct clip' })).toBeVisible();
+});
+
 test('restricted pages show an explanation instead of an empty list', async ({ context, sw, extId }) => {
   const page = await context.newPage();
   await page.goto('about:blank');

@@ -131,9 +131,13 @@ async function withRetry(seg: SegRef, o: FetchOptions): Promise<Uint8Array<Array
   }
 }
 
+/** How many segments download at once by default: enough to fill a fast link, few enough
+ * not to trip a CDN's per-client rate limit. */
+export const DEFAULT_CONCURRENCY = 8;
+
 /** Downloads segments with bounded parallelism and delivers them in order. */
 export async function fetchInOrder(segs: SegRef[], o: FetchOptions): Promise<void> {
-  const concurrency = Math.max(1, o.concurrency ?? 6);
+  const concurrency = Math.max(1, o.concurrency ?? DEFAULT_CONCURRENCY);
   const ready = new Map<number, Uint8Array<ArrayBuffer>>();
   let next = 0;
   let delivered = 0;

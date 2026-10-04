@@ -7,7 +7,7 @@ import { forgetBadge, paintTab, showJobs, updateBadge } from './badge';
 import { startDetector } from './detector';
 import { resetHeaderRules } from './headers';
 import { clearHistory, getHistory } from './history';
-import { JobManager } from './jobs';
+import { BROWSER_ASKS_KEY, JobManager } from './jobs';
 import { listenNotificationClicks } from './notify';
 import { handlePageInfo } from './pageinfo';
 import { Registry, sessionKV } from './registry';
@@ -75,7 +75,12 @@ async function buildState(tabId: number): Promise<PopupState> {
   // An invalid id throws synchronously (not a rejected promise).
   const tab = await (async () => chrome.tabs.get(tabId))().catch(() => undefined);
   const tabTitle = tab?.title ? cleanTitle(tab.title, hostOf(tab.url ?? pageUrl)) : undefined;
-  const [items, history, settings] = await Promise.all([registry.get(tabId, tabTitle), getHistory(), getSettings()]);
+  const [items, history, settings, asks] = await Promise.all([
+    registry.get(tabId, tabTitle),
+    getHistory(),
+    getSettings(),
+    chrome.storage.local.get(BROWSER_ASKS_KEY),
+  ]);
   return {
     tabId,
     pageUrl,
@@ -84,6 +89,7 @@ async function buildState(tabId: number): Promise<PopupState> {
     jobs: jobs.list(tabId),
     history,
     settings,
+    ...(asks[BROWSER_ASKS_KEY] ? { browserAsks: true } : {}),
   };
 }
 
@@ -119,6 +125,11 @@ jobs.onChange(() => {
   showJobs(jobs.list());
 });
 
+// The browser was found asking where to save: open popups explain it right away.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && BROWSER_ASKS_KEY in changes) for (const port of ports.keys()) schedulePush(port);
+});
+
 chrome.tabs.onActivated.addListener(({ tabId }) => void paintTab(tabId));
 // A navigation resets the tab's badge: put the download progress back.
 chrome.tabs.onUpdated.addListener((tabId, change) => change.status === 'loading' && void paintTab(tabId));
@@ -149,6 +160,10 @@ async function onPopupMessage(port: chrome.runtime.Port, msg: PopupToBg) {
     }
     case 'cancel':
       return jobs.cancel(msg.jobId);
+    case 'open-browser-downloads':
+      // chrome://settings is Brave's, Edge's… settings too (each one redirects it).
+      await chrome.tabs.create({ url: 'chrome://settings/downloads' });
+      return;
     case 'finish-capture':
       return jobs.finishCapture(msg.jobId);
     case 'retry':

@@ -23,7 +23,6 @@
   "qualityLabel": { "message": "Quality" },
   "experimental": { "message": "Experimental" },
   "rawNotice": { "message": "Very large stream: saved as-is without conversion." },
-  "moreVideos": { "message": "Other videos on this page" },
 
   "st_queued": { "message": "Waiting…" },
   "st_downloading": { "message": "Downloading" },
@@ -80,7 +79,6 @@
   "set_subfolder": { "message": "Save in a Grabby folder" },
   "set_subfolder_hint": { "message": "Inside your Downloads folder." },
   "set_template": { "message": "File name" },
-  "set_template_hint": { "message": "Use {title}, {site}, {quality} and {date}." },
   "set_privacy": { "message": "Grabby doesn't collect any data. Everything stays on your device." },
 
   "sizeUnitByte": { "message": "B" },
@@ -114,5 +112,22 @@
   "quality_group_source": { "message": "Offered by the site" },
   "quality_group_shrink": { "message": "Shrink (conversion, slower)" },
   "quality_shrunk": { "message": "Conversion" },
-  "shrinkHint": { "message": "Grabby shrinks the picture itself, in the browser: much slower than a plain download (several minutes, more for a film). It keeps going in the background." }
+  "shrinkHint": { "message": "Grabby shrinks the picture itself, in the browser: much slower than a plain download (several minutes, more for a film). It keeps going in the background." },
+  "jobLeft": {"message": "$T$ left", "placeholders": {"t": {"content": "$1"}}},
+  "st_converting": { "message": "Shrinking" },
+  "showOptions": { "message": "Show options" },
+  "hideOptions": { "message": "Hide options" },
+  "back": { "message": "Back" },
+  "set_group_look": { "message": "Appearance" },
+  "set_group_formats": { "message": "Default formats" },
+  "set_group_files": { "message": "Files" },
+  "set_group_end": { "message": "When a download ends" },
+  "set_name_title": { "message": "Title" },
+  "set_name_quality": { "message": "Quality" },
+  "set_name_site": { "message": "Site" },
+  "set_name_date": { "message": "Date" },
+  "set_name_sample": { "message": "My video" },
+  "browserAsksNote": { "message": "If a \"Save as\" window opens anyway, it is your browser's \"Ask where to save each file\" setting that decides: no extension can override it." },
+  "browserAsksBody": { "message": "Your browser asks where to save every file: its setting comes before Grabby's. Turn off \"Ask where to save each file\" so Grabby saves directly, in the Grabby folder if you chose it." },
+  "browserAsksOpen": { "message": "Open the browser's download settings" }
 }

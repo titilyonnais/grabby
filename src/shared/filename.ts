@@ -26,6 +26,22 @@ export interface FilenameContext {
   date: Date;
 }
 
+/** What a file name can be made of, in this order: "Title - 1080p - site.com - 2026-10-04". */
+export const NAME_PARTS = ['title', 'quality', 'site', 'date'] as const;
+export type NamePart = (typeof NAME_PARTS)[number];
+
+/** The parts a name template uses (the title is always there). */
+export function namePartsOf(template: string): NamePart[] {
+  return NAME_PARTS.filter((p) => p === 'title' || template.includes(`{${p}}`));
+}
+
+/** The template for a set of parts, joined by " - ". */
+export function templateOf(parts: readonly NamePart[]): string {
+  return NAME_PARTS.filter((p) => p === 'title' || parts.includes(p))
+    .map((p) => `{${p}}`)
+    .join(' - ');
+}
+
 export function buildFilename(
   template: string,
   ctx: FilenameContext,
@@ -39,8 +55,11 @@ export function buildFilename(
     date: ctx.date.toISOString().slice(0, 10),
   };
   let raw = (template || '{title}').replace(/\{(\w+)\}/g, (_, k: string) => values[k] ?? '');
-  // Remove brackets/parentheses left empty by missing tokens.
-  raw = raw.replace(/\[\s*\]|\(\s*\)/g, '').replace(/\s+-\s*$/, '');
+  // Remove brackets/parentheses and " - " separators left empty by missing values.
+  raw = raw
+    .replace(/\[\s*\]|\(\s*\)/g, '')
+    .replace(/\s+-(?:\s+-)+(?=\s)/g, ' -')
+    .replace(/^\s*-\s+|\s+-\s*$/g, '');
   const stem = sanitizeFilename(raw, sanitizeFilename(ctx.title), MAX_TOTAL - ext.length - 1);
   const file = `${stem}.${ext}`;
   return subfolder ? `${sanitizeFilename(subfolder, 'Grabby')}/${file}` : file;

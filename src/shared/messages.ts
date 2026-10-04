@@ -73,12 +73,16 @@ export interface PopupState {
   jobs: Job[];
   history: HistoryEntry[];
   settings: Settings;
+  /** The browser asks where to save every file (its own setting, which wins over ours). */
+  browserAsks?: boolean;
 }
 
 export type PopupToBg =
   | { type: 'subscribe'; tabId: number }
   | { type: 'download'; mediaId: string; variantId?: string; mode: JobMode; format?: OutputFormat; scale?: number }
   | { type: 'cancel'; jobId: string }
+  /** Opens the browser's download settings ("ask where to save"). */
+  | { type: 'open-browser-downloads' }
   | { type: 'finish-capture'; jobId: string }
   | { type: 'retry'; jobId: string }
   | { type: 'dismiss'; jobId: string }

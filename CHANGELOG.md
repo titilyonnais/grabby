@@ -15,6 +15,41 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 Rien pour l'instant.
 
+## [1.4.0] — 2026-10-04
+
+Suivi détaillé du téléchargement, liste plus claire, page de réglages à part entière,
+réglages vérifiés un à un.
+
+### Ajouté
+- **Détail du téléchargement** sous la barre de progression : taille reçue et taille totale
+  (« 253 Mo / ≈ 601 Mo »), **vitesse** en direct (« 6,1 Mo/s ») et **temps restant**. Le
+  « ≈ » signale une taille estimée (flux), sinon elle vient du serveur.
+- **Liste repliable** : une ligne compacte par vidéo, une seule carte ouverte à la fois avec
+  ses choix. Un téléchargement en cours sur une carte fermée s'affiche en pourcentage et par
+  une fine barre sous la ligne.
+- **Nom du fichier par cases à cocher** (Titre, Qualité, Site, Date) avec un aperçu en
+  direct, à la place du modèle à accolades `{title}`.
+- **Alerte « Enregistrer sous »** : si le navigateur ouvre quand même sa fenêtre
+  d'enregistrement alors que le réglage de Grabby est désactivé, les réglages l'expliquent et
+  proposent un bouton qui ouvre directement les réglages de téléchargement du navigateur.
+
+### Modifié
+- **Les réglages sont une vraie page** (elle glisse sur le côté), au lieu d'un panneau qui
+  remontait du bas. Retour par la flèche en haut à gauche ou avec Échap.
+- **Barres de défilement** redessinées : une pastille arrondie bien visible sur le fond,
+  **sans les flèches** du haut et du bas.
+- **Téléchargement des flux plus rapide** : 8 segments en parallèle au lieu de 6, pour mieux
+  remplir la connexion sans se faire limiter par les serveurs.
+
+### Corrigé
+- **Saccade de l'icône** en fin de téléchargement (99 % → 0 % → 99 %) : la progression ne
+  revient plus jamais en arrière quand une étape succède à une autre (téléchargement puis
+  assemblage).
+- Le réglage **« Ranger dans un dossier Grabby »** était ignoré quand le navigateur imposait
+  sa fenêtre « Enregistrer sous » ; c'est maintenant détecté et expliqué (voir ci-dessus).
+- Vérification de **tous les formats** (6 vidéo, 6 audio) et des options dans les tests de
+  bout en bout.
+
 ## [1.3.0] — 2026-10-04
 
 Toutes les qualités qu'un lecteur propose, réduction de la qualité par Grabby, fausses
@@ -198,7 +233,8 @@ Première version.
 - Capture YouTube expérimentale.
 - Interface en français et en anglais, thème clair et sombre.
 
-[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.3.0...HEAD
+[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/titilyonnais/grabby/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/titilyonnais/grabby/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/titilyonnais/grabby/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/titilyonnais/grabby/compare/v1.1.0...v1.2.0

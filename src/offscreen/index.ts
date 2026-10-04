@@ -121,7 +121,9 @@ async function run(jobId: string, plan: Plan) {
   const ff = plan.raw ? null : getFFmpeg();
   // Share of the progress bar for fetching: shrinking the picture is the long part.
   const fetched = plan.scale ? 0.3 : 0.9;
-  rep.send(plan.kind === 'capture' ? 'processing' : 'downloading', 0, true);
+  // A recording is already stored: its bar continues from where the recording left it.
+  if (plan.kind === 'capture') rep.send('processing', fetched, true);
+  else rep.send('downloading', 0, true);
   const heartbeat = setInterval(() => rep.beat(), HEARTBEAT_MS);
   try {
     let result: { blob: Blob; ext: string };

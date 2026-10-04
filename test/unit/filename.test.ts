@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildFilename, sanitizeFilename } from '../../src/shared/filename';
+import { buildFilename, namePartsOf, sanitizeFilename, templateOf } from '../../src/shared/filename';
 
 describe('sanitizeFilename', () => {
   it('replaces Windows-forbidden characters', () => {
@@ -45,5 +45,22 @@ describe('buildFilename', () => {
   });
   it('prefixes subfolder when given', () => {
     expect(buildFilename('{title}', ctx, 'mp4', 'Grabby')).toBe('Grabby/My_ Video.mp4');
+  });
+});
+
+describe('file name parts (checkboxes in the settings)', () => {
+  const ctx = { title: 'Film', site: 'site.fr', quality: '1080p', date: new Date('2026-10-04T12:00:00Z') };
+  it('builds the name from the ticked parts, in a fixed order', () => {
+    expect(templateOf(['date', 'quality'])).toBe('{title} - {quality} - {date}');
+    expect(buildFilename(templateOf(['quality', 'site', 'date']), ctx, 'mp4')).toBe('Film - 1080p - site.fr - 2026-10-04.mp4');
+    expect(templateOf([])).toBe('{title}');
+  });
+  it('reads the ticked parts back from a template, the title always on', () => {
+    expect(namePartsOf('{title} - {site}')).toEqual(['title', 'site']);
+    expect(namePartsOf('{site} {date}')).toEqual(['title', 'site', 'date']);
+  });
+  it('leaves no empty separator when a value is missing (no quality for a recording)', () => {
+    expect(buildFilename(templateOf(['quality', 'site']), { ...ctx, quality: undefined }, 'mp4')).toBe('Film - site.fr.mp4');
+    expect(buildFilename(templateOf(['quality']), { ...ctx, quality: undefined }, 'mp4')).toBe('Film.mp4');
   });
 });

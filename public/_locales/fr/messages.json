@@ -23,7 +23,6 @@
   "qualityLabel": { "message": "Qualité" },
   "experimental": { "message": "Expérimental" },
   "rawNotice": { "message": "Flux très volumineux : enregistré tel quel, sans conversion." },
-  "moreVideos": { "message": "Autres vidéos de la page" },
 
   "st_queued": { "message": "En attente…" },
   "st_downloading": { "message": "Téléchargement" },
@@ -80,7 +79,6 @@
   "set_subfolder": { "message": "Ranger dans un dossier Grabby" },
   "set_subfolder_hint": { "message": "Dans ton dossier Téléchargements." },
   "set_template": { "message": "Nom du fichier" },
-  "set_template_hint": { "message": "Utilise {title}, {site}, {quality} et {date}." },
   "set_privacy": { "message": "Grabby ne collecte aucune donnée. Tout reste sur ton appareil." },
 
   "sizeUnitByte": { "message": "o" },
@@ -114,5 +112,22 @@
   "quality_group_source": { "message": "Proposées par le site" },
   "quality_group_shrink": { "message": "Réduire (conversion, plus lent)" },
   "quality_shrunk": { "message": "Conversion" },
-  "shrinkHint": { "message": "Grabby réduit l'image lui-même, dans le navigateur : c'est bien plus lent qu'un simple téléchargement (plusieurs minutes, davantage pour un film). Ça continue même si tu fermes cette fenêtre." }
+  "shrinkHint": { "message": "Grabby réduit l'image lui-même, dans le navigateur : c'est bien plus lent qu'un simple téléchargement (plusieurs minutes, davantage pour un film). Ça continue même si tu fermes cette fenêtre." },
+  "jobLeft": {"message": "reste $T$", "placeholders": {"t": {"content": "$1"}}},
+  "st_converting": { "message": "Réduction" },
+  "showOptions": { "message": "Afficher les choix" },
+  "hideOptions": { "message": "Masquer les choix" },
+  "back": { "message": "Retour" },
+  "set_group_look": { "message": "Apparence" },
+  "set_group_formats": { "message": "Formats par défaut" },
+  "set_group_files": { "message": "Fichiers" },
+  "set_group_end": { "message": "À la fin d'un téléchargement" },
+  "set_name_title": { "message": "Titre" },
+  "set_name_quality": { "message": "Qualité" },
+  "set_name_site": { "message": "Site" },
+  "set_name_date": { "message": "Date" },
+  "set_name_sample": { "message": "Ma vidéo" },
+  "browserAsksNote": { "message": "Si une fenêtre « Enregistrer sous » s'ouvre quand même, c'est le réglage « Toujours demander où enregistrer les fichiers » de ton navigateur qui décide : aucune extension ne peut passer outre." },
+  "browserAsksBody": { "message": "Ton navigateur demande où enregistrer chaque fichier : son réglage passe avant celui de Grabby. Désactive « Toujours demander où enregistrer les fichiers » pour que Grabby enregistre directement, dans le dossier Grabby si tu l'as choisi." },
+  "browserAsksOpen": { "message": "Ouvrir les réglages de téléchargement du navigateur" }
 }

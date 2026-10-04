@@ -1,13 +1,17 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useRef } from 'preact/hooks';
+import { AUDIO_FORMATS, FORMAT_NAMES, VIDEO_FORMATS } from '../../shared/formats';
+import { buildFilename, NAME_PARTS, namePartsOf, templateOf, type NamePart } from '../../shared/filename';
 import type { Settings as S } from '../../shared/settings';
 import { t } from '../i18n';
-import { AUDIO_FORMATS, FORMAT_NAMES, VIDEO_FORMATS } from '../../shared/formats';
 import { Icon } from './Icon';
 import { Select } from './Select';
 
 interface Props {
   settings: S;
+  /** The browser was seen asking where to save, whatever Grabby's setting says. */
+  browserAsks: boolean;
   onChange: (patch: Partial<S>) => void;
+  onOpenBrowserSettings: () => void;
   onClose: () => void;
 }
 
@@ -35,91 +39,142 @@ function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange
   );
 }
 
-export function Settings({ settings, onChange, onClose }: Props) {
-  const [template, setTemplate] = useState(settings.template);
-  const sheetRef = useRef<HTMLElement>(null);
+function Group({ title, children }: { title: string; children: preact.ComponentChildren }) {
+  return (
+    <section class="group">
+      <h3 class="group__title">{title}</h3>
+      <div class="group__body">{children}</div>
+    </section>
+  );
+}
+
+/** Example the file name preview is built on. */
+const SAMPLE = { title: 'Ma vidéo', site: 'exemple.fr', quality: '1080p' };
+
+export function Settings({ settings, browserAsks, onChange, onOpenBrowserSettings, onClose }: Props) {
+  const pageRef = useRef<HTMLElement>(null);
+  const parts = namePartsOf(settings.template);
+  const setPart = (part: NamePart, on: boolean) => onChange({ template: templateOf(NAME_PARTS.filter((p) => (p === part ? on : parts.includes(p)))) });
+  const preview = buildFilename(
+    settings.template,
+    { title: t('set_name_sample') === 'set_name_sample' ? SAMPLE.title : t('set_name_sample'), site: SAMPLE.site, quality: SAMPLE.quality, date: new Date() },
+    settings.videoFormat,
+    settings.subfolder ? 'Grabby' : undefined,
+  );
 
   useEffect(() => {
-    // Focus the dialog itself: keyboard users land inside it without a stray focus ring.
-    sheetRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    pageRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !e.defaultPrevented && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
   return (
-    <div class="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <section ref={sheetRef} tabIndex={-1} class="sheet" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-        <header class="sheet__head">
-          <h2 id="settings-title">{t('openSettings')}</h2>
-          <button class="icon-btn" aria-label={t('closeSettings')} title={t('closeSettings')} onClick={onClose}>
-            <Icon name="close" />
-          </button>
-        </header>
+    <section ref={pageRef} tabIndex={-1} class="page" aria-labelledby="settings-title">
+      <header class="top top--page">
+        <button class="icon-btn" aria-label={t('back')} title={t('back')} onClick={onClose}>
+          <Icon name="back" />
+        </button>
+        <h2 id="settings-title" class="page__title">
+          {t('openSettings')}
+        </h2>
+        <span class="top__spacer" />
+      </header>
 
-        <div class="setting">
-          <span class="setting__label">{t('set_theme')}</span>
-          <Segmented
-            label={t('set_theme')}
-            value={settings.theme}
-            options={[
-              ['auto', t('set_theme_auto')],
-              ['light', t('set_theme_light')],
-              ['dark', t('set_theme_dark')],
-            ]}
-            onChange={(theme) => onChange({ theme })}
-          />
-        </div>
-
-        <div class="setting">
-          <span class="setting__label">{t('set_video')}</span>
-          <span class="setting__control">
-            <Select
-              label={t('set_video')}
-              hideLabel
-              value={settings.videoFormat}
-              options={VIDEO_FORMATS.map((f) => ({ value: f, label: FORMAT_NAMES[f], detail: t(`fmt_${f}`) }))}
-              onChange={(videoFormat) => onChange({ videoFormat })}
+      <div class="page__body">
+        <Group title={t('set_group_look')}>
+          <div class="setting">
+            <span class="setting__label">{t('set_theme')}</span>
+            <Segmented
+              label={t('set_theme')}
+              value={settings.theme}
+              options={[
+                ['auto', t('set_theme_auto')],
+                ['light', t('set_theme_light')],
+                ['dark', t('set_theme_dark')],
+              ]}
+              onChange={(theme) => onChange({ theme })}
             />
-          </span>
-        </div>
+          </div>
+        </Group>
 
-        <div class="setting">
-          <span class="setting__label">{t('set_audio')}</span>
-          <span class="setting__control">
-            <Select
-              label={t('set_audio')}
-              hideLabel
-              value={settings.audioFormat}
-              options={AUDIO_FORMATS.map((f) => ({ value: f, label: FORMAT_NAMES[f], detail: t(`fmt_${f}`) }))}
-              onChange={(audioFormat) => onChange({ audioFormat })}
-            />
-          </span>
-        </div>
+        <Group title={t('set_group_formats')}>
+          <div class="setting">
+            <span class="setting__label">{t('set_video')}</span>
+            <span class="setting__control">
+              <Select
+                label={t('set_video')}
+                hideLabel
+                value={settings.videoFormat}
+                options={VIDEO_FORMATS.map((f) => ({ value: f, label: FORMAT_NAMES[f], detail: t(`fmt_${f}`) }))}
+                onChange={(videoFormat) => onChange({ videoFormat })}
+              />
+            </span>
+          </div>
+          <div class="setting">
+            <span class="setting__label">{t('set_audio')}</span>
+            <span class="setting__control">
+              <Select
+                label={t('set_audio')}
+                hideLabel
+                value={settings.audioFormat}
+                options={AUDIO_FORMATS.map((f) => ({ value: f, label: FORMAT_NAMES[f], detail: t(`fmt_${f}`) }))}
+                onChange={(audioFormat) => onChange({ audioFormat })}
+              />
+            </span>
+          </div>
+        </Group>
 
-        <Toggle label={t('set_notify')} hint={t('set_notify_hint')} checked={settings.notify} onChange={(notify) => onChange({ notify })} />
-        <Toggle label={t('set_saveAs')} hint={t('set_saveAs_hint')} checked={settings.saveAs} onChange={(saveAs) => onChange({ saveAs })} />
-        <Toggle label={t('set_subfolder')} hint={t('set_subfolder_hint')} checked={settings.subfolder} onChange={(subfolder) => onChange({ subfolder })} />
+        <Group title={t('set_group_files')}>
+          <div class="setting setting--stack">
+            <span class="setting__label">{t('set_template')}</span>
+            <div class="chips" role="group" aria-label={t('set_template')}>
+              {NAME_PARTS.map((p) => {
+                const on = p === 'title' || parts.includes(p);
+                return (
+                  <button
+                    key={p}
+                    class={`chip${on ? ' chip--on' : ''}`}
+                    role="checkbox"
+                    aria-checked={on}
+                    disabled={p === 'title'}
+                    onClick={() => setPart(p, !on)}
+                  >
+                    {on && <Icon name="check" size={14} />}
+                    {t(`set_name_${p}`)}
+                  </button>
+                );
+              })}
+            </div>
+            <span class="preview" title={preview}>
+              {preview}
+            </span>
+          </div>
+          <Toggle label={t('set_subfolder')} hint={t('set_subfolder_hint')} checked={settings.subfolder} onChange={(subfolder) => onChange({ subfolder })} />
+          <Toggle label={t('set_saveAs')} hint={t('set_saveAs_hint')} checked={settings.saveAs} onChange={(saveAs) => onChange({ saveAs })} />
+          {!settings.saveAs && (
+            <div class={`callout${browserAsks ? ' callout--warn' : ''}`} role={browserAsks ? 'alert' : undefined}>
+              <Icon name={browserAsks ? 'alert' : 'info'} size={16} />
+              <div>
+                <p>{t(browserAsks ? 'browserAsksBody' : 'browserAsksNote')}</p>
+                <button class="link" onClick={onOpenBrowserSettings}>
+                  {t('browserAsksOpen')}
+                </button>
+              </div>
+            </div>
+          )}
+        </Group>
 
-        <label class="setting setting--stack">
-          <span class="setting__label">{t('set_template')}</span>
-          <input
-            class="field"
-            type="text"
-            value={template}
-            spellcheck={false}
-            onInput={(e) => setTemplate((e.target as HTMLInputElement).value)}
-            onBlur={() => onChange({ template: template.trim() || '{title}' })}
-          />
-          <span class="setting__hint">{t('set_template_hint')}</span>
-        </label>
+        <Group title={t('set_group_end')}>
+          <Toggle label={t('set_notify')} hint={t('set_notify_hint')} checked={settings.notify} onChange={(notify) => onChange({ notify })} />
+        </Group>
 
-        <p class="sheet__foot">
+        <p class="page__foot">
           <Icon name="shield" size={14} />
           <span>{t('set_privacy')}</span>
-          <span class="sheet__version">v{__VERSION__}</span>
+          <span class="page__version">v{__VERSION__}</span>
         </p>
-      </section>
-    </div>
+      </div>
+    </section>
   );
 }

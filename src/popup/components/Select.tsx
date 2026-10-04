@@ -117,7 +117,7 @@ export function Select<T extends string>({ label, value, options, onChange, disa
         e.preventDefault();
         return choose(active);
       case 'Escape':
-        // Only the list closes, not the settings sheet behind it.
+        // Only the list closes, not the settings page behind it.
         e.preventDefault();
         e.stopPropagation();
         return close();

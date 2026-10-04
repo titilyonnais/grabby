@@ -82,9 +82,15 @@ export interface Job {
   variantId?: string;
   mode: JobMode;
   status: JobStatus;
+  /** 0–1 over the whole job (download, then assembly), never going back. */
   progress: number;
   bytes: number;
+  /** Bytes per second, smoothed. */
   speed: number;
+  /** Expected size of the download, when known. */
+  total?: number;
+  /** `total` is an estimate (stream bitrate, YouTube's figure), not the server's. */
+  totalApprox?: boolean;
   filename: string;
   title: string;
   pageUrl: string;

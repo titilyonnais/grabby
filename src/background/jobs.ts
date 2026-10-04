@@ -26,6 +26,8 @@ const STALL_MS = 120_000;
 const CAPTURE_STALL_MS = 60_000;
 
 const ACTIVE: JobStatus[] = ['downloading', 'capturing', 'processing', 'saving'];
+/** Share of the progress bar for recording a playback; assembling it takes the rest. */
+const CAPTURE_SHARE = 0.9;
 const FINISHED: JobStatus[] = ['done', 'error', 'canceled'];
 
 const INTERRUPT_REASONS: Record<string, ErrorCode> = {
@@ -42,11 +44,28 @@ function interruptCode(reason: string | undefined): ErrorCode {
   return INTERRUPT_REASONS[reason] ?? 'unknown';
 }
 
+/**
+ * The browser's "ask where to save each file" setting wins over Grabby's: while its dialog
+ * is open, the file already downloads but has no name yet. Noticed here so the popup can
+ * explain it and point to that setting.
+ */
+export const BROWSER_ASKS_KEY = 'browserAsks';
+function watchSavePrompt(downloadId: number) {
+  setTimeout(async () => {
+    const [d] = await chrome.downloads.search({ id: downloadId }).catch(() => []);
+    if (!d) return;
+    if (d.filename) await chrome.storage.local.set({ [BROWSER_ASKS_KEY]: false });
+    else if (d.state === 'in_progress' && d.bytesReceived > 0) await chrome.storage.local.set({ [BROWSER_ASKS_KEY]: true });
+  }, 1500);
+}
+
 export class JobManager {
   private jobs = new Map<string, Job>();
   /** Header rules held by running jobs (in memory; orphans are swept once idle). */
   private releases = new Map<string, () => Promise<void>>();
   private lastUpdate = new Map<string, number>();
+  /** Last byte count of each job and when it was seen, to measure the speed. */
+  private rate = new Map<string, { at: number; bytes: number }>();
   private listeners: (() => void)[] = [];
   private pollTimer: ReturnType<typeof setInterval> | undefined;
   private persistTimer: ReturnType<typeof setTimeout> | undefined;
@@ -89,10 +108,30 @@ export class JobManager {
     if (FINISHED.includes(job.status) && patch.status && !FINISHED.includes(patch.status) && patch.status !== 'queued') {
       return job;
     }
+    const running = !FINISHED.includes(patch.status ?? job.status);
+    // One bar for the whole job: a new step (assembly after download) never sends it back.
+    if (running && patch.progress !== undefined && patch.progress < job.progress) patch = { ...patch, progress: job.progress };
+    if (running && patch.bytes !== undefined && patch.speed === undefined) patch = { ...patch, speed: this.speedOf(job, patch.bytes) };
     Object.assign(job, patch);
     this.lastUpdate.set(id, Date.now());
     this.changed();
     return job;
+  }
+
+  /** Current speed, smoothed over the last seconds; 0 once nothing arrives any more. */
+  private speedOf(job: Job, bytes: number): number {
+    const now = Date.now();
+    const last = this.rate.get(job.id);
+    if (!last || bytes < last.bytes) {
+      this.rate.set(job.id, { at: now, bytes });
+      return job.speed;
+    }
+    const dt = now - last.at;
+    if (bytes === last.bytes) return dt > 3000 ? 0 : job.speed;
+    if (dt < 250) return job.speed;
+    this.rate.set(job.id, { at: now, bytes });
+    const instant = ((bytes - last.bytes) * 1000) / dt;
+    return job.speed ? job.speed * 0.6 + instant * 0.4 : instant;
   }
 
   private changed() {
@@ -159,6 +198,10 @@ export class JobManager {
       startedAt: Date.now(),
       ...(variantId ? { variantId } : {}),
       ...(scale ? { scale, quality: `${scale}p` } : mode === 'video' && variant ? { quality: variant.label } : {}),
+      // A recording's size is known beforehand only when the site tells it (YouTube).
+      ...(item.kind === 'capture' && mode === 'video' && (variant?.sizes?.[format as VideoFormat] ?? item.size)
+        ? { total: variant?.sizes?.[format as VideoFormat] ?? item.size, totalApprox: true }
+        : {}),
       ...(format && (mode === 'audio' ? isAudioFormat(format) : (item.formats ?? VIDEO_FORMATS).includes(format as VideoFormat)) ? { format } : {}),
       ...(item.ytId ? { hidden: true } : {}),
       ...(item.frameId !== undefined ? { frameId: item.frameId } : {}),
@@ -252,7 +295,11 @@ export class JobManager {
         ...(job.scale ? { scale: job.scale } : {}),
       });
       if (this.gone(job.id)) return;
-      this.update(job.id, { raw: plan.raw, ...(plan.estimatedSize ? { bytes: 0 } : {}) });
+      this.update(job.id, {
+        raw: plan.raw,
+        // A file's size comes from the server; a stream's is estimated from its bitrate.
+        ...(plan.estimatedSize ? { bytes: 0, total: plan.estimatedSize, totalApprox: plan.kind !== 'file' } : {}),
+      });
 
       if (plan.kind === 'file' && plan.direct) return await this.direct(job, plan.video?.segments[0]?.url ?? item.url, plan.output, settings);
       if (plan.kind === 'capture') {
@@ -284,6 +331,7 @@ export class JobManager {
     this.releases.set(job.id, await withPageHeaders(job.pageUrl, [url]));
     if (this.gone(job.id)) return void this.cleanup(job.id);
     const downloadId = await chrome.downloads.download({ url, filename, saveAs: settings.saveAs, conflictAction: 'uniquify' });
+    if (!settings.saveAs) watchSavePrompt(downloadId);
     if (this.gone(job.id)) {
       await chrome.downloads.cancel(downloadId).catch(() => {});
       return void this.cleanup(job.id);
@@ -358,7 +406,7 @@ export class JobManager {
     if (!plan || !hasTracks) return this.fail(job.id, 'capture_failed');
     // A hidden player may also have recorded ads: keep only the tracks of the video itself.
     const final: Plan = { ...plan, ...(keep?.length ? { keepTracks: keep } : {}) };
-    this.update(job.id, { status: 'processing', progress: 0, blob: true, capturePlan: final });
+    this.update(job.id, { status: 'processing', progress: CAPTURE_SHARE, speed: 0, blob: true, capturePlan: final });
     await sendOffscreen({ target: 'offscreen', type: 'run', jobId: job.id, plan: final }).catch(() => this.fail(job.id, 'unknown'));
   }
 
@@ -392,7 +440,7 @@ export class JobManager {
     const job = this.jobs.get(msg.jobId);
     if (!job || job.status !== 'capturing') return;
     if (msg.type === 'capture-progress') {
-      this.update(job.id, { progress: msg.progress, bytes: msg.bytes });
+      this.update(job.id, { progress: msg.progress * CAPTURE_SHARE, bytes: msg.bytes });
     } else if (msg.type === 'capture-error') {
       this.fail(job.id, msg.error);
     } else if (msg.type === 'capture-done') {
@@ -413,9 +461,10 @@ export class JobManager {
       const settings = await getSettings();
       const filename = this.filename(job, msg.ext as OutputFormat, settings);
       if (this.gone(job.id)) return;
-      this.update(job.id, { status: 'saving', progress: 1, bytes: msg.size, speed: 0, filename });
+      this.update(job.id, { status: 'saving', progress: 1, bytes: msg.size, total: msg.size, totalApprox: false, speed: 0, filename });
       try {
         const downloadId = await chrome.downloads.download({ url: msg.blobUrl, filename, saveAs: settings.saveAs, conflictAction: 'uniquify' });
+        if (!settings.saveAs) watchSavePrompt(downloadId);
         if (this.gone(job.id)) return void chrome.downloads.cancel(downloadId).catch(() => {});
         this.update(job.id, { downloadId });
         this.startPolling();
@@ -468,11 +517,10 @@ export class JobManager {
       for (const j of direct) {
         const [info] = await chrome.downloads.search({ id: j.downloadId! });
         if (!info) continue;
-        const elapsed = Math.max(0.5, (now - j.startedAt) / 1000);
         this.update(j.id, {
           bytes: info.bytesReceived,
           progress: info.totalBytes > 0 ? info.bytesReceived / info.totalBytes : 0,
-          speed: info.bytesReceived / elapsed,
+          ...(info.totalBytes > 0 ? { total: info.totalBytes, totalApprox: false } : {}),
         });
       }
       for (const j of this.jobs.values()) {
