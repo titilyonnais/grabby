@@ -137,15 +137,17 @@ Le détail de chaque version est dans le [journal des modifications](CHANGELOG.m
 
 ## YouTube (expérimental)
 
-Grabby peut enregistrer les vidéos YouTube dans un lecteur caché : la vidéo que tu
-regardes n'est pas touchée. Fonction fragile, et contraire aux conditions de YouTube :
-à tes risques.
+Grabby propose les qualités réellement disponibles sur YouTube (jusqu'en 4K/8K) avec leur
+taille, en MP4, WebM ou MKV, ou l'audio seul. L'enregistrement se fait dans un lecteur
+caché : la vidéo que tu regardes n'est pas touchée et tu peux quitter la page. La vitesse
+dépend de ce lecteur. Fonction fragile, et contraire aux conditions de YouTube : à tes
+risques.
 
 ## Installation et mise à jour
 
 **Installer depuis une release**
 
-1. Télécharge le zip `grabby-…` dans les
+1. Télécharge `grabby-vX.Y.Z.zip` dans les
    [Releases](https://github.com/titilyonnais/grabby/releases/latest) et décompresse-le.
 2. Ouvre `brave://extensions` (ou `chrome://extensions`, `edge://extensions`,
    `opera://extensions`).
@@ -164,7 +166,7 @@ regardes n'est pas touchée. Fonction fragile, et contraire aux conditions de Yo
 ```bash
 npm ci
 npm run build      # → dist/
-npm run zip        # → release/*.zip
+npm run zip        # → release/grabby-vX.Y.Z.zip
 ```
 
 ## Utilisation
@@ -262,8 +264,8 @@ la page.
 ## Vie privée
 
 Aucun compte, aucune statistique, aucun serveur : rien ne quitte ton appareil. Détails dans
-la [politique de confidentialité](docs/PRIVACY.md) et la
-[justification des permissions](docs/PERMISSIONS.md).
+la [politique de confidentialité](docs/PRIVACY.md) et
+[à quoi sert chaque autorisation](docs/PERMISSIONS.md).
 
 ## Développement
 
@@ -327,7 +329,6 @@ offscreen ─ fetcher        segments en parallèle, reprises, ordre garanti
           └ youtube-player lecteur YouTube caché
 popup (Preact) ─ liste, listes qualité/format, progression, historique, réglages
 ```
-
 
 ## Licences
 

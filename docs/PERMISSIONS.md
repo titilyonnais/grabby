@@ -1,25 +1,26 @@
-# What each permission is for
+# À quoi sert chaque autorisation
 
-**Purpose:** detect the non-encrypted videos playing on the current page and let the
-user save them as a file. Grabby never bypasses DRM or encryption:
-encrypted HLS (`EXT-X-KEY` with a method other than `NONE`), DASH `ContentProtection` and any
-use of Encrypted Media Extensions mark the media as protected and no download is offered.
+Grabby a un seul but : repérer les vidéos non chiffrées de la page que tu regardes et les
+enregistrer en fichier, dans la qualité et le format choisis. Il ne contourne jamais un
+DRM ni un chiffrement : un HLS chiffré (`EXT-X-KEY` autre que `NONE`), un DASH avec
+`ContentProtection` ou toute utilisation des Encrypted Media Extensions marquent la vidéo
+comme protégée, et aucun téléchargement n'est proposé.
 
-| Permission | Why it is needed |
+| Autorisation | Pourquoi |
 |---|---|
-| `host_permissions: <all_urls>` | Videos can be served from any site and any CDN. Needed to observe media responses in every tab, to read HLS/DASH manifests and to fetch the segments the user asked to download. |
-| `webRequest` | Read-only observation of response headers (`Content-Type`, `Content-Length`) to recognize video files and streaming manifests. No request is blocked or modified through this API. For a detected file, the extension reads its first 256 KB to check that it really is a video, how long it lasts and whether it is encrypted (encrypted files are shown as protected). |
-| `declarativeNetRequestWithHostAccess` | Many CDNs reject requests without the page's `Referer`/`Origin`. Temporary **session** rules restore these two headers **only for requests made by the extension itself** (`tabIds: [-1]`) while a user-initiated download runs; they are removed right after. Browsing traffic is never modified. |
-| `notifications` | One system notification when a download the user started finishes or fails (can be turned off in the settings). Clicking it shows the file in its folder. A small bubble is also shown in the active page by the content script, for systems where notifications are off. |
-| `downloads` | Save the resulting file through the browser's download manager, show it in its folder, report progress. |
-| `offscreen` | A hidden extension page downloads stream segments and runs ffmpeg.wasm (bundled in the package) to assemble them into the format the user chose (MP4, MKV, WebM, MOV, AVI, TS, or audio only M4A, MP3, Opus, OGG, FLAC, WAV), and to shrink the picture when the user asks for a smaller quality. It then hands a Blob URL to the download manager. Service workers cannot hold Blob URLs or run this workload. |
-| `storage` | Settings, download history (max 50 entries, user-clearable) and per-tab detection state (session storage). The popup also remembers the chosen theme in its own local storage so it opens without a flash. |
-| `unlimitedStorage` | Capture mode records a player's buffered data in the extension's IndexedDB before assembly; recordings of long videos can exceed the default quota. Data is deleted as soon as the file is saved or the capture is canceled. |
-| Content scripts on `<all_urls>` | `scanner.js` lists `<video>` elements and the page title/thumbnail (page metadata, poster, or a small still of the playing video kept on the device) and the video files the page names or links to (at most 12, each checked from its first 256 KB); it also shows the "download finished" bubble; `hook.js` (MAIN world) detects DRM usage and tracks Media Source buffers so a capture can be performed when — and only when — the user clicks "Record playback". |
-| `web_accessible_resources: capture-sink.html` | Hidden extension frame used during a capture to move recorded buffers into extension storage without copying them through messaging (`use_dynamic_url: true`). |
-| CSP `'wasm-unsafe-eval'` | Required to instantiate the bundled ffmpeg WebAssembly module. No remote code is loaded; there is no `eval` of strings. |
+| Accès à tous les sites (`<all_urls>`) | Les vidéos viennent de n'importe quel site ou CDN. Il faut observer les réponses réseau des onglets, lire les manifestes HLS/DASH et récupérer les morceaux demandés. |
+| `webRequest` | Lecture seule des en-têtes de réponse (`Content-Type`, `Content-Length`) pour reconnaître les vidéos et les manifestes. Aucune requête n'est bloquée ni modifiée. Pour un fichier repéré, Grabby lit ses 256 premiers Ko pour vérifier que c'est bien une vidéo, sa durée et s'il est chiffré. |
+| `declarativeNetRequestWithHostAccess` | Beaucoup de serveurs refusent une requête sans le `Referer`/`Origin` de la page. Des règles **temporaires** remettent ces deux en-têtes **uniquement sur les requêtes de Grabby lui-même** pendant un téléchargement que tu as lancé, puis sont retirées. Ta navigation n'est jamais modifiée. |
+| `notifications` | Une notification système quand un téléchargement se termine ou échoue (désactivable dans les réglages). Un clic montre le fichier dans son dossier. |
+| `downloads` | Enregistrer le fichier par le gestionnaire de téléchargements du navigateur, le montrer dans son dossier, suivre la progression. |
+| `offscreen` | Une page invisible de l'extension télécharge les morceaux des flux et lance ffmpeg.wasm (inclus dans l'extension) pour produire le format choisi, réduire l'image si une qualité plus petite est demandée, et héberger le lecteur YouTube caché. |
+| `storage` | Réglages, historique (50 entrées au plus, effaçable) et vidéos repérées par onglet (mémoire de session). La popup garde aussi le thème choisi pour s'ouvrir sans clignoter. |
+| `unlimitedStorage` | Le mode capture garde les données enregistrées dans la base locale de l'extension avant l'assemblage ; une longue vidéo dépasse le quota par défaut. Tout est effacé dès que le fichier est enregistré ou la capture annulée. |
+| Scripts dans les pages | `scanner.js` liste les `<video>`, le titre et la miniature de la page et les fichiers vidéo qu'elle cite (12 au plus) ; il affiche aussi la bulle « Téléchargement terminé ». `hook.js` repère l'usage d'un DRM et suit les tampons Media Source pour pouvoir enregistrer la lecture quand — et seulement quand — tu le demandes. |
+| `capture-sink.html` accessible aux pages | Cadre invisible de l'extension qui reçoit les données d'un enregistrement sans les recopier par messages (`use_dynamic_url: true`). |
+| CSP `'wasm-unsafe-eval'` | Nécessaire pour lancer le module WebAssembly de ffmpeg inclus dans l'extension. Aucun code n'est chargé depuis Internet, et aucune chaîne n'est évaluée. |
 
-**Remote code:** none. All JavaScript and WebAssembly ship inside the package; the code is not
-minified so it can be reviewed.
+**Code distant** : aucun. Tout le JavaScript et le WebAssembly sont dans l'extension, et le
+code n'est pas minifié.
 
-**Data use:** no data is collected or transmitted (see `PRIVACY.md`).
+**Données** : rien n'est collecté ni envoyé (voir [PRIVACY.md](PRIVACY.md)).

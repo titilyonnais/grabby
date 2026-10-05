@@ -232,10 +232,10 @@ chrome.runtime.onMessage.addListener((msg: BgToOffscreen) => {
       break;
     }
     case 'yt-start':
-      if (__TARGET__ === 'github') startHiddenPlayer(msg.jobId, msg.src);
+      startHiddenPlayer(msg.jobId, msg.src);
       break;
     case 'yt-stop':
-      if (__TARGET__ === 'github') stopHiddenPlayer(msg.jobId);
+      stopHiddenPlayer(msg.jobId);
       break;
     case 'ping':
       break;

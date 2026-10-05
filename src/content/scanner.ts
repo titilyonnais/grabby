@@ -204,7 +204,7 @@ function collect(): PageInfo {
     const image = isTop && !still ? largestImage() : undefined;
     if (image) info.image = image;
   }
-  if (__TARGET__ === 'github' && isTop) {
+  if (isTop) {
     const yt = readYouTubeInfo(document, location.href);
     if (yt) info.youtube = { ...yt, ...(ytPlayer && yt.id === ytPlayer.id ? { player: ytPlayer } : {}) };
   }
@@ -262,8 +262,8 @@ function startObserving() {
   }
 }
 
-// github build: inside the hidden YouTube player this frame only records, it reports nothing.
-const hiddenJob = __TARGET__ === 'github' ? hiddenJobFromUrl(location.href) : null;
+// Inside the hidden YouTube player this frame only records, it reports nothing.
+const hiddenJob = hiddenJobFromUrl(location.href);
 if (!hiddenJob) {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startObserving, { once: true });
   else startObserving();
@@ -449,7 +449,7 @@ hook.onmessage = (e: MessageEvent) => {
       if (session) void finish(session, Array.isArray(d.keep) ? d.keep.filter(Number.isInteger) : undefined);
       break;
     case 'yt':
-      if (__TARGET__ === 'github' && isTop && d.info && typeof d.info.id === 'string') {
+      if (isTop && d.info && typeof d.info.id === 'string') {
         ytPlayer = d.info;
         scheduleReport(100);
       }

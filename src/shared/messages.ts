@@ -18,7 +18,7 @@ export interface PageVideo {
   controls?: boolean;
 }
 
-/** github build: what the YouTube player says about the current video. */
+/** What the YouTube player says about the current video. */
 export interface YtInfo {
   id: string;
   title: string;
@@ -40,7 +40,7 @@ export interface PageInfo {
   streams?: string[];
   /** Video URLs the page names without playing them: metadata, <source>, direct links. */
   declared?: string[];
-  /** github build only: YouTube player metadata. */
+  /** YouTube player metadata. */
   youtube?: { id: string; title: string; thumbnail?: string; duration?: number; player?: YtInfo };
 }
 
@@ -63,7 +63,7 @@ export type BgToContent =
   | { type: 'toast'; ok: boolean; title: string; detail: string; action?: string; downloadId?: number };
 
 /* ---------- popup ⇄ service worker (port "popup") ---------- */
-export type BlockedReason = 'youtube' | 'restricted';
+export type BlockedReason = 'restricted';
 
 export interface PopupState {
   tabId: number;
@@ -97,7 +97,7 @@ export type BgToOffscreen =
   | { target: 'offscreen'; type: 'run'; jobId: string; plan: Plan }
   | { target: 'offscreen'; type: 'cancel'; jobId: string }
   | { target: 'offscreen'; type: 'release'; jobId: string }
-  /** github build: plays a YouTube video in a hidden player, recorded by the page hook. */
+  /** Plays a YouTube video in a hidden player, recorded by the page hook. */
   | { target: 'offscreen'; type: 'yt-start'; jobId: string; src: string }
   | { target: 'offscreen'; type: 'yt-stop'; jobId: string }
   | { target: 'offscreen'; type: 'ping' };

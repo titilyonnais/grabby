@@ -1,6 +1,5 @@
 /**
- * Experimental YouTube support, page (MAIN) world — GitHub build only, referenced
- * exclusively behind `__TARGET__ === 'github'` so it is absent from the store build.
+ * Experimental YouTube support, page (MAIN) world.
  *
  * On a watch page: reads the player's own description of the video (qualities, codecs,
  * sizes) for the popup. Inside the hidden player Grabby adds to the page: picks the codecs

@@ -1,6 +1,5 @@
 {
   "extName": { "message": "Grabby — Video Downloader" },
-  "extNameGithub": { "message": "Grabby (GitHub edition)" },
   "extDescription": { "message": "Spots the videos playing on any page and saves them in one click. Never touches DRM-protected content." },
 
   "loading": { "message": "Loading…" },
@@ -50,8 +49,6 @@
 
   "protectedBody": { "message": "This video is encrypted by its publisher (DRM). Grabby never bypasses protection." },
   "liveBody": { "message": "Live streams can't be downloaded yet." },
-  "ytTitle": { "message": "YouTube isn't supported" },
-  "ytBody": { "message": "Chrome Web Store rules don't allow downloading YouTube videos, so this edition of Grabby stays off on YouTube." },
   "restrictedTitle": { "message": "Nothing to see here" },
   "restrictedBody": { "message": "The browser doesn't let extensions read this page. Open a regular website to find videos." },
   "emptyTitle": { "message": "No videos found yet" },

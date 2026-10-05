@@ -16,7 +16,7 @@ describe('locales', () => {
     for (const c of codes) expect(en).toHaveProperty(`err_${c}`);
     for (const s of statuses) expect(en).toHaveProperty(`st_${s}`);
   });
-  it('keeps the extension name within store limits', () => {
+  it('keeps the extension name short (45 characters at most)', () => {
     for (const m of [en, fr]) expect(m.extName!.message.length).toBeLessThanOrEqual(45);
   });
 });

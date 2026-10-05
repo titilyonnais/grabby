@@ -1,5 +1,4 @@
 import type { BgToPopup, BlockedReason, ContentToBg, OffscreenToBg, PopupState, PopupToBg } from '../shared/messages';
-import { isYouTubeUrl, youtubeBlocked } from '../shared/policy';
 import { getSettings, setSettings } from '../shared/settings';
 import { cleanTitle } from '../shared/title';
 import { hostOf } from '../parsers/url';
@@ -62,7 +61,6 @@ const ports = new Map<chrome.runtime.Port, number>();
 const pushTimers = new Map<chrome.runtime.Port, ReturnType<typeof setTimeout>>();
 
 function restrictedReason(url: string): BlockedReason | undefined {
-  if (youtubeBlocked() && isYouTubeUrl(url)) return 'youtube';
   if (!/^https?:/i.test(url) || /^https:\/\/(chrome\.google\.com\/webstore|chromewebstore\.google\.com|microsoftedge\.microsoft\.com\/addons)/.test(url)) {
     return 'restricted';
   }
@@ -205,8 +203,8 @@ chrome.runtime.onMessage.addListener((msg: ContentToBg | OffscreenToBg, sender, 
     return;
   }
   if (!sender.tab?.id) {
-    // The hidden YouTube player (github build) lives in our offscreen document.
-    const fromOffscreen = __TARGET__ === 'github' && sender.id === chrome.runtime.id && !!sender.url?.startsWith('https://www.youtube.com/embed/');
+    // The hidden YouTube player lives in our offscreen document.
+    const fromOffscreen = sender.id === chrome.runtime.id && !!sender.url?.startsWith('https://www.youtube.com/embed/');
     if (fromOffscreen && 'jobId' in msg) void jobs.onContentMessage(msg);
     return;
   }

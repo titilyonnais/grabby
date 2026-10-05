@@ -7,8 +7,6 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "build:store": "node scripts/build.mjs store",
-    "build:github": "node scripts/build.mjs github",
     "zip": "node scripts/zip.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",
@@ -16,8 +14,7 @@
     "test:e2e": "playwright test",
     "fixtures": "node scripts/make-fixtures.mjs",
     "icons": "node scripts/make-icons.mjs",
-    "release:check": "node scripts/release-check.mjs",
-    "store:assets": "node scripts/store-assets.mjs"
+    "release:check": "node scripts/release-check.mjs"
   },
   "engines": {
     "node": ">=20"

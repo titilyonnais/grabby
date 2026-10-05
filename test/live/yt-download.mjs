@@ -1,5 +1,5 @@
 /**
- * Real YouTube check (github build, Brave): opens a video, asks the popup for a quality and
+ * Real YouTube check (Brave): opens a video, asks the popup for a quality and
  * format, and verifies that the file is right while the visible player keeps playing at
  * normal speed.   node test/live/yt-download.mjs [url] [quality label] [mp4|webm|mkv|mp3|…]
  */

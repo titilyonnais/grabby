@@ -4,7 +4,7 @@
  * detected. Not part of CI — real sites change and need network access.
  *
  *   node test/live/live.mjs <url> [more urls…]
- *   GRABBY_EXT=dist/store BROWSER="C:/path/to/browser.exe" node test/live/live.mjs <url>
+ *   BROWSER="C:/path/to/browser.exe" node test/live/live.mjs <url>
  *   HEADED=1 … shows the browser window (hidden by default).
  */
 import { chromium } from '@playwright/test';
@@ -12,7 +12,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-const EXT = resolve(process.env.GRABBY_EXT ?? 'dist/github');
+const EXT = resolve(process.env.GRABBY_EXT ?? 'dist');
 const BROWSER = process.env.BROWSER ?? 'C:/Program Files/BraveSoftware/Brave-Browser/Application/brave.exe';
 const WAIT = Number(process.env.WAIT ?? 12000);
 

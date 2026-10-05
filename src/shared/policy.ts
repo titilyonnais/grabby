@@ -10,6 +10,3 @@ export function isYouTubeUrl(url: string): boolean {
   }
   return YT_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
 }
-
-/** The Chrome Web Store build must not offer anything on YouTube. */
-export const youtubeBlocked = (): boolean => __TARGET__ === 'store';

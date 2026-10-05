@@ -1,5 +1,5 @@
 /**
- * Experimental YouTube support — GitHub build only (offscreen document).
+ * Experimental YouTube support (offscreen document).
  *
  * YouTube doesn't let its player be embedded inside youtube.com itself, so the hidden copy
  * that records a video lives here, in the extension's invisible document: the user's tab

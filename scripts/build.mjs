@@ -1,4 +1,4 @@
-// Builds Grabby for one or both targets: `node scripts/build.mjs [store|github]`.
+// Builds Grabby into dist/: `node scripts/build.mjs`.
 import { build } from 'vite';
 import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -7,32 +7,26 @@ import { buildManifest } from './manifest.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
-const targets = process.argv[2] ? [process.argv[2]] : ['store', 'github'];
 
-for (const t of targets) {
-  if (t !== 'store' && t !== 'github') throw new Error(`Unknown target: ${t}`);
-}
-
-function shared(target) {
+function shared() {
   return {
     configFile: false,
     logLevel: 'warn',
     define: {
-      __TARGET__: JSON.stringify(target),
       __VERSION__: JSON.stringify(pkg.version),
     },
     oxc: { jsx: { runtime: 'automatic', importSource: 'preact' } },
   };
 }
 
-async function buildTarget(target) {
-  const out = resolve(root, 'dist', target);
+async function buildAll() {
+  const out = resolve(root, 'dist');
   await rm(out, { recursive: true, force: true });
   await mkdir(out, { recursive: true });
 
   // 1. Extension pages (popup, offscreen, capture sink) + ffmpeg worker.
   await build({
-    ...shared(target),
+    ...shared(),
     root: resolve(root, 'src/pages'),
     base: './',
     publicDir: false,
@@ -61,7 +55,7 @@ async function buildTarget(target) {
   ];
   for (const s of scripts) {
     await build({
-      ...shared(target),
+      ...shared(),
       publicDir: false,
       build: {
         outDir: out,
@@ -89,9 +83,9 @@ async function buildTarget(target) {
   }
   await writeFile(
     resolve(out, 'manifest.json'),
-    JSON.stringify(buildManifest(target, pkg.version), null, 2),
+    JSON.stringify(buildManifest(pkg.version), null, 2),
   );
-  console.log(`✓ built ${target} → dist/${target}`);
+  console.log('✓ built → dist');
 }
 
-for (const t of targets) await buildTarget(t);
+await buildAll();

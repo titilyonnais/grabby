@@ -13,7 +13,11 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 ## [Non publié]
 
-Rien pour l'instant.
+### Modifié
+- **Un seul paquet** : chaque version est publiée dans un unique `grabby-vX.Y.Z.zip`, qui
+  comprend la prise en charge expérimentale de YouTube. `npm run build` produit `dist/`.
+- **Page des autorisations** (`docs/PERMISSIONS.md`) réécrite pour les utilisateurs : à quoi
+  sert chacune, en clair.
 
 ## [1.5.3] — 2026-10-04
 

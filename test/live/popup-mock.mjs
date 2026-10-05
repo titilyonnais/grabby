@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-const EXT = resolve(process.env.GRABBY_EXT ?? 'dist/store');
+const EXT = resolve(process.env.GRABBY_EXT ?? 'dist');
 const userData = mkdtempSync(join(tmpdir(), 'grabby-mock-'));
 const ctx = await chromium.launchPersistentContext(userData, {
   channel: 'chromium',

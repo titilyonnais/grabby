@@ -314,7 +314,7 @@ export class JobManager {
 
       if (plan.kind === 'file' && plan.direct) return await this.direct(job, plan.video?.segments[0]?.url ?? item.url, plan.output, settings);
       if (plan.kind === 'capture') {
-        return __TARGET__ === 'github' && item.ytId ? await this.startHidden(job, plan, item) : await this.startCapture(job, plan);
+        return item.ytId ? await this.startHidden(job, plan, item) : await this.startCapture(job, plan);
       }
 
       const urls = [plan.video, plan.audio].flatMap((t) => (t ? [...(t.init ? [t.init.url] : []), ...t.segments.map((s) => s.url)] : []));
@@ -379,11 +379,10 @@ export class JobManager {
   }
 
   /**
-   * github build, YouTube: a hidden copy of the player records the video at high speed
+   * YouTube: a hidden copy of the player records the video at high speed
    * while the user keeps watching theirs. Codecs are chosen so the file needs no re-encoding.
    */
   private async startHidden(job: Job, plan: Plan, item: MediaItem) {
-    if (__TARGET__ !== 'github') return;
     const v = item.variants.find((x) => x.id === job.variantId) ?? item.variants[0];
     const codecs = v?.codecs ?? '';
     const audio = job.mode === 'audio';

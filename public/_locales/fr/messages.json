@@ -1,6 +1,5 @@
 {
   "extName": { "message": "Grabby — Téléchargeur de vidéos" },
-  "extNameGithub": { "message": "Grabby (édition GitHub)" },
   "extDescription": { "message": "Repère les vidéos d'une page et les enregistre en un clic. Ne touche jamais aux contenus protégés par DRM." },
 
   "loading": { "message": "Chargement…" },
@@ -50,8 +49,6 @@
 
   "protectedBody": { "message": "Cette vidéo est chiffrée par son éditeur (DRM). Grabby ne contourne jamais une protection." },
   "liveBody": { "message": "Les directs ne peuvent pas encore être téléchargés." },
-  "ytTitle": { "message": "YouTube n'est pas pris en charge" },
-  "ytBody": { "message": "Le règlement du Chrome Web Store interdit le téléchargement de vidéos YouTube : cette édition de Grabby reste donc inactive sur YouTube." },
   "restrictedTitle": { "message": "Rien à voir ici" },
   "restrictedBody": { "message": "Le navigateur ne laisse pas les extensions lire cette page. Ouvre un site classique pour trouver des vidéos." },
   "emptyTitle": { "message": "Aucune vidéo pour l'instant" },

@@ -57,7 +57,7 @@ export function sweepHeaderRules(): Promise<void> {
 const PLAYER_RULE_ID = 1_000_000;
 
 /**
- * github build: YouTube's embedded player requires its host to identify itself with a
+ * YouTube's embedded player requires its host to identify itself with a
  * Referer. Extension pages send none, so the hidden player (in the offscreen document)
  * presents the extension's own identity, its chromiumapp.org address.
  */

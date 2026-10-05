@@ -363,7 +363,7 @@ const LOG_BUDGET = 48 * 1024 * 1024;
     void video.play().catch(() => {});
   }
 
-  if (__TARGET__ === 'github') {
+  {
     youtubeHook({
       post,
       recordAll: (cb) => {

@@ -1,24 +1,12 @@
-// Builds the MV3 manifest for a given target ('store' | 'github').
-
-export const YOUTUBE_MATCHES = [
-  '*://youtube.com/*',
-  '*://*.youtube.com/*',
-  '*://youtu.be/*',
-  '*://youtube-nocookie.com/*',
-  '*://*.youtube-nocookie.com/*',
-  '*://youtubekids.com/*',
-  '*://*.youtubekids.com/*',
-];
+// Builds the MV3 manifest.
 
 const ICONS = { 16: 'icons/icon-16.png', 32: 'icons/icon-32.png', 48: 'icons/icon-48.png', 128: 'icons/icon-128.png' };
 
-/** @param {'store'|'github'} target @param {string} version */
-export function buildManifest(target, version) {
-  const store = target === 'store';
-  const exclude = store ? { exclude_matches: YOUTUBE_MATCHES } : {};
+/** @param {string} version */
+export function buildManifest(version) {
   return {
     manifest_version: 3,
-    name: store ? '__MSG_extName__' : '__MSG_extNameGithub__',
+    name: '__MSG_extName__',
     short_name: 'Grabby',
     description: '__MSG_extDescription__',
     default_locale: 'en',
@@ -48,14 +36,12 @@ export function buildManifest(target, version) {
         run_at: 'document_start',
         all_frames: true,
         world: 'MAIN',
-        ...exclude,
       },
       {
         matches: ['<all_urls>'],
         js: ['scanner.js'],
         run_at: 'document_start',
         all_frames: true,
-        ...exclude,
       },
     ],
     web_accessible_resources: [

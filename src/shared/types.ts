@@ -53,13 +53,13 @@ export interface MediaItem {
   frameId?: number;
   /** True for audio-only resources (mp3, m4a, audio/*). */
   audioOnly?: boolean;
-  /** True when the item comes from the experimental YouTube feature (github build). */
+  /** True when the item comes from the experimental YouTube feature. */
   experimental?: boolean;
   /** Named by the page (metadata, link) but not seen playing: listed after what plays. */
   linked?: boolean | undefined;
   /** Containers offered for this video (none: saved as-is). */
   formats?: VideoFormat[];
-  /** github build: YouTube video id, recorded by a hidden player. */
+  /** YouTube video id, recorded by a hidden player. */
   ytId?: string;
 }
 

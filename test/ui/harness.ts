@@ -79,7 +79,6 @@ const STATES: Record<string, Partial<PopupState>> = {
   error: { items: [hero], jobs: [job({ status: 'error', error: 'http_403' })] },
   capturing: { items: [capture], jobs: [job({ mediaId: 'cap', status: 'capturing', progress: 0.63, kind: 'capture' })] },
   empty: { items: [] },
-  youtube: { items: [], blocked: 'youtube' },
   firstrun: { items: [hero] },
   history: { items: [hero] },
   settings: { items: [hero] },

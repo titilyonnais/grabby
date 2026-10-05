@@ -186,9 +186,7 @@ export function App() {
               ) : (
                 <>
                   {!settings!.firstRunAck && <FirstRun onOk={() => send({ type: 'settings', patch: { firstRunAck: true } })} />}
-                  {state.blocked === 'youtube' ? (
-                    <StateCard icon="shield" title={t('ytTitle')} body={t('ytBody')} />
-                  ) : state.blocked === 'restricted' ? (
+                  {state.blocked === 'restricted' ? (
                     <StateCard icon="lock" title={t('restrictedTitle')} body={t('restrictedBody')} />
                   ) : !items.length ? (
                     <StateCard icon="film" title={t('emptyTitle')} body={t('emptyBody')} />

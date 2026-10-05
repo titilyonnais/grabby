@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 import type { Server } from 'node:http';
 import { startServer } from './server';
 
-const EXT = resolve(process.env.GRABBY_EXT ?? 'dist/store');
+const EXT = resolve(process.env.GRABBY_EXT ?? 'dist');
 
 interface Fixtures {
   context: BrowserContext;

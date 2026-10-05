@@ -3,7 +3,7 @@ import { classify } from '../parsers/classify';
 import { hashId } from '../shared/ids';
 import type { PageInfo, PageVideo } from '../shared/messages';
 import type { MediaItem } from '../shared/types';
-import { blockedByPolicy, handleMediaUrl } from './detector';
+import { handleMediaUrl } from './detector';
 import type { DetectContext } from './manifests';
 import type { Registry } from './registry';
 
@@ -20,7 +20,7 @@ export function isPreview(v: PageVideo): boolean {
 
 const isYouTubeHost = (url: string) => /^https?:\/\/([\w-]+\.)*youtube\.com\//i.test(url);
 
-/** github build: the video of a YouTube watch page, with the player's qualities and sizes. */
+/** The video of a YouTube watch page, with the player's qualities and sizes. */
 async function upsertYouTube(registry: Registry, ctx: DetectContext, frameId: number, info: PageInfo): Promise<string> {
   const yt = info.youtube!;
   const p = yt.player;
@@ -80,7 +80,6 @@ export async function handlePageInfo(registry: Registry, sender: chrome.runtime.
   const frameId = sender.frameId ?? 0;
   const pageUrl = sender.tab?.url ?? '';
   const frameUrl = sender.url ?? pageUrl;
-  if (blockedByPolicy(frameUrl, pageUrl)) return;
   const ctx: DetectContext = { tabId, frameUrl, pageUrl };
 
   if (frameId === 0) {
@@ -92,14 +91,14 @@ export async function handlePageInfo(registry: Registry, sender: chrome.runtime.
   }
 
   for (const url of info.streams ?? []) {
-    if (typeof url === 'string' && /^https?:/i.test(url) && !blockedByPolicy(url)) {
+    if (typeof url === 'string' && /^https?:/i.test(url)) {
       await handleMediaUrl(registry, url, ctx, {});
     }
   }
 
   // Videos the page names but hasn't played (yet): each is checked from its first bytes.
   for (const url of (info.declared ?? []).slice(0, MAX_DECLARED)) {
-    if (typeof url === 'string' && /^https?:/i.test(url) && !blockedByPolicy(url)) {
+    if (typeof url === 'string' && /^https?:/i.test(url)) {
       await handleMediaUrl(registry, url, ctx, { requestType: 'declared' });
     }
   }
@@ -116,9 +115,9 @@ export async function handlePageInfo(registry: Registry, sender: chrome.runtime.
   }
   if (info.snapshot) await registry.setFrameThumb(tabId, frameUrl, info.snapshot);
 
-  if (__TARGET__ === 'github' && info.youtube) {
+  if (info.youtube) {
     keep.add(await upsertYouTube(registry, ctx, frameId, info));
-  } else if (!(__TARGET__ === 'github' && isYouTubeHost(pageUrl))) {
+  } else if (!isYouTubeHost(pageUrl)) {
     for (const v of info.videos) {
       if (previews.includes(v)) continue;
       if (v.isMse) {

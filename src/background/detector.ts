@@ -1,7 +1,6 @@
 import { isAdUrl } from '../parsers/adhosts';
 import { classify, isAudioResource } from '../parsers/classify';
 import { extOf, normalizeMediaUrl } from '../parsers/url';
-import { isYouTubeUrl, youtubeBlocked } from '../shared/policy';
 import { fetchTextAs } from './headers';
 import { fileItem, resolveDash, resolveHls, type DetectContext } from './manifests';
 import { probeFile } from './probe';
@@ -26,11 +25,6 @@ export function replacesPage(d: { responseHeaders?: chrome.webRequest.HttpHeader
   if (/^\s*attachment/i.test(header(d.responseHeaders, 'content-disposition') ?? '')) return false;
   const type = (header(d.responseHeaders, 'content-type') ?? '').split(';')[0]!.trim().toLowerCase();
   return !/^application\/(octet-stream|zip|x-zip-compressed|x-msdownload|x-7z-compressed|x-rar-compressed|x-tar|gzip|x-gzip)$/.test(type);
-}
-
-/** Returns true if detection must be skipped for this request (YouTube in the store build). */
-export function blockedByPolicy(...urls: (string | undefined)[]): boolean {
-  return youtubeBlocked() && urls.some((u) => !!u && isYouTubeUrl(u));
 }
 
 const sameMedia = (a: string, b: string) => normalizeMediaUrl(a) === normalizeMediaUrl(b);
@@ -102,12 +96,6 @@ export function startDetector(registry: Registry, onNavigate: (tabId: number) =>
         return;
       }
       if (d.initiator === ownOrigin) return;
-      if (blockedByPolicy(d.url)) {
-        // A frame streaming from YouTube's CDN (mirror, custom player…) never gets playback capture.
-        const frameUrl = (d as { documentUrl?: string }).documentUrl;
-        if (frameUrl) void registry.blockFrame(d.tabId, frameUrl);
-        return;
-      }
       const contentType = header(d.responseHeaders, 'content-type');
       const len = Number(header(d.responseHeaders, 'content-length') ?? 0) || undefined;
       const totalSize = totalFromRange(header(d.responseHeaders, 'content-range'));
@@ -117,7 +105,6 @@ export function startDetector(registry: Registry, onNavigate: (tabId: number) =>
       void (async () => {
         const pageUrl = await tabUrl(d.tabId);
         const frameUrl = (d as { documentUrl?: string }).documentUrl ?? (d.frameId === 0 ? pageUrl : d.initiator ?? pageUrl);
-        if (blockedByPolicy(d.url, pageUrl, frameUrl)) return;
         await handleMediaUrl(registry, d.url, { tabId: d.tabId, frameUrl, pageUrl }, {
           requestType,
           ...(contentType ? { contentType } : {}),

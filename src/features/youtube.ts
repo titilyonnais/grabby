@@ -1,8 +1,5 @@
 /**
- * Experimental YouTube support — GitHub build only.
- * This module is referenced exclusively behind `__TARGET__ === 'github'` so the
- * bundler removes it from the Chrome Web Store build. `test/unit/store-bundle.test.ts`
- * verifies that its thumbnail template (`hqdefault.jpg`) is absent from dist/store.
+ * Experimental YouTube support.
  */
 export interface YouTubeInfo {
   id: string;
