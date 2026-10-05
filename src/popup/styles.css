@@ -121,6 +121,13 @@ body {
   overflow: hidden;
   font: 400 14px/1.42 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
+  /* Letter shapes as drawn, not nudged to the pixel grid: smooth at every zoom. */
+  text-rendering: geometricPrecision;
+}
+
+/* Pictures scaled down smoothly (thumbnails come in all sizes). */
+img {
+  image-rendering: auto;
 }
 
 button,
@@ -195,6 +202,11 @@ p {
 /* -------------------------------------------------------------- app shell */
 .app {
   position: relative;
+  /*
+   * Drawn on its own layer: Chrome then smooths text in shades of grey instead of
+   * Windows' coloured sub-pixel fringes (yellow and blue edges on the dark and coral bars).
+   */
+  will-change: transform;
   /* Same size whatever is shown: the popup never jumps. */
   height: 600px;
   overflow: hidden;
@@ -1008,21 +1020,23 @@ p {
 }
 
 /*
- * The dark part only starts under the coral's round end, never under the rest of it: where
- * both were painted, the anti-aliased round edges let a dark line show around the coral.
+ * Every edge of the bar is a real rounded box (border-radius), which the browser smooths at
+ * any zoom and screen density — not a clip-path, which it smooths less finely. The dark part
+ * slides along behind the coral and only starts under its round end: where both were
+ * painted at the bar's outer edge, the dark showed through as a thin line around the coral.
  */
 .meter::before {
   content: '';
   position: absolute;
   inset: 0;
   background: var(--pill);
-  clip-path: inset(0 0 0 max(0px, calc(var(--p) * 100% - 24px)));
-  transition: clip-path 360ms var(--ease);
+  transform: translateX(max(0px, calc(var(--p) * 100% - 24px)));
+  transition: transform 360ms var(--ease);
 }
 
 /* Busy (the fill breathes): the dark track stays whole behind it. */
 .meter--busy::before {
-  clip-path: none;
+  transform: none;
 }
 
 
@@ -1039,11 +1053,20 @@ p {
 .meter__fill {
   position: absolute;
   inset: 0;
+  overflow: hidden;
   background: var(--accent);
   color: var(--on-accent);
-  /* The coral end is round too; its start is rounded by the bar itself (one edge, clean). */
-  clip-path: inset(0 calc((1 - var(--p)) * 100%) 0 0 round 0 var(--r-pill) var(--r-pill) 0);
-  transition: clip-path 360ms var(--ease);
+  /* A coral pill slid in from the left: its round end is its own corner; its start is cut
+     by the bar's round edge (one edge each, both smoothed by the browser). */
+  border-radius: 0 var(--r-pill) var(--r-pill) 0;
+  transform: translateX(calc((var(--p) - 1) * 100%));
+  transition: transform 360ms var(--ease);
+}
+
+/* The dark copy of the label stays in place while its pill slides. */
+.meter__fill .meter__label {
+  transform: translateX(calc((1 - var(--p)) * 100%));
+  transition: transform 360ms var(--ease);
 }
 
 .meter--paused .meter__fill {

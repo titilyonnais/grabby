@@ -39,6 +39,7 @@ export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
       stroke-width="1.8"
       stroke-linecap="round"
       stroke-linejoin="round"
+      shape-rendering="geometricPrecision"
       aria-hidden="true"
     >
       <path d={PATHS[name]} />
