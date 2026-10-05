@@ -13,6 +13,119 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 ## [Non publié]
 
+## [1.8.0] — 2026-10-06
+
+Plusieurs langues audio et de sous-titres, chapitres, plusieurs extraits, images et
+animations tirées de la vidéo, playlists et chaînes YouTube, téléchargements programmés et
+limite de vitesse. Et des extraits YouTube enfin propres.
+
+### Ajouté
+- **Plusieurs langues de sous-titres à la fois** : la liste « Sous-titres » se coche
+  maintenant comme une liste de cases. Chaque langue choisie devient une piste de la vidéo
+  (avec sa langue et son nom), ou un `.srt` à côté ; deux fichiers de même langue sont
+  numérotés.
+- **Sous-titres traduits par YouTube** : quand aucune piste écrite n'existe dans la langue
+  du navigateur et que YouTube sait traduire vers elle, la liste propose aussi « Français
+  (traduit de : Anglais) », et la piste porte le nom et la langue de la traduction. Comme
+  pour les autres sous-titres YouTube, Grabby garde ce que le lecteur caché charge
+  lui-même : aucune requête en plus.
+- **Plusieurs langues audio** : pour un flux HLS ou DASH qui propose plusieurs langues, une
+  liste « Langue audio » permet d'en garder une autre que celle par défaut, ou plusieurs :
+  chacune devient une piste de la vidéo, avec sa langue. En audio seul, c'est la première
+  cochée qui est gardée.
+- **Chapitres** :
+  - ceux de YouTube, lus dans la description de la vidéo, où que soit l'horodatage sur la
+    ligne (« 0:00 Intro », « Intro - 0:00 », « ⌨️ (1:45) Installer ») et selon la règle de
+    YouTube : au moins trois, le premier à 0:00, dix secondes d'écart au moins ;
+  - ceux d'un lecteur de page (`<track kind="chapters">`) ;
+  - écrits dans le fichier (MP4, MKV, WebM, MOV, M4A, MP3, FLAC, OGG, Opus), recalés sur
+    l'extrait quand on en coupe un. Un interrupteur « Garder les chapitres » permet de s'en
+    passer.
+- **Plusieurs extraits d'une même vidéo** (jusqu'à 8) : « Ajouter un extrait » sous le
+  curseur, une pastille par extrait pour passer de l'un à l'autre ou le retirer, les autres
+  restant visibles en pâle sur le curseur. Au choix :
+  - **réunis dans un seul fichier**, dans l'ordre, avec un chapitre par extrait ;
+  - ou **un fichier par extrait**, chacun nommé d'après ses temps.
+  Pour un flux, seuls les segments des extraits sont téléchargés.
+- **Images tirées de la vidéo**, nouveau groupe « Image » dans la liste des formats :
+  - **JPEG** : une image fixe, au moment choisi sur un curseur ou tapé (« 1:05 ») ;
+  - **GIF** et **WebP** animés : une partie de la vidéo (30 secondes au plus), 480 pixels de
+    large, GIF avec sa propre palette, WebP bien plus léger.
+  Seule la partie utile de la vidéo est téléchargée, YouTube compris.
+- **Fichiers audio étiquetés** : le titre de la vidéo et sa chaîne (YouTube) sont écrits
+  dans le fichier, et l'image d'aperçu de la vidéo devient la **pochette** (M4A, MP3,
+  FLAC). Si l'image ne peut pas être lue, le fichier est fait sans elle.
+- **Playlists et chaînes YouTube** : sur une playlist, une vidéo lue dans une playlist ou
+  l'onglet Vidéos (ou En direct) d'une chaîne, une carte « Playlist : 42 vidéos » propose
+  **Tout télécharger** dans une qualité (1080p à 360p) et un format (vidéo ou audio seul).
+  Les vidéos sont enregistrées deux à la fois, numérotées dans l'ordre de la liste
+  (« 01 - Titre ») ; dans le fichier, le titre reste celui de la vidéo et la chaîne en est
+  l'artiste. Seules les vidéos déjà affichées par la page sont prises : faire défiler la
+  page en charge d'autres.
+- **Quand télécharger**, nouveau groupe de réglages :
+  - **seulement à certaines heures** (par exemple de 22:00 à 07:00, la nuit comprise) : les
+    nouveaux téléchargements attendent la plage choisie, affichent « Commence à 22:00 » et
+    démarrent seuls à l'heure, même si le navigateur s'était endormi. Un bouton « Lancer
+    maintenant » les fait partir tout de suite ; ceux déjà commencés vont jusqu'au bout ;
+  - **seulement en Wi-Fi** : proposé là où le navigateur connaît le type de connexion
+    (ChromeOS, Android) ; sur les données mobiles, les téléchargements attendent le Wi-Fi ;
+  - **vitesse maximale** (256 Ko/s à 10 Mo/s) : partagée par tous les téléchargements,
+    appliquée tout de suite à ceux en cours. Un fichier simple passe alors par Grabby (le
+    téléchargement du navigateur ne se ralentit pas) et reste enregistré tel quel ; pour
+    YouTube, le lecteur caché lit moins vite d'autant (jamais sous la vitesse normale).
+- **Prévenir des nouvelles versions** (désactivé par défaut, réglage « Mises à jour ») : une
+  fois par jour, Grabby demande à GitHub quelle est la dernière version publiée. Si elle est
+  plus récente, un bandeau « Grabby 1.9.0 est sorti » s'affiche avec un lien vers sa page ;
+  Masquer le cache jusqu'à la suivante. Rien d'autre n'est envoyé et rien ne s'installe
+  tout seul.
+
+### Modifié
+- Les **listes à choix multiples** (sous-titres, langues audio) gardent le menu ouvert
+  pendant qu'on coche, avec de vraies cases.
+- Un **fichier simple avec chapitres** est récupéré par Grabby puis réassemblé (sans
+  réencodage), pour que ses chapitres soient écrits dans le fichier.
+- La **piste audio principale** porte sa langue quand le flux la donne.
+
+### Corrigé
+- **Extraits YouTube qui revenaient au début** : la vidéo d'un extrait se lançait une
+  seconde puis repartait du début, plusieurs fois, et le fichier se lisait mal. Le lecteur
+  remplit parfois les trous de sa mémoire tampon en retéléchargeant un passage déjà reçu :
+  les morceaux arrivaient en double et dans le désordre. Grabby remet maintenant chaque
+  piste enregistrée en ordre (WebM comme MP4) avant de l'assembler : chaque passage une
+  seule fois, dans l'ordre du temps.
+- **Début d'extrait silencieux** : une image recopiée sans réencodage commence sur l'image
+  clé qui précède l'extrait ; le son, les sous-titres et les chapitres partent maintenant
+  de ce même instant, au lieu de laisser une ou deux secondes muettes au début. Les
+  enregistrements d'extrait démarrent dix secondes avant le début demandé pour avoir cette
+  image clé.
+- **Fichier vide (262 octets)** après un enregistrement repris en plusieurs fois : un
+  réglage de l'assemblage restait actif d'une étape à l'autre dans ffmpeg.wasm. Chaque étape
+  repart maintenant de ses propres réglages.
+- **JPEG et pochettes** : l'encodeur JPEG de ffmpeg.wasm plantait en calculant ses tables
+  de compression optimales ; les tables standard sont utilisées.
+- **Extraits réunis allant du tout début à la toute fin** de la vidéo : ils étaient pris
+  pour « toute la vidéo » et enregistrés sans être coupés.
+- **Extraits réunis d'une vidéo à plusieurs langues** : seule la première langue restait
+  après l'assemblage final ; toutes sont gardées.
+- **Listes déroulantes ouvertes vers le haut** : quand la popup était affichée dans une
+  fenêtre plus haute qu'elle (ouverte dans un onglet, par exemple), la liste pouvait
+  dépasser du haut et ses premiers choix devenaient inaccessibles.
+- **Image en double** dans un enregistrement YouTube : quand le lecteur caché repartait (après
+  une pause, ou relancé par YouTube), le morceau qu'il renvoyait pouvait commencer une image
+  avant la fin du précédent, et les deux étaient gardés. Le morceau d'avant perd maintenant
+  ce que le suivant a de nouveau, comme dans le tampon du lecteur (MP4 comme WebM). Au
+  raccord de deux parties d'un enregistrement repris, la partie d'avant s'arrête aussi juste
+  avant l'image où reprend la suite (ffmpeg coupe sur l'heure de décodage, et cette image
+  est décodée un peu avant d'être montrée).
+
+### Limites connues
+- **Wi-Fi seulement** n'est proposé que si le navigateur indique le type de connexion :
+  sur Windows, macOS et Linux, Chrome ne le donne pas.
+- Les **playlists** ne prennent que les vidéos que la page a déjà affichées, et une vidéo
+  dont l'intégration est désactivée par son auteur ne peut pas être enregistrée.
+- La **vitesse maximale** ne ralentit pas un enregistrement de lecteur dans la page (il se
+  fait à la vitesse de lecture).
+
 ## [1.7.0] — 2026-10-05
 
 Pause, reprise, extraits et sous-titres pour **toutes** les vidéos : YouTube et tous les
@@ -542,7 +655,8 @@ Première version.
 - Capture YouTube expérimentale.
 - Interface en français et en anglais, thème clair et sombre.
 
-[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.7.0...HEAD
+[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/titilyonnais/grabby/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/titilyonnais/grabby/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/titilyonnais/grabby/compare/v1.5.3...v1.6.0
 [1.5.3]: https://github.com/titilyonnais/grabby/compare/v1.5.2...v1.5.3

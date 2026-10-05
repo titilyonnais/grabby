@@ -1,12 +1,14 @@
 import { videoFormatsFor } from '../shared/formats';
 import { classify } from '../parsers/classify';
 import { hashId } from '../shared/ids';
-import type { PageInfo, PageVideo } from '../shared/messages';
+import type { PageInfo, PageVideo, YtInfo } from '../shared/messages';
 import type { MediaItem, SubtitleTrack } from '../shared/types';
 import { describeSubtitleUrl } from '../shared/subtitles';
 import { handleMediaUrl } from './detector';
 import type { DetectContext } from './manifests';
 import type { Registry } from './registry';
+import { listOf, type YtList } from '../shared/ytlist';
+import { clock } from '../shared/clip';
 
 const MIN_CAPTURE_WIDTH = 120;
 
@@ -20,6 +22,13 @@ export function isPreview(v: PageVideo): boolean {
 }
 
 const isYouTubeHost = (url: string) => /^https?:\/\/([\w-]+\.)*youtube\.com\//i.test(url);
+
+/** A list from a page, kept only as far as it makes sense. */
+function cleanList(l: YtList): YtList | null {
+  if (!l || (l.kind !== 'playlist' && l.kind !== 'channel') || !Array.isArray(l.entries)) return null;
+  const raw = l.entries.map((e) => ({ href: `https://www.youtube.com/watch?v=${String(e?.id)}`, title: String(e?.title ?? ''), ...(Number(e?.duration) > 0 ? { duration: clock(Number(e.duration)) } : {}) }));
+  return listOf(l.kind, String(l.title ?? ''), raw);
+}
 
 /** The video of a YouTube watch page, with the player's qualities and sizes. */
 async function upsertYouTube(registry: Registry, ctx: DetectContext, frameId: number, info: PageInfo): Promise<string> {
@@ -44,7 +53,9 @@ async function upsertYouTube(registry: Registry, ctx: DetectContext, frameId: nu
     // Recorded discreetly by a hidden player when YouTube allows embedding it.
     ...(p?.embeddable ? { ytId: p.id } : {}),
     ...(variants[0]?.sizes.mp4 ? { size: variants[0].sizes.mp4 } : {}),
-    ...(p?.captions?.length ? { subtitles: youtubeSubs(p.captions) } : {}),
+    ...(p?.captions?.length ? { subtitles: youtubeSubs(p.captions, p.translations) } : {}),
+    ...(p?.author ? { author: p.author.slice(0, 200) } : {}),
+    ...(p?.chapters?.length ? { chapters: p.chapters.slice(0, 200) } : {}),
   });
   // One item per YouTube video id (the page URL changes between videos).
   item.id = hashId(`yt:${ctx.pageUrl}`);
@@ -70,12 +81,15 @@ function trackSubs(v: PageVideo): SubtitleTrack[] {
     });
 }
 
-/** YouTube's subtitles, the ones made by speech recognition said so. */
-function youtubeSubs(captions: NonNullable<import('../shared/messages').YtInfo['captions']>): SubtitleTrack[] {
-  return captions
+/**
+ * YouTube's subtitles, the ones made by speech recognition said so. When none is in the
+ * browser's language but YouTube can translate into it, a translated track is offered too.
+ */
+export function youtubeSubs(captions: NonNullable<YtInfo['captions']>, translations: string[] = [], ui = uiLanguage()): SubtitleTrack[] {
+  const own = captions
     .filter((c) => typeof c.url === 'string' && /^https:\/\/([\w-]+\.)*youtube\.com\//.test(c.url))
     .slice(0, 40)
-    .map((c) => ({
+    .map<SubtitleTrack>((c) => ({
       id: hashId(c.url),
       url: c.url,
       // YouTube's own name already says when they are made automatically.
@@ -83,7 +97,14 @@ function youtubeSubs(captions: NonNullable<import('../shared/messages').YtInfo['
       lang: c.lang,
       ...(c.auto ? { auto: true } : {}),
     }));
+  const base = (l: string) => l.toLowerCase().split(/[-_]/)[0]!;
+  const into = translations.find((t) => base(t) === base(ui));
+  const source = own.find((c) => !c.auto) ?? own[0];
+  if (!into || !source || own.some((c) => !c.auto && base(c.lang!) === base(ui))) return own;
+  return [...own, { id: hashId(`${source.url}#tlang=${into}`), url: source.url, label: source.label, lang: source.lang!, ...(source.auto ? { auto: true } : {}), tlang: into }];
 }
+
+const uiLanguage = (): string => (typeof chrome !== 'undefined' && chrome.i18n?.getUILanguage?.()) || 'en';
 
 function captureItem(ctx: DetectContext, frameId: number, index: number, over: Partial<MediaItem>): MediaItem {
   return {
@@ -123,6 +144,8 @@ export async function handlePageInfo(registry: Registry, sender: chrome.runtime.
       ...(info.thumbnail ? { thumbnail: info.thumbnail } : {}),
       ...(info.image ? { image: info.image } : {}),
     });
+    // A playlist or a channel: its videos, checked again (the page may say anything).
+    if (isYouTubeHost(pageUrl)) await registry.setYtList(tabId, info.ytList ? cleanList(info.ytList) : null);
   }
 
   for (const url of info.streams ?? []) {
@@ -165,12 +188,14 @@ export async function handlePageInfo(registry: Registry, sender: chrome.runtime.
           ...(Number.isFinite(v.duration) && v.duration > 0 ? { duration: v.duration } : {}),
           ...(v.poster ? { thumbnail: v.poster } : {}),
           ...(trackSubs(v).length ? { subtitles: trackSubs(v) } : {}),
+          ...(v.chapters?.length ? { chapters: v.chapters.slice(0, 200) } : {}),
         });
         keep.add(item.id);
         await registry.upsert(tabId, item);
       } else if (/^https?:/i.test(v.src)) {
         const subs = trackSubs(v);
         if (subs.length) await registry.setVideoSubs(tabId, v.src, subs);
+        if (v.chapters?.length) await registry.setVideoChapters(tabId, v.src, v.chapters.slice(0, 200));
         // A <video src> is a video even when its URL doesn't say so (".pmp4", no extension).
         await handleMediaUrl(registry, v.src, ctx, classify({ url: v.src }) ? {} : { contentType: 'video/mp4' });
       }

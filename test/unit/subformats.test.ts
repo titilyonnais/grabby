@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { describeFormats } from '../../src/features/youtube-hook';
-import { hiddenPlayerUrl, hiddenSessionFromUrl } from '../../src/features/youtube';
+import { captionsFromUrl, hiddenPlayerUrl, hiddenSessionFromUrl } from '../../src/features/youtube';
 import { parseDash } from '../../src/parsers/dash';
-import { SESSION_SPAN, sessionOf } from '../../src/shared/idb';
-import { mp4Cues, readInit } from '../../src/shared/mp4subs';
+import { mergeKeep, SESSION_SPAN, sessionOf } from '../../src/shared/idb';
+import { mp4Cues, readInit, readSamples } from '../../src/shared/mp4subs';
+import { mp4End, settle, storedEnd, untangle, webmClusters, webmEnd, type Fragment } from '../../src/shared/mediatime';
 import { cuesOf, describeSubtitleUrl, isSubtitleFile, segmentPattern } from '../../src/shared/subtitles';
 import { parseTtml, ttmlTime } from '../../src/shared/ttml';
 
@@ -193,6 +194,16 @@ describe('subtitle files a page loads', () => {
 });
 
 describe('recording sessions', () => {
+  it('keep only the last tracks a session named (a rebuilt player starts over in new ones)', () => {
+    // Session 0 reported tracks 0 and 1, then the player rebuilt itself: 1040 and 1041.
+    expect(mergeKeep([0, 1], [1040, 1041])).toEqual([1040, 1041]);
+    // Another session's report leaves the first one alone.
+    const s1 = SESSION_SPAN + 1040;
+    expect(mergeKeep([1040, 1041], [s1, s1 + 1])).toEqual([1040, 1041, s1, s1 + 1]);
+    expect(mergeKeep([1040], undefined)).toEqual([1040]);
+    expect(mergeKeep(undefined, [3, 3])).toEqual([3]);
+  });
+
   it('give each session its own track numbers', () => {
     expect(sessionOf(3)).toBe(0);
     expect(sessionOf(2 * SESSION_SPAN + 1)).toBe(2);
@@ -264,7 +275,125 @@ describe('YouTube’s own subtitle formats', () => {
   });
 
   it('the hidden player is told which subtitles to switch on', () => {
-    const q = new URL(hiddenPlayerUrl({ jobId: 'job-1', videoId: 'abc', quality: 'hd720', vcodec: 'avc', acodec: 'aac', captions: { lang: 'en', auto: true } })).searchParams;
-    expect([q.get('gysl'), q.get('gysk')]).toEqual(['en', 'asr']);
+    const q = new URL(hiddenPlayerUrl({ jobId: 'job-1', videoId: 'abc', quality: 'hd720', vcodec: 'avc', acodec: 'aac', captions: [{ lang: 'en', auto: true }, { lang: 'en', tlang: 'fr' }] })).searchParams;
+    expect(q.get('gysc')).toBe('en.asr,en>fr');
+    expect(captionsFromUrl(q.get('gysc'))).toEqual([{ lang: 'en', auto: true }, { lang: 'en', tlang: 'fr' }]);
+    expect(captionsFromUrl('en.asr,<script>,x,fr')).toEqual([{ lang: 'en', auto: true }, { lang: 'fr' }]);
+  });
+});
+
+describe('how far a recorded track got', () => {
+  it('MP4: the end of the last fragment that came in full, from pieces cut anywhere', () => {
+    const a = fragment(0, [
+      [1000, vttc('a')],
+      [500, vttc('b')],
+    ]);
+    const b = fragment(1500, [[700, vttc('c')]]);
+    const head = init('wvtt', 1000);
+    expect(mp4End(head, [a, b])).toBeCloseTo(2.2);
+    // The last fragment cut short: it doesn't count.
+    expect(mp4End(head, [a, b.subarray(0, b.length - 3)])).toBeCloseTo(1.5);
+    // Pieces that start in the middle of a box: the next fragment is found.
+    expect(mp4End(head, [a.subarray(5), b])).toBeCloseTo(2.2);
+    expect(mp4End(head, [new Uint8Array(10)])).toBeUndefined();
+  });
+
+  it('WebM: the latest block of the last cluster, with the file’s time scale', () => {
+    const info = new Uint8Array([0x2a, 0xd7, 0xb1, 0x83, 0x0f, 0x42, 0x40]);
+    const cluster = (ms: number, rel: number) =>
+      new Uint8Array([0x1f, 0x43, 0xb6, 0x75, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xe7, 0x82, ms >> 8, ms & 255, 0xa3, 0x85, 0x81, rel >> 8, rel & 255, 0x80, 0x00]);
+    expect(webmEnd(info, [cluster(5000, 0), cluster(10000, 500)])).toBeCloseTo(10.5);
+    // A block cut short is left out: the cluster's own time stands.
+    expect(webmEnd(info, [cluster(10000, 500).subarray(0, 20)])).toBeCloseTo(10);
+    expect(webmEnd(info, [new Uint8Array([1, 2, 3])])).toBeUndefined();
+    expect(storedEnd('video/webm; codecs="vp9"', info, [cluster(2000, 40)])).toBeCloseTo(2.04);
+  });
+});
+
+describe('a recorded track put back in order', () => {
+  const piece = (time: number, until: number): Fragment => ({ at: 0, end: 0, time, until });
+
+  it('keeps what the player buffer holds, in time order', () => {
+    // Recorded from 216 s, then the player filled what it had skipped before (210–216 s),
+    // then carried on after what it already had.
+    const a = piece(216.033, 236.85);
+    const b = piece(210.333, 216.017);
+    const c = piece(236.867, 284);
+    expect(settle([a, b, c])).toEqual([b, a, c]);
+    // Appended again over a part already there: the new copy replaces it.
+    const a2 = piece(216.033, 236.85);
+    expect(settle([a, c, a2])).toEqual([a2, c]);
+    // Going back further than everything: what it covers goes.
+    const d = piece(200, 240);
+    expect(settle([a, c, d])).toEqual([d, c]);
+  });
+
+  it('WebM clusters appended out of order come out in order', () => {
+    const info = new Uint8Array([0x2a, 0xd7, 0xb1, 0x83, 0x0f, 0x42, 0x40]);
+    const cluster = (ms: number) =>
+      new Uint8Array([0x1f, 0x43, 0xb6, 0x75, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xe7, 0x82, ms >> 8, ms & 255, 0xa3, 0x85, 0x81, 0, 10, 0x80, 0x00]);
+    const data = cat(info, cluster(5000), cluster(10000), cluster(2000), cluster(7000));
+    expect(untangle('video/webm', data, info.length)).toEqual(cat(info, cluster(2000), cluster(5000), cluster(7000), cluster(10000)));
+    // Already in order: the very same bytes.
+    const sorted = cat(info, cluster(2000), cluster(5000));
+    expect(untangle('video/webm', sorted, info.length)).toBe(sorted);
+  });
+
+  it('MP4 fragments appended twice are kept once', () => {
+    const head = init('wvtt', 1000);
+    const a = fragment(0, [
+      [1000, vttc('a')],
+      [500, vttc('b')],
+    ]);
+    const b = fragment(1500, [[700, vttc('c')]]);
+    expect(untangle('video/mp4', cat(head, a, b, a, b), head.length)).toEqual(cat(head, a, b));
+    expect(untangle('video/mp4', cat(head, b, a), head.length)).toEqual(cat(head, a, b));
+    // Unreadable data is left as it is.
+    const junk = cat(head, new Uint8Array(50));
+    expect(untangle('video/mp4', junk, head.length)).toBe(junk);
+  });
+
+  it('MP4: a fragment appended over the end of another takes its place there', () => {
+    const head = init('wvtt', 1000);
+    // 0–3 s, then the player starts again at 2 s: the frame at 2 s is there only once.
+    const a = fragment(0, [
+      [1000, vttc('a')],
+      [1000, vttc('b')],
+      [1000, vttc('c')],
+    ]);
+    const b = fragment(2000, [
+      [1000, vttc('C')],
+      [1000, vttc('d')],
+    ]);
+    const out = untangle('video/mp4', cat(head, a, b), head.length);
+    const info = readInit(head);
+    expect(readSamples(out, info).map((s) => s.time)).toEqual([0, 1, 2, 3]);
+    expect(mp4Cues(head, [out.subarray(head.length)]).map((c) => c.text)).toEqual(['a', 'b', 'C', 'd']);
+    // Covering a whole fragment: it goes.
+    const c = fragment(0, [[3000, vttc('x')]]);
+    expect(readSamples(untangle('video/mp4', cat(head, a, c, b), head.length), info).map((s) => s.time)).toEqual([0, 2, 3]);
+    // End to end: the very same bytes.
+    const d = fragment(3000, [[1000, vttc('e')]]);
+    const joined = cat(head, a, d);
+    expect(untangle('video/mp4', joined, head.length)).toBe(joined);
+  });
+
+  it('WebM: a cluster appended over the end of another takes its place there', () => {
+    const info = new Uint8Array([0x2a, 0xd7, 0xb1, 0x83, 0x0f, 0x42, 0x40]);
+    const block = (rel: number) => [0xa3, 0x85, 0x81, rel >> 8, rel & 255, 0x80, 0x00];
+    const cluster = (ms: number, rels: number[]) => {
+      const body = [0xe7, 0x82, ms >> 8, ms & 255, ...rels.flatMap(block)];
+      return new Uint8Array([0x1f, 0x43, 0xb6, 0x75, 0x01, 0, 0, 0, 0, 0, 0, body.length, ...body]);
+    };
+    const out = untangle('video/webm', cat(info, cluster(5000, [0, 500, 1000, 1500]), cluster(6000, [0, 500])), info.length);
+    expect(out).toEqual(cat(info, cluster(5000, [0, 500]), cluster(6000, [0, 500])));
+    expect(webmClusters(out, 1_000_000, info.length).map((c) => c.time)).toEqual([5, 6]);
+  });
+
+  it('how far a track got counts what the buffer holds after a jump back', () => {
+    const head = init('wvtt', 1000);
+    const late = fragment(5000, [[1000, vttc('x')]]);
+    const early = fragment(0, [[1000, vttc('y')]]);
+    expect(mp4End(head, [late, early])).toBeCloseTo(6);
   });
 });

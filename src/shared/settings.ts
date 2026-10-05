@@ -10,6 +10,16 @@ export interface Settings {
   subfolder: boolean;
   template: string;
   firstRunAck: boolean;
+  /** Downloads start only between these times (minutes since midnight). */
+  scheduleOn: boolean;
+  scheduleFrom: number;
+  scheduleTo: number;
+  /** Wait for Wi-Fi (only where the browser tells the connection type). */
+  wifiOnly: boolean;
+  /** Bytes per second for everything Grabby fetches; 0: no limit. */
+  rateLimit: number;
+  /** Once a day, ask GitHub whether a newer version is out. */
+  updateCheck: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -21,6 +31,12 @@ export const DEFAULT_SETTINGS: Settings = {
   subfolder: false,
   template: '{title}',
   firstRunAck: false,
+  scheduleOn: false,
+  scheduleFrom: 22 * 60,
+  scheduleTo: 7 * 60,
+  wifiOnly: false,
+  rateLimit: 0,
+  updateCheck: false,
 };
 
 const KEY = 'settings';

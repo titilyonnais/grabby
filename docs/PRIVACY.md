@@ -1,6 +1,6 @@
 # Grabby — Privacy policy / Politique de confidentialité
 
-_Last updated: 2026-10-05 (1.6.0)_
+_Last updated: 2026-10-06 (1.8.0)_
 
 ## English
 
@@ -9,7 +9,7 @@ Grabby does **not** collect, store on a server, sell or share any personal data.
 - **No account, no analytics, no tracking, no remote server.** The extension contains no
   telemetry and makes no network request of its own except to the media files, playlists
   and manifests of the page you are viewing, and only to detect or download them at your
-  request.
+  request (and, only if you turn it on, the daily new version check described below).
 - **What stays on your device:**
   - your settings (theme, video and audio formats, file name parts, save options) in the
     browser's extension storage, and the theme again in the popup's own storage so it opens
@@ -32,6 +32,16 @@ Grabby does **not** collect, store on a server, sell or share any personal data.
   cookies' values.
 - **Links.** When a page names video files without playing them (sharing metadata, direct
   links), Grabby reads the first 256 KB of at most 12 of them to check they are real videos.
+- **YouTube playlists and channels.** On a playlist or a channel's Videos tab, Grabby reads
+  the list of videos the page shows (address, title, length) to offer to download them all.
+  It stays in session memory on your device.
+- **Audio file covers.** When you save the sound of a video as M4A, MP3 or FLAC, Grabby
+  fetches the video's preview image (the one shown in the list) to use as the cover.
+- **New version check (off by default).** Only if you turn on "Tell me about new versions":
+  once a day, one request to GitHub's public API
+  (`api.github.com/repos/titilyonnais/grabby/releases/latest`), without cookies or any
+  identifier, to learn the latest version number. GitHub sees the request like any visit
+  to its site (your IP address). Nothing is downloaded or installed.
 - **Notifications.** When a download finishes, a small bubble appears in the page you are
   looking at, and a system notification is shown; both can be turned off in the settings.
 - **Downloads** are saved through the browser's own download manager to the location you
@@ -47,7 +57,8 @@ et ne la partage pas.
 - **Pas de compte, pas de statistiques, pas de pistage, pas de serveur.** L'extension ne
   contient aucune télémétrie. Elle n'effectue aucune requête réseau à son initiative, hormis
   vers les fichiers vidéo, playlists et manifestes de la page consultée, pour les détecter
-  ou les télécharger à ta demande.
+  ou les télécharger à ta demande (et, seulement si tu l'actives, la vérification
+  quotidienne des nouvelles versions décrite plus bas).
 - **Ce qui reste sur ton appareil :**
   - tes réglages (thème, formats vidéo et audio, composition du nom de fichier, options
     d'enregistrement), et le thème une seconde fois dans la mémoire de la popup pour qu'elle
@@ -79,6 +90,17 @@ et ne la partage pas.
 - **Liens.** Quand une page cite des fichiers vidéo sans les lire (métadonnées de partage,
   liens directs), Grabby lit les 256 premiers Ko d'au plus 12 d'entre eux pour vérifier que
   ce sont de vraies vidéos.
+- **Playlists et chaînes YouTube.** Sur une playlist ou l'onglet Vidéos d'une chaîne,
+  Grabby lit la liste des vidéos que la page affiche (adresse, titre, durée) pour te
+  proposer de toutes les télécharger. Elle reste en mémoire de session sur ton appareil.
+- **Pochettes des fichiers audio.** Quand tu enregistres le son d'une vidéo en M4A, MP3 ou
+  FLAC, Grabby récupère l'image d'aperçu de la vidéo (celle de la liste) pour en faire la
+  pochette.
+- **Nouvelles versions (désactivé par défaut).** Seulement si tu actives « Prévenir des
+  nouvelles versions » : une fois par jour, une requête vers l'API publique de GitHub
+  (`api.github.com/repos/titilyonnais/grabby/releases/latest`), sans cookie ni identifiant,
+  pour connaître le numéro de la dernière version. GitHub voit la requête comme toute
+  visite de son site (ton adresse IP). Rien n'est téléchargé ni installé.
 - **Notifications.** À la fin d'un téléchargement, une petite bulle apparaît dans la page
   que tu regardes et une notification système s'affiche ; tu peux les désactiver dans les
   réglages.

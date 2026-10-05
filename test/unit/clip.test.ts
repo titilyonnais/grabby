@@ -163,6 +163,16 @@ describe('muxAttempts with a part', () => {
     expect(t).toBeLessThan(args.indexOf('/j/out.mp4'));
   });
 
+  it('the sound starts with the keyframe the picture starts on, in step with it', () => {
+    const [a] = muxAttempts({ video: '/j/v.mp4', audio: '/j/a.m4a' }, 'mp4', false, '/j/out', undefined, { duration: 30, video: 61.3, audio: 61.3, lead: 0.833 });
+    expect(a!.args.slice(0, 11)).toEqual(['-y', '-ss', '61.3', '-i', '/j/v.mp4', '-ss', '60.467', '-itsoffset', '-0.833', '-i', '/j/a.m4a']);
+    // The length still counts from the start of the part.
+    expect(a!.args[a!.args.indexOf('-t') + 1]).toBe('30');
+    // Sound that doesn't go back that far: from its very start.
+    const [b] = muxAttempts({ video: '/j/v.mp4', audio: '/j/a.m4a' }, 'mp4', false, '/j/out', undefined, { duration: 30, video: 2, audio: 0.5, lead: 1 });
+    expect(b!.args.slice(5, 10)).toEqual(['-itsoffset', '-0.5', '-i', '/j/a.m4a', '-map']);
+  });
+
   it('a sound file from a part', () => {
     const attempts = muxAttempts({ audio: '/j/a.m4a' }, 'mp3', true, '/j/out', undefined, { duration: 5, audio: 1.25 });
     for (const a of attempts) {

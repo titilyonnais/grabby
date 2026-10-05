@@ -986,6 +986,134 @@ p {
   box-shadow: inset 0 0 0 2px var(--focus);
 }
 
+/* Other parts of the video, faint on the rail; the part being edited is drawn over them. */
+.trim__other {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--knob) / 2 + (100% - var(--knob)) * var(--a));
+  width: calc((100% - var(--knob)) * (var(--b) - var(--a)));
+  height: 6px;
+  margin-top: -3px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  opacity: 0.35;
+}
+
+/* A single moment: the rail up to it, quieter than a part. */
+.trim__sel--soft {
+  left: calc(var(--knob) / 2);
+  width: calc((100% - var(--knob)) * var(--b));
+  opacity: 0.45;
+}
+
+.trim__times--one {
+  grid-template-columns: 1fr;
+}
+
+.trim__parts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  animation: drawer-in var(--t-gentle) var(--ease-out);
+}
+
+.chip--on {
+  background: var(--pill);
+  color: var(--pill-ink);
+}
+
+.chip__main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  padding: 0 6px 0 5px;
+  border-radius: var(--r-pill);
+}
+
+.chip__n {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 11px;
+}
+
+.chip__x {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-right: 3px;
+  border-radius: 50%;
+  opacity: 0.7;
+  transition: opacity 140ms var(--ease), background-color 140ms var(--ease);
+}
+
+.chip__x:hover {
+  opacity: 1;
+  background: var(--line);
+}
+
+.chip--add {
+  gap: 6px;
+  padding: 0 14px 0 10px;
+  color: var(--muted);
+  transition: color 140ms var(--ease), transform var(--t-bouncy) var(--spring-bouncy);
+}
+
+.chip--add:hover {
+  color: var(--text);
+}
+
+.chip--add:active {
+  transform: scale(0.95);
+}
+
+.chip__main:focus-visible,
+.chip__x:focus-visible,
+.chip--add:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* A choice made with a switch under a picker (parts joined, chapters). */
+.option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 10px 0 20px;
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  animation: drawer-in var(--t-gentle) var(--ease-out);
+}
+
+.option__detail {
+  margin-left: 6px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
 /* ---------------------------------------------------------------- pickers */
 .pickers {
   display: grid;
@@ -1126,6 +1254,25 @@ p {
 
 .menu__check .icon {
   animation: pop-in var(--t-bouncy) var(--spring-bouncy);
+}
+
+/* Several choices: a box per option, filled when ticked. */
+.menu__check--box {
+  height: 18px;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1.5px var(--line-strong);
+  transition: background-color 140ms var(--ease), box-shadow 140ms var(--ease);
+}
+
+.menu__check--on {
+  background: var(--pill);
+  color: var(--pill-ink);
+  box-shadow: none;
+}
+
+.menu__check--box .icon {
+  width: 13px;
+  height: 13px;
 }
 
 .menu__label {
@@ -2551,4 +2698,106 @@ label.row-setting:hover {
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;
   }
+}
+
+/* ------------------------------------------------ playlists and channels */
+.ylist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px 8px 8px;
+  border-radius: var(--r-card);
+  background: var(--surface);
+  animation: rise var(--t-gentle) var(--spring-gentle);
+}
+
+.ylist__head {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px;
+}
+
+.ylist__icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.ylist__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ylist__title {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ylist__meta {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.ylist .hint {
+  padding-bottom: 2px;
+}
+
+/* -------------------------------------------------------- new version */
+.update {
+  margin-bottom: 12px;
+  background: var(--surface);
+}
+
+.update__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.update__actions .btn {
+  text-decoration: none;
+}
+
+/* -------------------------------------------------- download window hours */
+.hours {
+  display: flex;
+  gap: 8px;
+  padding: 0 12px 6px 16px;
+  animation: rise var(--t-gentle) var(--spring-gentle);
+}
+
+.hours__field {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 40px;
+  padding: 0 5px 0 14px;
+  border-radius: var(--r-pill);
+  background: var(--bg);
+}
+
+.hours__label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.hours__time {
+  width: 64px;
+  background: var(--surface);
+  text-align: center;
 }

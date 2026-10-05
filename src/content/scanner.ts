@@ -9,6 +9,7 @@ import { SESSION_SPAN } from '../shared/idb';
 import { deepVideos } from '../shared/dom';
 import type { BgToContent, ContentToBg, PageInfo, PageVideo, YtInfo } from '../shared/messages';
 import { cleanTitle } from '../shared/title';
+import { readYtList } from '../shared/ytlist';
 
 type HookUp =
   | { type: 'drm'; keySystem: string }
@@ -168,6 +169,26 @@ function declaredMedia(ld: { contentUrl?: string }): string[] {
   return [...urls].slice(0, MAX_DECLARED);
 }
 
+/**
+ * A player's chapters (<track kind="chapters">). The browser reads such a track only when
+ * asked: it is set to "hidden" (read, never shown), its chapters come with the next scan.
+ */
+function chapterTrack(v: HTMLVideoElement): Pick<PageVideo, 'chapters'> {
+  for (const t of v.querySelectorAll('track')) {
+    if ((t.getAttribute('kind') || '').toLowerCase() !== 'chapters') continue;
+    const track = t.track;
+    if (track.mode === 'disabled') track.mode = 'hidden';
+    const cues = [...(track.cues ?? [])] as VTTCue[];
+    const chapters = cues
+      .filter((c) => typeof c.text === 'string' && c.text.trim())
+      .slice(0, 200)
+      .map((c) => ({ start: Math.max(0, c.startTime), title: c.text.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 200) }))
+      .sort((a, b) => a.start - b.start);
+    if (chapters.length) return { chapters };
+  }
+  return {};
+}
+
 /** The subtitle files a player declares (<track>), up to 20. */
 function subtitleTracks(v: HTMLVideoElement): Pick<PageVideo, 'tracks'> {
   const tracks: NonNullable<PageVideo['tracks']> = [];
@@ -206,6 +227,7 @@ function collect(): PageInfo {
       controls: v.controls,
       ...(v.poster ? { poster: absolute(v.poster)! } : {}),
       ...subtitleTracks(v),
+      ...chapterTrack(v),
     };
   });
   const ld = isTop ? videoObject() : {};
@@ -227,6 +249,8 @@ function collect(): PageInfo {
   if (isTop) {
     const yt = readYouTubeInfo(document, location.href);
     if (yt) info.youtube = { ...yt, ...(ytPlayer && yt.id === ytPlayer.id ? { player: ytPlayer } : {}) };
+    const list = /(^|\.)youtube\.com$/.test(location.hostname) ? readYtList(document, location.href) : null;
+    if (list) info.ytList = list;
   }
   return info;
 }

@@ -142,26 +142,26 @@ describe('a plan with subtitles', () => {
   const plan = (o: object) => buildPlan(item, { mode: 'video', settings: DEFAULT_SETTINGS, fetchText, ...o });
 
   it('fetches the chosen track as a third one, to put in the video', async () => {
-    const p = await plan({ subtitles: { id: 's', separate: false } });
-    expect(p.subtitles).toMatchObject({ label: 'Français', lang: 'fr', separate: false });
-    expect(p.subtitles!.track.segments.map((s) => s.url)).toEqual(['https://cdn.com/fr0.vtt', 'https://cdn.com/fr1.vtt']);
+    const p = await plan({ subtitles: { ids: ['s'], separate: false } });
+    expect(p.subtitles).toMatchObject([{ label: 'Français', lang: 'fr', separate: false }]);
+    expect(p.subtitles![0]!.track.segments.map((s) => s.url)).toEqual(['https://cdn.com/fr0.vtt', 'https://cdn.com/fr1.vtt']);
   });
 
   it('in a container without subtitles, or asked so, they go in their own file', async () => {
-    expect((await plan({ format: 'ts', subtitles: { id: 's', separate: false } })).subtitles!.separate).toBe(true);
-    expect((await plan({ format: 'avi', subtitles: { id: 's', separate: false } })).subtitles!.separate).toBe(true);
-    expect((await plan({ format: 'mkv', subtitles: { id: 's', separate: true } })).subtitles!.separate).toBe(true);
-    expect((await plan({ format: 'mkv', subtitles: { id: 's', separate: false } })).subtitles!.separate).toBe(false);
+    expect((await plan({ format: 'ts', subtitles: { ids: ['s'], separate: false } })).subtitles![0]!.separate).toBe(true);
+    expect((await plan({ format: 'avi', subtitles: { ids: ['s'], separate: false } })).subtitles![0]!.separate).toBe(true);
+    expect((await plan({ format: 'mkv', subtitles: { ids: ['s'], separate: true } })).subtitles![0]!.separate).toBe(true);
+    expect((await plan({ format: 'mkv', subtitles: { ids: ['s'], separate: false } })).subtitles![0]!.separate).toBe(false);
   });
 
   it('no subtitles for a sound file, an unknown track or one that can not be read', async () => {
-    expect((await plan({ mode: 'audio', subtitles: { id: 's', separate: false } })).subtitles).toBeUndefined();
-    expect((await plan({ subtitles: { id: 'nope', separate: false } })).subtitles).toBeUndefined();
+    expect((await plan({ mode: 'audio', subtitles: { ids: ['s'], separate: false } })).subtitles).toBeUndefined();
+    expect((await plan({ subtitles: { ids: ['nope'], separate: false } })).subtitles).toBeUndefined();
     const broken = await buildPlan(item, {
       mode: 'video',
       settings: DEFAULT_SETTINGS,
       fetchText: async (u) => (u.includes('fr') ? Promise.reject(new TypeError('offline')) : playlists[u]!),
-      subtitles: { id: 's', separate: false },
+      subtitles: { ids: ['s'], separate: false },
     });
     expect(broken.subtitles).toBeUndefined();
     expect(broken.video!.segments).toHaveLength(2);
@@ -188,9 +188,9 @@ describe('YouTube subtitles', () => {
   } as MediaItem;
 
   it('are kept from what the hidden player loads, nothing is fetched', async () => {
-    const p = await buildPlan(yt, { mode: 'video', settings: DEFAULT_SETTINGS, fetchText: () => Promise.reject(new Error('no fetch')), subtitles: { id: 's', separate: false } });
-    expect(p.subtitles).toMatchObject({ captured: { lang: 'en', auto: true }, label: 'English (auto-generated)', separate: false });
-    expect(p.subtitles!.track.segments).toEqual([]);
+    const p = await buildPlan(yt, { mode: 'video', settings: DEFAULT_SETTINGS, fetchText: () => Promise.reject(new Error('no fetch')), subtitles: { ids: ['s'], separate: false } });
+    expect(p.subtitles).toMatchObject([{ captured: { lang: 'en', auto: true }, label: 'English (auto-generated)', separate: false }]);
+    expect(p.subtitles![0]!.track.segments).toEqual([]);
   });
 });
 
@@ -198,7 +198,7 @@ describe('muxAttempts with subtitles', () => {
   const subs = { path: '/j/s.srt', lang: 'fr', title: 'Français' };
 
   it('MP4: a third input, written as mov_text, with its language', () => {
-    const [a] = muxAttempts({ video: '/j/v.ts', audio: '/j/a.aac', subs }, 'mp4', false, '/j/out');
+    const [a] = muxAttempts({ video: '/j/v.ts', audio: '/j/a.aac', subs: [subs] }, 'mp4', false, '/j/out');
     const args = a!.args.join(' ');
     expect(args).toContain('-i /j/v.ts -i /j/a.aac -i /j/s.srt');
     expect(args).toContain('-map 0:v:0 -map 1:a:0 -map 2:0');
@@ -206,12 +206,12 @@ describe('muxAttempts with subtitles', () => {
   });
 
   it('MKV keeps SubRip, WebM takes WebVTT; one input only maps them second', () => {
-    expect(muxAttempts({ video: '/j/v.mp4', subs }, 'mkv', false, '/j/out')[0]!.args.join(' ')).toContain('-map 1:0 -c copy -c:s srt');
-    expect(muxAttempts({ video: '/j/v.webm', subs }, 'webm', false, '/j/out')[0]!.args.join(' ')).toContain('-c:s webvtt');
+    expect(muxAttempts({ video: '/j/v.mp4', subs: [subs] }, 'mkv', false, '/j/out')[0]!.args.join(' ')).toContain('-map 1:0 -c copy -c:s srt');
+    expect(muxAttempts({ video: '/j/v.webm', subs: [subs] }, 'webm', false, '/j/out')[0]!.args.join(' ')).toContain('-c:s webvtt');
   });
 
   it('the MKV fallback keeps them too', () => {
-    const attempts = muxAttempts({ video: '/j/v.ts', subs }, 'mp4', false, '/j/out');
+    const attempts = muxAttempts({ video: '/j/v.ts', subs: [subs] }, 'mp4', false, '/j/out');
     expect(attempts.at(-1)!.args.join(' ')).toContain('-c:s srt');
   });
 });

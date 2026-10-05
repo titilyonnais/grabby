@@ -1,27 +1,31 @@
 import { hostOf } from '../parsers/url';
-import { isAudioFormat, VIDEO_FORMATS } from '../shared/formats';
+import { isAudioFormat, isImageFormat, VIDEO_FORMATS } from '../shared/formats';
+import { audioChoices } from '../shared/audio';
 import { canShrink, scaleChoices, SHRUNK_FORMATS } from '../shared/scale';
 import { buildFilename } from '../shared/filename';
-import { canClip, clipLabel, sameClip } from '../shared/clip';
+import { canClip, clipLabel, clock, sameClip } from '../shared/clip';
 import { uid } from '../shared/ids';
-import type { BgToContent, ContentToBg, OffscreenToBg } from '../shared/messages';
-import type { Clip, ErrorCode, OutputFormat, Plan, SubsChoice, VideoFormat } from '../shared/plan';
-import { getSettings, type Settings } from '../shared/settings';
+import type { BgToContent, ContentToBg, DownloadExtra, OffscreenToBg } from '../shared/messages';
+import { planSubs, subsIds, type Clip, type ErrorCode, type OutputFormat, type Plan, type VideoFormat } from '../shared/plan';
+import { DEFAULT_SETTINGS, getSettings, type Settings } from '../shared/settings';
+import { holdOf, playbackCap, type Hold } from '../shared/schedule';
 import type { Job, JobMode, JobStatus, MediaItem } from '../shared/types';
 import { fetchTextAs, sweepHeaderRules, withPageHeaders } from './headers';
 import { addHistory } from './history';
 import { notifyFinished } from './notify';
 import { scheduleOffscreenClose, sendOffscreen } from './offscreen-client';
-import { buildPlan, PlanError, validClip } from './plan';
+import { buildPlan, imageClip, joinedParts, PlanError, validClip } from './plan';
 import { hiddenPlayerUrl } from '../features/youtube';
 import { allowHiddenPlayer } from './headers';
 import { ensureOffscreen } from './offscreen-client';
 import type { Registry } from './registry';
 import { findVisible } from './visible';
 import { deleteParts, storedJobs } from '../shared/parts';
-import { capturedJobs, deleteJob } from '../shared/idb';
+import { capturedJobs, deleteJob, isCaptionTrack, listTrackMimes, mergeKeep, sessionOf, trackTail } from '../shared/idb';
+import { storedEnd } from '../shared/mediatime';
 import { rank } from '../shared/rank';
 import { cuesOf, toSrt } from '../shared/subtitles';
+import { listItem, numbered, type YtList } from '../shared/ytlist';
 
 const STORE_KEY = 'jobs';
 /** A job's download plan, kept apart (it can be big) for resuming. */
@@ -29,6 +33,8 @@ const PLAN_KEY = (id: string) => `plan:${id}`;
 /** Set for the browser session: missing at startup means the browser was restarted. */
 const BOOT_KEY = 'booted';
 const WAKE_ALARM = 'grabby-resume';
+/** Rings when the time window chosen for downloads opens. */
+export const SCHEDULE_ALARM = 'grabby-schedule';
 const MAX_PARALLEL = 2;
 /** Tries in a row for the network before giving up (about 40 min of waiting in all). */
 const MAX_ATTEMPTS = 24;
@@ -54,10 +60,41 @@ const INTERRUPT_REASONS: Record<string, ErrorCode> = {
   USER_CANCELED: 'canceled',
 };
 
+/** The name a file gets from its job: the title, and which part of the video it holds. */
+export function titleOf(job: Pick<Job, 'title' | 'clip' | 'parts' | 'at'>): string {
+  if (job.at !== undefined) return `${job.title} (${clock(job.at).replace(':', 'm')})`;
+  if (job.parts?.length) return `${job.title} (${job.parts.map(clipLabel).join(' + ')})`;
+  return job.clip ? `${job.title} (${clipLabel(job.clip)})` : job.title;
+}
+
 /** The expected size of a part of a video: its share of the whole. */
 function partOf(size: number, clip: Clip | undefined, duration: number | undefined): number {
   return clip && duration ? Math.round((size * (clip.end - clip.start)) / duration) : size;
 }
+
+/**
+ * How far a recording really got, in seconds of the video: the latest session before `below`
+ * that stored something, up to where all its tracks (those of the video itself) hold data.
+ * The player runs ahead of what is stored (and what was in flight when it stopped is lost).
+ */
+export async function storedUntil(jobId: string, keep: number[] | undefined, below = Infinity): Promise<number | undefined> {
+  const tracks = (await listTrackMimes(jobId)).filter((t) => !isCaptionTrack(t.track));
+  const session = Math.max(-1, ...tracks.map((t) => sessionOf(t.track)).filter((s) => s < below));
+  if (session < 0) return undefined;
+  const own = tracks.filter((t) => sessionOf(t.track) === session);
+  const kept = own.filter((t) => keep?.includes(t.track));
+  let end: number | undefined;
+  for (const t of kept.length ? kept : own) {
+    const { init, last } = await trackTail(jobId, t.track);
+    const at = init ? storedEnd(t.mime, new Uint8Array(init), last.map((c) => new Uint8Array(c.data))) : undefined;
+    if (at === undefined) return undefined;
+    end = Math.min(end ?? Infinity, at);
+  }
+  return end;
+}
+
+/** A recording that carries on from what was stored starts again this far before it. */
+const STORED_MARGIN = 1;
 
 /** Waits between tries for the network: 3 s, 6 s, 12 s… up to 2 min. */
 export function retryDelay(attempt: number): number {
@@ -99,6 +136,8 @@ export class JobManager {
   /** Plans of jobs that may be resumed (also in storage, for after a restart). */
   private plans = new Map<string, Plan>();
   private listeners: (() => void)[] = [];
+  /** "Quand télécharger": the time window, Wi-Fi only, the speed limit (kept in step with the settings). */
+  private gate: Pick<Settings, 'scheduleOn' | 'scheduleFrom' | 'scheduleTo' | 'wifiOnly' | 'rateLimit'> = DEFAULT_SETTINGS;
   private pollTimer: ReturnType<typeof setInterval> | undefined;
   private persistTimer: ReturnType<typeof setTimeout> | undefined;
   readonly ready: Promise<void>;
@@ -106,6 +145,15 @@ export class JobManager {
   constructor(private registry: Registry) {
     this.ready = this.restore();
     chrome.downloads.onChanged.addListener((d) => void this.onDownloadChanged(d));
+    chrome.storage.onChanged.addListener((changes, area) => {
+      const next = area === 'local' ? (changes.settings?.newValue as Partial<Settings> | undefined) : undefined;
+      if (!next) return;
+      const rate = this.gate.rateLimit;
+      this.gate = { ...DEFAULT_SETTINGS, ...next };
+      // Downloads under way slow down (or speed up) at once.
+      if (this.gate.rateLimit !== rate && this.isBusy()) void sendOffscreen({ target: 'offscreen', type: 'rate', rate: this.gate.rateLimit }).catch(() => {});
+      this.pump();
+    });
   }
 
   /* ------------------------------------------------------------------ state */
@@ -124,7 +172,7 @@ export class JobManager {
   }
 
   isBusy(): boolean {
-    return [...this.jobs.values()].some((j) => ACTIVE.includes(j.status) || j.status === 'queued');
+    return [...this.jobs.values()].some((j) => ACTIVE.includes(j.status) || (j.status === 'queued' && !j.held));
   }
 
   /** Jobs waiting to try again on their own (network, browser restart). */
@@ -194,6 +242,7 @@ export class JobManager {
   }
 
   private async restore() {
+    this.gate = await getSettings();
     const saved = ((await chrome.storage.local.get(STORE_KEY))[STORE_KEY] as Job[] | undefined) ?? [];
     // No mark for this browser session yet: the browser (or the computer) restarted.
     const restarted = !(await chrome.storage.session.get(BOOT_KEY))[BOOT_KEY];
@@ -237,6 +286,26 @@ export class JobManager {
   async wake(now = false): Promise<void> {
     await this.ready;
     this.retryDue(now);
+    this.pump();
+  }
+
+  /** "Lancer maintenant": a job waiting for its time window (or Wi-Fi) starts anyway. */
+  async startNow(jobId: string): Promise<void> {
+    await this.ready;
+    const j = this.jobs.get(jobId);
+    if (!j || j.status !== 'queued') return;
+    this.update(jobId, { startNow: true, held: undefined });
+    this.pump();
+  }
+
+  /**
+   * What new downloads wait for now, if anything. Recordings in a page aren't held: they
+   * need the page playing, now.
+   */
+  private holdFor(j: Job): Hold | null {
+    if (j.begun || j.startNow || (j.kind === 'capture' && !j.hidden)) return null;
+    const conn = (globalThis.navigator as Navigator & { connection?: { type?: string } } | undefined)?.connection?.type;
+    return holdOf(this.gate, new Date(), conn);
   }
 
   private retryDue(all = false) {
@@ -268,22 +337,40 @@ export class JobManager {
     variantId: string | undefined,
     mode: JobMode,
     format?: OutputFormat,
-    extra: { scale?: number; clip?: Clip; subtitles?: SubsChoice } = {},
+    extra: DownloadExtra = {},
   ): Promise<Job | undefined> {
     await this.ready;
     let { scale, clip } = extra;
     const item = findVisible(await this.registry.get(tabId), mediaId) ?? this.items.get(`${tabId}:${mediaId}`);
     if (!item) return undefined;
+    const image = isImageFormat(format) && !item.audioOnly && mode === 'video' ? format : undefined;
+    if (isImageFormat(format) && !image) return undefined;
     // Only the smaller qualities the card offers.
-    if (scale !== undefined && (mode !== 'video' || !canShrink(item) || !scaleChoices(item.variants).includes(scale))) scale = undefined;
-    // A part of the video, when it can be cut and isn't the whole of it.
-    clip = canClip(item) ? validClip(clip, item.duration) : undefined;
+    if (scale !== undefined && (mode !== 'video' || image || !canShrink(item) || !scaleChoices(item.variants).includes(scale))) scale = undefined;
+    // Several parts joined (the recording, or the download, covers them all).
+    const parts = !image && canClip(item) ? joinedParts(extra.parts, item.duration) : undefined;
+    // A part of the video, when it can be cut and isn't the whole of it. A picture: its part.
+    clip = image
+      ? imageClip(image === 'jpg', extra.at ?? extra.clip?.start, extra.clip, item.duration)
+      : parts
+        ? { start: parts[0]!.start, end: parts[parts.length - 1]!.end }
+        : canClip(item)
+          ? validClip(clip, item.duration)
+          : undefined;
     // Subtitles go with a video, and only the ones the stream offers.
-    const subtitles = mode === 'video' && extra.subtitles && item.subtitles?.some((s) => s.id === extra.subtitles!.id) ? extra.subtitles : undefined;
+    const subsWanted = subsIds(extra.subtitles).filter((id) => item.subtitles?.some((s) => s.id === id));
+    const subtitles = mode === 'video' && !image && subsWanted.length ? { ids: subsWanted, separate: !!extra.subtitles?.separate } : undefined;
+    // Sound tracks: the stream's own, the main one first.
+    const offered = audioChoices(item).map((a) => a.id);
+    const audios = !image && extra.audios?.length ? extra.audios.filter((id) => offered.includes(id)) : [];
+    const noChapters = !!extra.noChapters && !!item.chapters?.length;
+    const at = image === 'jpg' ? clip!.start : undefined;
+    const same = (a?: string[], b?: string[]) => (a ?? []).join() === (b ?? []).join();
     const dup = [...this.jobs.values()].find(
       (j) =>
-        j.tabId === tabId && j.mediaId === mediaId && j.mode === mode && j.variantId === variantId && j.scale === scale && sameClip(j.clip, clip) && j.subtitles?.id === subtitles?.id &&
-        !FINISHED.includes(j.status),
+        j.tabId === tabId && j.mediaId === mediaId && j.mode === mode && j.variantId === variantId && j.scale === scale && sameClip(j.clip, clip) &&
+        same(subsIds(j.subtitles), subtitles?.ids) && same(j.audios, audios) && (j.format ?? '') === (format ?? '') &&
+        same(j.parts?.map(clipLabel), parts?.map(clipLabel)) && !FINISHED.includes(j.status),
     );
     if (dup) return dup;
 
@@ -304,18 +391,23 @@ export class JobManager {
       startedAt: Date.now(),
       ...(variantId ? { variantId } : {}),
       ...(clip ? { clip } : {}),
+      ...(parts ? { parts } : {}),
       ...(subtitles ? { subtitles } : {}),
-      ...(scale ? { scale, quality: `${scale}p` } : mode === 'video' && variant ? { quality: variant.label } : {}),
+      ...(audios.length ? { audios } : {}),
+      ...(noChapters ? { noChapters } : {}),
+      ...(at !== undefined ? { at } : {}),
+      ...(scale ? { scale, quality: `${scale}p` } : mode === 'video' && variant && !image ? { quality: variant.label } : {}),
       // A recording's size is known beforehand only when the site tells it (YouTube).
-      ...(item.kind === 'capture' && mode === 'video' && (variant?.sizes?.[format as VideoFormat] ?? item.size)
+      ...(item.kind === 'capture' && mode === 'video' && !image && (variant?.sizes?.[format as VideoFormat] ?? item.size)
         ? { total: partOf(variant?.sizes?.[format as VideoFormat] ?? item.size!, clip, item.duration), totalApprox: true }
         : {}),
       ...(item.kind === 'capture' && item.duration ? { duration: item.duration } : {}),
       ...(item.ytId ? { ytId: item.ytId, ...(variant?.codecs ? { ytCodecs: variant.codecs } : {}) } : {}),
-      ...(format && (mode === 'audio' ? isAudioFormat(format) : (scale ? SHRUNK_FORMATS : (item.formats ?? VIDEO_FORMATS)).includes(format as VideoFormat))
+      ...(format && (image || (mode === 'audio' ? isAudioFormat(format) : (scale ? SHRUNK_FORMATS : (item.formats ?? VIDEO_FORMATS)).includes(format as VideoFormat)))
         ? { format }
         : {}),
       ...(item.ytId ? { hidden: true } : {}),
+      ...(item.fromList ? { entry: item.fromList } : {}),
       ...(item.frameId !== undefined ? { frameId: item.frameId } : {}),
       ...(item.videoIndex !== undefined ? { videoIndex: item.videoIndex } : {}),
     };
@@ -334,11 +426,16 @@ export class JobManager {
     const j = this.jobs.get(jobId);
     if (!j || !FINISHED.includes(j.status)) return;
     this.jobs.delete(jobId);
+    // A video of a list: found again from what the job kept.
+    if (j.entry && !this.items.has(`${j.tabId}:${j.mediaId}`)) this.items.set(`${j.tabId}:${j.mediaId}`, listItem(j.entry, j.tabId, j.variantId ?? '', j.title));
     // The video may be gone from the page: the card still has to update.
     if (!(await this.start(j.tabId, j.mediaId, j.variantId, j.mode, j.format, {
         ...(j.scale ? { scale: j.scale } : {}),
-        ...(j.clip ? { clip: j.clip } : {}),
+        ...(j.parts ? { parts: j.parts } : j.clip ? { clip: j.clip } : {}),
         ...(j.subtitles ? { subtitles: j.subtitles } : {}),
+        ...(j.audios ? { audios: j.audios } : {}),
+        ...(j.noChapters ? { noChapters: true } : {}),
+        ...(j.at !== undefined ? { at: j.at } : {}),
       }))) this.changed();
   }
 
@@ -390,7 +487,9 @@ export class JobManager {
     const attempts = auto && job.pausedBy === 'network' ? job.attempts ?? 0 : 0;
     if (job.kind === 'capture') {
       // Recorded to the end already (stopped while assembling): only the file is left to make.
-      if (this.recordedAll(job)) {
+      const end = job.clip?.end ?? job.duration;
+      const stored = this.recordedAll(job) ? await storedUntil(job.id, job.keepTracks).catch(() => undefined) : undefined;
+      if (this.recordedAll(job) && (stored === undefined || end === undefined || stored >= end - 1.5)) {
         this.update(jobId, { status: 'capturing', pausedBy: undefined, retryAt: undefined, attempts });
         return this.assembleCapture(job, true);
       }
@@ -478,9 +577,17 @@ export class JobManager {
     let hidden = [...this.jobs.values()].filter((j) => j.status === 'capturing' && j.hidden).length;
     // A page records one player at a time.
     const busyTabs = new Set([...this.jobs.values()].filter((j) => j.status === 'capturing' && !j.hidden).map((j) => j.tabId));
+    let opens: number | undefined;
     for (const j of this.list()) {
-      if (free <= 0) break;
       if (j.status !== 'queued') continue;
+      const hold = this.holdFor(j);
+      if (hold) {
+        if (JSON.stringify(hold) !== JSON.stringify(j.held)) this.update(j.id, { held: hold });
+        if (hold.why === 'schedule') opens = Math.min(opens ?? Infinity, hold.until);
+        continue;
+      }
+      if (j.held) this.update(j.id, { held: undefined });
+      if (free <= 0) continue;
       if (j.kind === 'capture') {
         if (j.hidden ? hidden >= MAX_HIDDEN : busyTabs.has(j.tabId)) continue;
         if (j.hidden) hidden++;
@@ -489,6 +596,8 @@ export class JobManager {
       free--;
       void this.run(j);
     }
+    // The worker may sleep until then: the alarm brings it back when the window opens.
+    if (opens !== undefined) void chrome.alarms?.create(SCHEDULE_ALARM, { when: opens + 1000 })?.catch?.(() => {});
   }
 
   private fail(jobId: string, error: ErrorCode) {
@@ -499,7 +608,7 @@ export class JobManager {
   }
 
   private async run(job: Job) {
-    this.update(job.id, { status: 'downloading', speed: 0 });
+    this.update(job.id, { status: 'downloading', speed: 0, begun: true, held: undefined });
     try {
       // Queued while the page moved on (a new page in the same tab): what was asked still stands.
       const item = (await this.itemOf(job)) ?? null;
@@ -507,13 +616,16 @@ export class JobManager {
       if (!item && !(await this.planOf(job.id)) && !(job.kind === 'capture' && job.capturePlan)) return this.fail(job.id, 'expired');
       const settings = await getSettings();
       // Resumed: the same plan, so the pieces already stored still fit.
-      const plan = (await this.planOf(job.id)) ?? job.capturePlan ?? (await this.planFor(job, item, settings));
+      let plan = (await this.planOf(job.id)) ?? job.capturePlan ?? (await this.planFor(job, item, settings));
       if (this.gone(job.id)) return;
       this.update(job.id, {
         raw: plan.raw,
         // A file's size comes from the server; a stream's is estimated from its bitrate.
         ...(plan.estimatedSize ? { bytes: 0, total: plan.estimatedSize, totalApprox: plan.kind !== 'file' } : {}),
       });
+      // The browser's own download can't be slowed down: with a speed limit Grabby fetches
+      // the file itself, and saves it as it is.
+      if (plan.kind === 'file' && plan.direct && !plan.fast && this.gate.rateLimit) plan = { ...plan, raw: true };
 
       if (plan.kind === 'capture') {
         const capturePlan = job.capturePlan ?? plan;
@@ -522,14 +634,16 @@ export class JobManager {
       }
       // Kept for a resume, even after a restart when the page is long gone.
       await this.savePlan(job.id, plan);
-      if (plan.kind === 'file' && plan.direct && !plan.fast) return await this.direct(job, plan.video?.segments[0]?.url ?? item!.url, plan.output, settings);
+      if (plan.kind === 'file' && plan.direct && !plan.fast && !plan.raw) return await this.direct(job, plan.video?.segments[0]?.url ?? item!.url, plan.output, settings);
 
-      const urls = [plan.video, plan.audio, plan.subtitles?.track].flatMap((t) => (t ? [...(t.init ? [t.init.url] : []), ...t.segments.map((s) => s.url)] : []));
+      const urls = [plan.video, plan.audio, ...(plan.audios ?? []).map((a) => a.track), ...planSubs(plan).map((s) => s.track)].flatMap((t) =>
+        t ? [...(t.init ? [t.init.url] : []), ...t.segments.map((s) => s.url)] : [],
+      );
       const perHost = [...new Map(urls.map((u) => [hostOf(u), u])).values()];
       this.releases.set(job.id, await withPageHeaders(job.pageUrl, perHost));
       if (this.gone(job.id)) return void this.cleanup(job.id);
       this.update(job.id, { blob: true });
-      await sendOffscreen({ target: 'offscreen', type: 'run', jobId: job.id, plan });
+      await sendOffscreen({ target: 'offscreen', type: 'run', jobId: job.id, plan, rate: this.gate.rateLimit });
     } catch (e) {
       if (this.gone(job.id)) return;
       if (e instanceof PlanError) this.fail(job.id, e.code);
@@ -538,7 +652,28 @@ export class JobManager {
   }
 
   private async itemOf(job: Job): Promise<MediaItem | undefined> {
-    return findVisible(await this.registry.get(job.tabId), job.mediaId) ?? this.items.get(`${job.tabId}:${job.mediaId}`);
+    return (
+      findVisible(await this.registry.get(job.tabId), job.mediaId) ??
+      this.items.get(`${job.tabId}:${job.mediaId}`) ??
+      // A video of a list: found again from what the job kept (after the worker slept).
+      (job.entry ? listItem(job.entry, job.tabId, job.variantId ?? '', job.title) : undefined)
+    );
+  }
+
+  /**
+   * Every video of a playlist (or a channel): one download each, numbered in the list's
+   * order, recorded two at a time like any YouTube video.
+   */
+  async startList(tabId: number, list: YtList, quality: string, mode: JobMode, format?: OutputFormat): Promise<number> {
+    await this.ready;
+    let n = 0;
+    for (const [i, entry] of list.entries.entries()) {
+      // A channel's videos: the channel is who made them.
+      const item = { ...listItem(entry, tabId, quality, numbered(entry.title, i, list.entries.length)), ...(list.kind === 'channel' ? { author: list.title } : {}) };
+      this.items.set(`${tabId}:${item.id}`, item);
+      if (await this.start(tabId, item.id, mode === 'video' ? item.variants[0]!.id : undefined, mode, format)) n++;
+    }
+    return n;
   }
 
   private planFor(job: Job, item: MediaItem | null, settings: Settings): Promise<Plan> {
@@ -551,7 +686,11 @@ export class JobManager {
       ...(job.variantId ? { variantId: job.variantId } : {}),
       ...(job.scale ? { scale: job.scale } : {}),
       ...(job.clip ? { clip: job.clip } : {}),
+      ...(job.parts ? { parts: job.parts } : {}),
       ...(job.subtitles ? { subtitles: job.subtitles } : {}),
+      ...(job.audios ? { audios: job.audios } : {}),
+      ...(job.noChapters ? { noChapters: true } : {}),
+      ...(job.at !== undefined ? { at: job.at } : {}),
     });
   }
 
@@ -580,17 +719,27 @@ export class JobManager {
   private filename(job: Job, ext: string, s: Settings): string {
     return buildFilename(
       s.template,
-      // A part says which one: "Title (1m05-2m40)".
-      { title: job.clip ? `${job.title} (${clipLabel(job.clip)})` : job.title, site: hostOf(job.pageUrl).replace(/^www\./, ''), date: new Date(), ...(job.quality ? { quality: job.quality } : {}) },
+      // A part says which one: "Title (1m05-2m40)"; parts joined, all of them; a still, its moment.
+      { title: titleOf(job), site: hostOf(job.pageUrl).replace(/^www\./, ''), date: new Date(), ...(job.quality ? { quality: job.quality } : {}) },
       ext,
       s.subfolder ? 'Grabby' : undefined,
     );
   }
 
-  /** Subtitles kept apart: an .srt named like the video ("Title.fr.srt"), which players pick up. */
-  private async saveSubtitles(job: Job, srt: string, settings: Settings) {
-    const plan = await this.planOf(job.id);
-    const lang = plan?.subtitles?.lang?.replace(/[^\w-]/g, '');
+  /** Subtitles kept apart: .srt files named like the video ("Title.fr.srt"), which players pick up. */
+  private async saveSubtitles(job: Job, files: { srt: string; lang?: string }[], settings: Settings) {
+    const used = new Map<string, number>();
+    for (const file of files) {
+      const lang = file.lang?.replace(/[^\w-]/g, '') ?? '';
+      // Two tracks in the same language (written and automatic): the second one numbered.
+      const n = (used.get(lang) ?? 0) + 1;
+      used.set(lang, n);
+      await this.saveSrt(job, file.srt, [lang, n > 1 ? String(n) : ''].filter(Boolean).join('.'), settings);
+    }
+  }
+
+  private async saveSrt(job: Job, srt: string, tag: string, settings: Settings) {
+    const lang = tag;
     const bytes = new TextEncoder().encode(`﻿${srt}`);
     let bin = '';
     for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
@@ -618,18 +767,22 @@ export class JobManager {
     this.startPolling();
     // Saved as it is by the browser: its subtitles (kept apart) are made here.
     const plan = await this.planOf(job.id);
-    if (plan?.subtitles) await this.directSubtitles(job, plan, settings);
+    if (planSubs(plan).length) await this.directSubtitles(job, plan!, settings);
   }
 
   /** The .srt of a file the browser saves as it is: its subtitle file, fetched and converted. */
   private async directSubtitles(job: Job, plan: Plan, settings: Settings) {
-    try {
-      const parts = await Promise.all(plan.subtitles!.track.segments.map(async (s) => new TextEncoder().encode(await fetchTextAs(s.url, job.pageUrl))));
-      const cues = cuesOf(parts, plan.subtitles!.track.container, plan.subtitles!.clock);
-      if (cues.length) await this.saveSubtitles(job, toSrt(cues), settings);
-    } catch (e) {
-      console.warn('[grabby] subtitles left out', e);
+    const files: { srt: string; lang?: string }[] = [];
+    for (const sub of planSubs(plan)) {
+      try {
+        const parts = await Promise.all(sub.track.segments.map(async (s) => new TextEncoder().encode(await fetchTextAs(s.url, job.pageUrl))));
+        const cues = cuesOf(parts, sub.track.container, sub.clock);
+        if (cues.length) files.push({ srt: toSrt(cues), ...(sub.lang ? { lang: sub.lang } : {}) });
+      } catch (e) {
+        console.warn('[grabby] subtitles left out', e);
+      }
     }
+    if (files.length) await this.saveSubtitles(job, files, settings);
   }
 
   private async fetchFallback(job: Job) {
@@ -667,7 +820,7 @@ export class JobManager {
       jobId: job.id,
       videoIndex: job.videoIndex,
       ...(job.clip ? { clip: job.clip } : {}),
-      ...(job.session ? { session: job.session, from: this.resumeFrom(job) } : {}),
+      ...(job.session ? { session: job.session, from: await this.resumeFrom(job) } : {}),
     });
     if (!ok && !this.gone(job.id)) {
       if (job.session && job.bytes > 0) this.retryLater(job.id);
@@ -676,10 +829,16 @@ export class JobManager {
     this.pump();
   }
 
-  /** Where a recording that carries on starts again: a little before where it got to. */
-  private resumeFrom(job: Job): number {
+  /**
+   * Where a recording that carries on starts again: a little before what was really stored
+   * (else a little before where the player got to).
+   */
+  private async resumeFrom(job: Job): Promise<number> {
     const start = job.clip?.start ?? 0;
-    return Math.max(start, (job.captureAt ?? start) - CAPTURE_OVERLAP);
+    const at = job.captureAt ?? start;
+    const stored = await storedUntil(job.id, job.keepTracks, job.session ?? 0).catch(() => undefined);
+    const from = stored !== undefined ? Math.min(at, stored) - STORED_MARGIN : at - CAPTURE_OVERLAP;
+    return Math.max(start, from);
   }
 
   /** Recorded up to the end of the video (or of the part): nothing left but the file to make. */
@@ -690,7 +849,7 @@ export class JobManager {
 
   /** Ends the current recording session without finishing the file (pause, network, restart). */
   private async holdCapture(job: Job) {
-    if (job.hidden) await sendOffscreen({ target: 'offscreen', type: 'yt-stop', jobId: job.id }).catch(() => {});
+    if (job.hidden) await sendOffscreen({ target: 'offscreen', type: 'yt-stop', jobId: job.id, hold: true }).catch(() => {});
     else await this.toContent(job, { type: 'capture-stop', jobId: job.id, hold: true });
   }
 
@@ -744,7 +903,9 @@ export class JobManager {
     const codecs = v?.codecs ?? job.ytCodecs ?? '';
     const audio = job.mode === 'audio';
     const webm = !audio && job.format === 'webm';
-    const vcodec = audio || (!webm && codecs.includes('avc1')) ? 'avc' : 'vp9';
+    // A picture is made from H.264 when YouTube has it (the quickest to decode).
+    const vcodec = audio || (!webm && codecs.includes('avc1')) || isImageFormat(job.format) ? 'avc' : 'vp9';
+    const captions = planSubs(plan).flatMap((s) => (s.captured ? [s.captured] : []));
     this.update(job.id, { status: 'capturing', capturePlan: plan, bytesBefore: job.bytes });
     const src = hiddenPlayerUrl({
       jobId: job.id,
@@ -754,8 +915,9 @@ export class JobManager {
       vcodec,
       acodec: webm ? 'opus' : 'aac',
       ...(job.clip ? { part: job.clip } : {}),
-      ...(job.session ? { session: job.session, from: this.resumeFrom(job) } : {}),
-      ...(plan.subtitles?.captured ? { captions: plan.subtitles.captured } : {}),
+      ...(job.session ? { session: job.session, from: await this.resumeFrom(job) } : {}),
+      ...(captions.length ? { captions } : {}),
+      ...(this.gate.rateLimit ? { maxRate: playbackCap(this.gate.rateLimit, this.bitrateOf(job) ?? 2_500_000) } : {}),
     });
     try {
       await allowHiddenPlayer();
@@ -766,6 +928,12 @@ export class JobManager {
       if (!this.gone(job.id)) this.fail(job.id, 'capture_unavailable');
     }
     this.pump();
+  }
+
+  /** Bits per second of a recording, from the size YouTube gives (when it does). */
+  private bitrateOf(job: Job): number | undefined {
+    const len = job.clip ? job.clip.end - job.clip.start : job.duration;
+    return job.total && len ? (job.total * 8) / len : undefined;
   }
 
   /** Ends a recording: hands the stored chunks to the offscreen assembler. */
@@ -779,7 +947,7 @@ export class JobManager {
     if (!plan || !hasTracks) return this.fail(job.id, 'capture_failed');
     // A hidden player may also have recorded ads: keep only the tracks of the video itself
     // (told along the way, for every session of the recording).
-    const kept = [...new Set([...(job.keepTracks ?? []), ...(keep ?? [])])];
+    const kept = mergeKeep(job.keepTracks, keep);
     const final: Plan = { ...plan, ...(kept.length ? { keepTracks: kept } : {}) };
     if (job.openedTab !== undefined) {
       void chrome.tabs.remove(job.openedTab).catch(() => {});
@@ -787,8 +955,8 @@ export class JobManager {
     }
     this.update(job.id, { status: 'processing', progress: CAPTURE_SHARE, speed: 0, blob: true, capturePlan: final });
     // Subtitles of a recording are fetched once it is over, with the page's headers.
-    if (final.subtitles) {
-      const urls = final.subtitles.track.segments.map((s) => s.url);
+    const urls = planSubs(final).flatMap((s) => s.track.segments.map((x) => x.url));
+    if (urls.length) {
       this.releases.set(job.id, await withPageHeaders(job.pageUrl, [...new Map(urls.map((u) => [hostOf(u), u])).values()]));
     }
     await sendOffscreen({ target: 'offscreen', type: 'run', jobId: job.id, plan: final }).catch(() => this.fail(job.id, 'unknown'));
@@ -837,12 +1005,12 @@ export class JobManager {
     if (msg.type === 'capture-progress') {
       // Bytes of this session, after those of the sessions before it.
       const base = job.bytesBefore ?? 0;
-      const keep = msg.keep?.length ? [...new Set([...(job.keepTracks ?? []), ...msg.keep])] : undefined;
+      const keep = msg.keep?.length ? mergeKeep(job.keepTracks, msg.keep) : undefined;
       this.update(job.id, {
         progress: msg.progress * CAPTURE_SHARE,
         bytes: base + msg.bytes,
         ...(msg.time !== undefined ? { captureAt: msg.time, attempts: 0 } : {}),
-        ...(keep && keep.length !== job.keepTracks?.length ? { keepTracks: keep } : {}),
+        ...(keep && keep.join() !== job.keepTracks?.join() ? { keepTracks: keep } : {}),
       });
     } else if (msg.type === 'capture-error') {
       // A recording carrying on whose player isn't ready yet: what it has is kept, it tries again.

@@ -6,8 +6,10 @@
  * for the requested format, forces the quality, plays muted at high speed and reports
  * which recorded tracks are the video (not an ad).
  */
-import type { VideoFormat } from '../shared/plan';
+import type { CapturedCaption, Chapter, VideoFormat } from '../shared/plan';
 import type { YtInfo } from '../shared/messages';
+import { descriptionChapters } from '../shared/chapters';
+import { captionsFromUrl } from './youtube';
 
 export interface HookApi {
   post(
@@ -23,8 +25,8 @@ export interface HookApi {
   restart(): void;
   /** Tracks recorded for the MediaSource currently playing in `video`. */
   tracksOf(video: HTMLVideoElement): number[];
-  /** The subtitles the player loaded, kept with the recording. */
-  caption(data: ArrayBuffer): void;
+  /** The subtitles the player loaded (the `k`-th language asked for), kept with the recording. */
+  caption(data: ArrayBuffer, k: number): void;
 }
 
 interface Format {
@@ -43,8 +45,13 @@ interface CaptionTrack {
 }
 
 interface PlayerResponse {
-  captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: CaptionTrack[] } };
-  videoDetails?: { videoId?: string; title?: string; lengthSeconds?: string; isLive?: boolean };
+  captions?: {
+    playerCaptionsTracklistRenderer?: {
+      captionTracks?: CaptionTrack[];
+      translationLanguages?: { languageCode?: string; languageName?: { simpleText?: string; runs?: { text?: string }[] } }[];
+    };
+  };
+  videoDetails?: { videoId?: string; title?: string; lengthSeconds?: string; isLive?: boolean; author?: string; shortDescription?: string };
   playabilityStatus?: { status?: string; playableInEmbed?: boolean };
   streamingData?: { adaptiveFormats?: Format[] };
 }
@@ -120,11 +127,19 @@ export function describeFormats(r: PlayerResponse): YtInfo | null {
       return [];
     }
   });
+  const translations = (r.captions?.playerCaptionsTracklistRenderer?.translationLanguages ?? []).flatMap((t) =>
+    t.languageCode ? [t.languageCode] : [],
+  );
+  const duration = Number(d.lengthSeconds) || 0;
+  const chapters: Chapter[] = descriptionChapters(d.shortDescription, duration || undefined);
   return {
     id: d.videoId,
     title: d.title ?? '',
-    duration: Number(d.lengthSeconds) || 0,
+    duration,
+    ...(d.author ? { author: d.author } : {}),
+    ...(chapters.length ? { chapters } : {}),
     ...(captions.length ? { captions } : {}),
+    ...(captions.length && translations.length ? { translations } : {}),
     embeddable: r.playabilityStatus?.playableInEmbed !== false && r.playabilityStatus?.status === 'OK',
     qualities,
   };
@@ -139,7 +154,7 @@ function reportPlayerInfo(api: HookApi) {
     const r = player()?.getPlayerResponse?.() ?? (window as { ytInitialPlayerResponse?: PlayerResponse }).ytInitialPlayerResponse;
     const info = r ? describeFormats(r) : null;
     if (!info) return;
-    const sig = `${info.id}|${info.qualities.length}|${info.embeddable}|${info.captions?.length ?? 0}`;
+    const sig = `${info.id}|${info.qualities.length}|${info.embeddable}|${info.captions?.length ?? 0}|${info.chapters?.length ?? 0}`;
     if (sig === last) return;
     last = sig;
     api.post({ type: 'yt', info });
@@ -212,55 +227,61 @@ const seconds = (v: string | null): number | undefined => {
 };
 
 /**
- * The subtitles the player loads once they are switched on: the response it gets for the
- * wanted language is passed on (nothing else is fetched).
+ * The subtitles the player loads once they are switched on: the response it gets for each
+ * wanted track (a language, written or automatic, maybe translated) is passed on, with the
+ * track's place in the list asked for. Nothing else is fetched.
  */
-function keepCaptions(lang: string, auto: boolean, onText: (data: ArrayBuffer) => void): () => boolean {
-  let got = false;
-  const wanted = (url: string) => {
+function keepCaptions(wanted: CapturedCaption[], onText: (data: ArrayBuffer, k: number) => void): { got: (k: number) => boolean } {
+  const got = new Set<number>();
+  const which = (url: string): number => {
     try {
       const u = new URL(url, location.href);
-      if (!u.pathname.endsWith('/api/timedtext') || u.searchParams.get('tlang')) return false;
-      return u.searchParams.get('lang') === lang && (u.searchParams.get('kind') === 'asr') === auto;
+      if (!u.pathname.endsWith('/api/timedtext')) return -1;
+      return wanted.findIndex(
+        (c) => u.searchParams.get('lang') === c.lang && (u.searchParams.get('kind') === 'asr') === !!c.auto && (u.searchParams.get('tlang') ?? undefined) === c.tlang,
+      );
     } catch {
-      return false;
+      return -1;
     }
   };
-  const keep = (data: ArrayBuffer) => {
-    if (got || !data.byteLength) return;
-    got = true;
-    onText(data);
+  const keep = (k: number, data: ArrayBuffer) => {
+    if (k < 0 || got.has(k) || !data.byteLength) return;
+    got.add(k);
+    onText(data, k);
   };
   const realFetch = window.fetch;
   window.fetch = function (this: unknown, input: RequestInfo | URL, init?: RequestInit) {
     const p = realFetch.call(this, input, init);
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    if (wanted(url)) {
-      void p.then((r) => (r.ok ? r.clone().arrayBuffer() : null)).then((b) => b && keep(b)).catch(() => {});
+    const k = which(url);
+    if (k >= 0) {
+      void p.then((r) => (r.ok ? r.clone().arrayBuffer() : null)).then((b) => b && keep(k, b)).catch(() => {});
     }
     return p;
   } as typeof window.fetch;
   const open = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function (this: XMLHttpRequest, method: string, url: string | URL, ...rest: unknown[]) {
-    if (wanted(String(url))) {
+    const k = which(String(url));
+    if (k >= 0) {
       this.addEventListener('load', () => {
         if (this.status !== 200) return;
         const r = this.response as unknown;
-        if (r instanceof ArrayBuffer) keep(r.slice(0));
-        else if (this.responseType === '' || this.responseType === 'text') keep(new TextEncoder().encode(this.responseText).buffer as ArrayBuffer);
+        if (r instanceof ArrayBuffer) keep(k, r.slice(0));
+        else if (this.responseType === '' || this.responseType === 'text') keep(k, new TextEncoder().encode(this.responseText).buffer as ArrayBuffer);
       });
     }
     return (open as (...a: unknown[]) => void).call(this, method, url, ...rest);
   } as typeof XMLHttpRequest.prototype.open;
-  return () => got;
+  return { got: (k) => got.has(k) };
 }
 
 function hiddenPlayer(api: HookApi, params: URLSearchParams) {
   const quality = params.get('gyq') ?? 'hd1080';
-  // Subtitles to keep: switched on in this player, what it loads is passed on.
-  const captionLang = params.get('gysl');
-  const captionAuto = params.get('gysk') === 'asr';
-  const gotCaptions = captionLang && /^[\w-]{2,20}$/.test(captionLang) ? keepCaptions(captionLang, captionAuto, (d) => api.caption(d)) : null;
+  // Subtitles to keep: switched on in this player one after the other, what it loads is passed on.
+  const captions = captionsFromUrl(params.get('gysc'));
+  const kept = captions.length ? keepCaptions(captions, (d, k) => api.caption(d, k)) : null;
+  /** The first subtitles not received yet (-1: all of them are). */
+  const nextCaption = () => (kept ? captions.findIndex((_, k) => !kept.got(k)) : -1);
   // A part of the video (gyb–gye), and where this recording starts (start: a part, or a
   // recording carrying on after a pause or a restart).
   const begin = seconds(params.get('gyb')) ?? 0;
@@ -284,7 +305,9 @@ function hiddenPlayer(api: HookApi, params: URLSearchParams) {
   });
   // Decoding many frames per second of 4K would overload the machine (and the player
   // reacts by rebuilding itself): the bigger the picture, the lower the speed.
-  const maxRate = /hd2160|highres/.test(quality) ? 4 : quality === 'hd1440' ? 8 : 16;
+  // A speed limit set in Grabby caps it too (never under the normal speed).
+  const capped = Number(params.get('gyr')) || 16;
+  const maxRate = Math.max(1, Math.min(capped, /hd2160|highres/.test(quality) ? 4 : quality === 'hd1440' ? 8 : 16));
 
   let started = 0;
   let done = false;
@@ -308,15 +331,21 @@ function hiddenPlayer(api: HookApi, params: URLSearchParams) {
       p.playVideo();
     }
     if (document.querySelector('.ytp-error') && !ad) return fail('capture_unavailable');
-    // Subtitles on, in the wanted language (asked again until the player loads them).
-    if (gotCaptions && !gotCaptions() && !ad && checks % 8 === 0) {
+    // Subtitles on, in the next wanted language (asked again until the player loads them).
+    const k = nextCaption();
+    if (k >= 0 && !ad && checks % 8 === 0) {
+      const c = captions[k]!;
       try {
         p.loadModule?.('captions');
         // The player's own description of the track when it has one (needed to tell the
         // automatic track from the written one in the same language).
         const list = p.getOption?.('captions', 'tracklist', { includeAsr: true }) as { languageCode?: string; kind?: string }[] | undefined;
-        const track = Array.isArray(list) ? list.find((t) => t.languageCode === captionLang && (t.kind === 'asr') === captionAuto) : undefined;
-        p.setOption?.('captions', 'track', track ?? { languageCode: captionLang, ...(captionAuto ? { kind: 'asr' } : {}) });
+        const track = (Array.isArray(list) ? list.find((t) => t.languageCode === c.lang && (t.kind === 'asr') === !!c.auto) : undefined) ?? {
+          languageCode: c.lang,
+          ...(c.auto ? { kind: 'asr' } : {}),
+        };
+        // Translated by YouTube: the same track, with the language to translate into.
+        p.setOption?.('captions', 'track', c.tlang ? { ...track, translationLanguage: { languageCode: c.tlang } } : track);
       } catch {
         /* the video plays on without them */
       }
@@ -326,7 +355,7 @@ function hiddenPlayer(api: HookApi, params: URLSearchParams) {
     // Fast and silent, ads included (they are dropped from the file).
     video.muted = true;
     if (video.playbackRate < maxRate) {
-      for (const rate of [16, 8, 4].filter((r) => r <= maxRate)) {
+      for (const rate of [16, 8, 4, 2, 1].filter((r) => r <= maxRate)) {
         try {
           video.playbackRate = rate;
           break;
@@ -347,7 +376,7 @@ function hiddenPlayer(api: HookApi, params: URLSearchParams) {
       lastProgress = progress;
       const past = partEnd !== undefined ? t >= partEnd + 1 : t >= d - 0.05;
       // The end waits a little for subtitles still on their way.
-      const waitCaptions = gotCaptions && !gotCaptions() && Date.now() - started < 12_000;
+      const waitCaptions = nextCaption() >= 0 && Date.now() - started < 12_000 + 4000 * captions.length;
       if ((video.ended || p.getPlayerState?.() === 0 || past) && !waitCaptions) {
         console.debug('[grabby] hidden player end', JSON.stringify({ t, d, restarts, keep: api.tracksOf(video) }));
         finish(video);

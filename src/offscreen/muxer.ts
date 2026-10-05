@@ -101,7 +101,8 @@ export class FFmpeg {
       const stop = () => this.users <= 1 && this.terminate();
       signal?.addEventListener('abort', stop, { once: true });
       try {
-        return await this.call<number>('exec', { args });
+        // -copyts stays on in this build once a run used it: every other run turns it off.
+        return await this.call<number>('exec', { args: args.includes('-copyts') ? args : ['-nocopyts', ...args] });
       } catch (e) {
         throw signal?.aborted ? aborted() : e;
       } finally {

@@ -1,4 +1,6 @@
 import type { MediaItem, SubtitleTrack } from '../shared/types';
+import type { Chapter } from '../shared/plan';
+import type { YtList } from '../shared/ytlist';
 import { describeSubtitleUrl, segmentPattern } from '../shared/subtitles';
 import { hashId } from '../shared/ids';
 import { hostOf, normalizeMediaUrl } from '../parsers/url';
@@ -25,8 +27,12 @@ interface TabState {
   image?: string;
   /** Subtitles a <video src> declares (<track>), by the video's address. */
   videoSubs?: Record<string, SubtitleTrack[]>;
+  /** Chapters a <video src> declares (<track kind="chapters">), by the video's address. */
+  videoChapters?: Record<string, Chapter[]>;
   /** Subtitle files each frame loaded (its player fetching them), by frame. */
   frameSubs?: Record<string, string[]>;
+  /** The YouTube playlist or channel on screen. */
+  ytList?: YtList;
 }
 
 const MAX_FRAME_SUBS = 12;
@@ -143,9 +149,11 @@ export class Registry {
     return s.items.map((i) => {
       const thumbnail = i.thumbnail ?? s.thumbnail ?? s.frameThumbs?.[i.frameUrl] ?? anyFrameThumb ?? s.image;
       const subtitles = i.subtitles?.length ? i.subtitles : this.subtitlesFor(s, i, players.get(i.frameUrl) === 1);
+      const chapters = i.chapters?.length ? i.chapters : i.kind === 'file' ? this.chaptersFor(s, i) : [];
       return {
         ...i,
         ...(subtitles.length ? { subtitles } : {}),
+        ...(chapters.length ? { chapters } : {}),
         title: i.title || s.pageTitle || fallbackTitle || titleFromUrl(i.url) || hostOf(i.pageUrl) || 'video',
         ...(thumbnail ? { thumbnail } : {}),
       };
@@ -162,6 +170,29 @@ export class Registry {
       }
     }
     return alone && !i.audioOnly ? frameSubtitles(s.frameSubs?.[i.frameUrl]) : [];
+  }
+
+  private chaptersFor(s: TabState, i: MediaItem): Chapter[] {
+    for (const u of [i.url, ...i.variants.map((v) => v.url)]) {
+      const own = u ? s.videoChapters?.[normalizeMediaUrl(u)] : undefined;
+      if (own?.length) return own;
+    }
+    return [];
+  }
+
+  /** The chapters of a <video src>, for its file once it is listed. */
+  setVideoChapters(tabId: number, videoUrl: string, chapters: Chapter[]): Promise<boolean> {
+    return this.mutate(
+      tabId,
+      (s) => {
+        const key = normalizeMediaUrl(videoUrl);
+        if (JSON.stringify(s.videoChapters?.[key] ?? []) === JSON.stringify(chapters)) return false;
+        const entries = Object.entries(s.videoChapters ?? {}).filter(([k]) => k !== key).slice(-20);
+        s.videoChapters = Object.fromEntries([...entries, [key, chapters]]);
+        return s.items.some((i) => i.kind === 'file');
+      },
+      (r) => r,
+    );
   }
 
   /** The <track>s of a <video src>, for its file once it is listed. */
@@ -345,6 +376,23 @@ export class Registry {
     return (await this.load(tabId)).drmFrames.includes(frameUrl);
   }
 
+  setYtList(tabId: number, list: YtList | null): Promise<boolean> {
+    return this.mutate(
+      tabId,
+      (s) => {
+        if (JSON.stringify(s.ytList ?? null) === JSON.stringify(list)) return false;
+        if (list) s.ytList = list;
+        else delete s.ytList;
+        return true;
+      },
+      (r) => r,
+    );
+  }
+
+  async ytList(tabId: number): Promise<YtList | undefined> {
+    return (await this.load(tabId)).ytList;
+  }
+
   setPageInfo(tabId: number, info: { title?: string; thumbnail?: string; image?: string }): Promise<boolean> {
     return this.mutate(
       tabId,
@@ -370,6 +418,7 @@ export class Registry {
         s.frameThumbs = {};
         s.videoSubs = {};
         s.frameSubs = {};
+        delete s.ytList;
         delete s.pageTitle;
         delete s.image;
         delete s.thumbnail;

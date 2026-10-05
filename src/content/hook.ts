@@ -11,7 +11,8 @@
  */
 import { youtubeHook } from '../features/youtube-hook';
 import { deepVideos, isInitSegment } from '../shared/dom';
-import { CAPTION_TRACK } from '../shared/idb';
+import { PART_LEAD } from '../shared/clip';
+import { captionTrack, MAX_CAPTIONS } from '../shared/idb';
 
 type Up =
   | { type: 'drm'; keySystem: string }
@@ -318,8 +319,8 @@ const LOG_BUDGET = 48 * 1024 * 1024;
     buffers.forEach((sb, i) => tracks.set(sb, i));
     const infos = buffers.map((sb) => sbInfo.get(sb)!);
     const haveLog = infos.every((i) => i.log && i.log.length > 0);
-    // Where recording starts: the part, or where an earlier recording stopped.
-    const seekTo = from ?? part?.start;
+    // Where recording starts: a little before the part, or where an earlier recording stopped.
+    const seekTo = from ?? (part ? Math.max(0, part.start - PART_LEAD) : undefined);
 
     const c: Capture = {
       ms,
@@ -401,7 +402,9 @@ const LOG_BUDGET = 48 * 1024 * 1024;
         generation++;
         recorded = false;
       },
-      caption: (data) => post({ type: 'chunk', track: CAPTION_TRACK, mime: 'text/plain', init: false, data }, [data]),
+      caption: (data, k = 0) => {
+        if (k >= 0 && k < MAX_CAPTIONS) post({ type: 'chunk', track: captionTrack(k), mime: 'text/plain', init: false, data }, [data]);
+      },
       tracksOf: (video) => {
         const ms = blobToMs.get(video.currentSrc || video.src);
         return ms ? (msBuffers.get(ms) ?? []).map((sb) => trackId(ms, sb)) : [];

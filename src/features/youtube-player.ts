@@ -26,7 +26,11 @@ export function startHiddenPlayer(jobId: string, src: string): void {
   frames.set(jobId, f);
 }
 
-export function stopHiddenPlayer(jobId: string): void {
-  frames.get(jobId)?.remove();
+/** `later`: removed in a moment, so the pieces it was still sending get stored. */
+export function stopHiddenPlayer(jobId: string, later = false): void {
+  const f = frames.get(jobId);
   frames.delete(jobId);
+  if (!f) return;
+  if (later) setTimeout(() => f.remove(), 2000);
+  else f.remove();
 }

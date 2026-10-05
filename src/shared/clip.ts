@@ -12,6 +12,12 @@ export function canClip(item: MediaItem): boolean {
   return item.kind !== 'file' || (item.size ?? 0) <= RAW_THRESHOLD;
 }
 
+/**
+ * A part is recorded from this long before it: the picture of a part copied as it is starts
+ * on the keyframe before the part, and its sound must be there from that keyframe on too.
+ */
+export const PART_LEAD = 10;
+
 /** "1:05", "12:40", "1:02:03": how a player shows a time. */
 export function clock(seconds: number): string {
   const s = Math.max(0, Math.round(seconds));

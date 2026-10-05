@@ -6,7 +6,8 @@ import { forgetBadge, paintTab, showJobs, updateBadge } from './badge';
 import { startDetector } from './detector';
 import { resetHeaderRules } from './headers';
 import { clearHistory, historyWithPresence, removeHistory } from './history';
-import { BROWSER_ASKS_KEY, JobManager } from './jobs';
+import { BROWSER_ASKS_KEY, JobManager, SCHEDULE_ALARM } from './jobs';
+import { checkUpdate, seenUpdate, UPDATE_ALARM, updateNotice, watchUpdates } from './updates';
 import { listenNotificationClicks } from './notify';
 import { handlePageInfo } from './pageinfo';
 import { Registry, sessionKV } from './registry';
@@ -24,9 +25,11 @@ listenNotificationClicks();
 
 chrome.runtime.onStartup.addListener(() => {
   void resetHeaderRules();
+  void getSettings().then((s) => watchUpdates(s.updateCheck));
 });
 chrome.runtime.onInstalled.addListener(() => {
   void resetHeaderRules();
+  void getSettings().then((s) => watchUpdates(s.updateCheck));
   // Right-click on a video (or anywhere on a page whose player hides its own menu).
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({ id: 'grabby-media', title: chrome.i18n.getMessage('menuMedia'), contexts: ['video', 'audio'] });
@@ -46,7 +49,12 @@ chrome.commands.onCommand.addListener((command, tab) => {
   })();
 });
 // A download waiting for the network tries again, even if the worker went to sleep meanwhile.
-chrome.alarms.onAlarm.addListener((a) => a.name === 'grabby-resume' && void jobs.wake());
+chrome.alarms.onAlarm.addListener((a) => {
+  if (a.name === 'grabby-resume' || a.name === SCHEDULE_ALARM) void jobs.wake();
+  if (a.name === UPDATE_ALARM) void checkUpdate();
+});
+// Wi-Fi only: the connection changed (only some systems tell its type).
+(navigator as Navigator & { connection?: EventTarget }).connection?.addEventListener?.('change', () => void jobs.wake());
 // The connection is back: waiting downloads don't wait for their next try.
 self.addEventListener('online', () => void jobs.wake(true));
 
@@ -95,11 +103,13 @@ async function buildState(tabId: number): Promise<PopupState> {
   // An invalid id throws synchronously (not a rejected promise).
   const tab = await (async () => chrome.tabs.get(tabId))().catch(() => undefined);
   const tabTitle = tab?.title ? cleanTitle(tab.title, hostOf(tab.url ?? pageUrl)) : undefined;
-  const [items, history, settings, asks] = await Promise.all([
+  const [items, history, settings, asks, update, ytList] = await Promise.all([
     registry.get(tabId, tabTitle),
     historyWithPresence(),
     getSettings(),
     chrome.storage.local.get(BROWSER_ASKS_KEY),
+    updateNotice().catch(() => undefined),
+    blocked ? undefined : registry.ytList(tabId),
   ]);
   return {
     tabId,
@@ -111,6 +121,8 @@ async function buildState(tabId: number): Promise<PopupState> {
     history,
     settings,
     ...(asks[BROWSER_ASKS_KEY] ? { browserAsks: true } : {}),
+    ...(update ? { update } : {}),
+    ...(ytList ? { ytList } : {}),
   };
 }
 
@@ -184,11 +196,15 @@ async function onPopupMessage(port: chrome.runtime.Port, msg: PopupToBg) {
       return;
     case 'download': {
       const tabId = ports.get(port);
-      if (tabId !== undefined) await jobs.start(tabId, msg.mediaId, msg.variantId, msg.mode, msg.format, {
-          ...(msg.scale ? { scale: msg.scale } : {}),
-          ...(msg.clip ? { clip: msg.clip } : {}),
-          ...(msg.subtitles ? { subtitles: msg.subtitles } : {}),
-        });
+      if (tabId === undefined) return;
+      const { type: _t, mediaId, variantId, mode, format, ...extra } = msg;
+      await jobs.start(tabId, mediaId, variantId, mode, format, extra);
+      return;
+    }
+    case 'download-list': {
+      const tabId = ports.get(port);
+      const list = tabId === undefined ? undefined : await registry.ytList(tabId);
+      if (tabId !== undefined && list) await jobs.startList(tabId, list, msg.quality, msg.mode, msg.format);
       return;
     }
     case 'cancel':
@@ -205,6 +221,12 @@ async function onPopupMessage(port: chrome.runtime.Port, msg: PopupToBg) {
       return jobs.finishCapture(msg.jobId);
     case 'retry':
       return jobs.retry(msg.jobId);
+    case 'start-now':
+      return jobs.startNow(msg.jobId);
+    case 'update-seen':
+      await seenUpdate(msg.version);
+      schedulePush(port);
+      return;
     case 'dismiss':
       return jobs.dismiss(msg.jobId);
     case 'show':
@@ -220,6 +242,10 @@ async function onPopupMessage(port: chrome.runtime.Port, msg: PopupToBg) {
       return;
     case 'settings':
       await setSettings(msg.patch);
+      if (msg.patch.updateCheck !== undefined) {
+        await watchUpdates(msg.patch.updateCheck);
+        if (msg.patch.updateCheck) await checkUpdate();
+      }
       schedulePush(port);
       return;
   }

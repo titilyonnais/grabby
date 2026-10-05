@@ -29,6 +29,10 @@ if (process.argv.includes('--subs')) {
   await subtitles();
   process.exit(0);
 }
+if (process.argv.includes('--v18')) {
+  await v18();
+  process.exit(0);
+}
 await rm(out, { recursive: true, force: true });
 for (const d of ['hls/360', 'hls/180', 'hls-fmp4', 'dash', 'hls-aes', 'mse', 'mse-webm', 'protected-referer', 'encrypted', 'preview']) {
   await mkdir(join(out, d), { recursive: true });
@@ -78,6 +82,7 @@ const size = async (f) => (await stat(join(out, f))).size;
 await writeFile(join(out, 'mse/sizes.json'), JSON.stringify({ video: await size('mse/video.mp4'), audio: await size('mse/audio.mp4') }));
 
 await extras();
+await v18();
 
 console.log('✓ fixtures written to test/fixtures/media');
 
@@ -264,4 +269,28 @@ async function packedSubtitles(cues) {
     ].join('\n'),
   );
   await writeFile(join(out, 'dash/manifest-packed.mpd'), base.replace('\t</Period>', `${sets.join('\n')}\n\t</Period>`));
+}
+
+/**
+ * 12. Fixtures added in 1.8 (`node scripts/make-fixtures.mjs --v18`): an HLS stream whose
+ * sound comes in two languages (separate renditions, a different tone each), and chapters
+ * for a <video src> (<track kind="chapters">).
+ */
+async function v18() {
+  for (const d of ['hls-multi/v', 'hls-multi/en', 'hls-multi/fr']) await mkdir(join(out, d), { recursive: true });
+  const hls = (dir) => ['-f', 'hls', '-hls_time', '2', '-hls_playlist_type', 'vod', '-hls_segment_filename', join(out, `hls-multi/${dir}/seg%d.ts`), join(out, `hls-multi/${dir}/index.m3u8`)];
+  ff('-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=25', '-t', '6', ...H264, '-an', ...hls('v'));
+  for (const [dir, hz] of [['en', 440], ['fr', 880]]) {
+    ff('-f', 'lavfi', '-i', `sine=frequency=${hz}:sample_rate=44100`, '-t', '6', ...AAC, '-vn', ...hls(dir));
+  }
+  await writeFile(join(out, 'hls-multi/master.m3u8'), [
+    '#EXTM3U',
+    '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="English",LANGUAGE="en",DEFAULT=YES,AUTOSELECT=YES,URI="en/index.m3u8"',
+    '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="Français",LANGUAGE="fr",DEFAULT=NO,AUTOSELECT=YES,URI="fr/index.m3u8"',
+    '#EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=640x360,CODECS="avc1.4d401e,mp4a.40.2",AUDIO="aud"',
+    'v/index.m3u8',
+    '',
+  ].join('\n'));
+  await mkdir(join(out, 'subs'), { recursive: true });
+  await writeFile(join(out, 'subs/chapters.vtt'), ['WEBVTT', '', '00:00.000 --> 00:02.000', 'Début', '', '00:02.000 --> 00:04.000', 'Milieu', '', '00:04.000 --> 00:06.000', 'Fin', ''].join('\n'));
 }

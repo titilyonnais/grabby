@@ -21,7 +21,12 @@ function JobRow({ job, send }: { job: Job; send: (m: PopupToBg) => void }) {
         <span class="card__progress" style={{ '--p': String(job.progress) }} aria-hidden="true" />
       </span>
       <span class="card__tools">
-        {(paused || canPause(job)) && (
+        {job.status === 'queued' && job.held && (
+          <button class="card__cancel" aria-label={t('startNow')} title={t('startNow')} onClick={() => send({ type: 'start-now', jobId: job.id })}>
+            <Icon name="play" size={16} />
+          </button>
+        )}
+        {(paused || (canPause(job) && !job.held)) && (
           <button
             class="card__cancel"
             aria-label={paused ? t('resume') : t('pause')}

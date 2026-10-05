@@ -3,10 +3,31 @@
  * buffers by postMessage (transferred, no copy) and stores them in the extension's
  * IndexedDB. Only accepts chunks for a job the service worker confirms is capturing.
  */
-import { putChunk } from '../shared/idb';
+import { putChunks, type StoredChunk } from '../shared/idb';
 
 let allowedJob: string | null = null;
 let queue: Promise<void> = Promise.resolve();
+
+/**
+ * Chunks waiting to be written. They are written together, one transaction for all that
+ * came in meanwhile: a player recorded at high speed sends hundreds per second.
+ */
+let batch: { chunk: StoredChunk; mime: string; ack: () => void }[] = [];
+let writing = false;
+async function write() {
+  if (writing) return;
+  writing = true;
+  try {
+    while (batch.length) {
+      const now = batch;
+      batch = [];
+      await putChunks(now.map(({ chunk, mime }) => ({ chunk, mime }))).catch(() => {});
+      for (const b of now) b.ack();
+    }
+  } finally {
+    writing = false;
+  }
+}
 
 interface ChunkMsg {
   type: 'chunk';
@@ -40,14 +61,13 @@ window.addEventListener('message', (e: MessageEvent) => {
     // A sandboxed parent has an opaque origin ('null'), which isn't a valid target: acks
     // carry no data, so '*' is safe there.
     const target = e.origin === 'null' ? '*' : e.origin;
-    queue = queue
-      .then(async () => {
-        if (c.jobId === allowedJob) {
-          await putChunk({ jobId: c.jobId, track: c.track, seq: c.seq, init: !!c.init, data: c.data }, String(c.mime).slice(0, 200)).catch(() => {});
-        }
-      })
-      .finally(() => window.parent.postMessage({ grabbySink: 'ack' }, target))
-      .catch(() => {});
+    const ack = () => window.parent.postMessage({ grabbySink: 'ack' }, target);
+    // After the job check (queued behind it when the sink was just opened).
+    void queue.then(() => {
+      if (c.jobId !== allowedJob) return ack();
+      batch.push({ chunk: { jobId: c.jobId, track: c.track, seq: c.seq, init: !!c.init, data: c.data }, mime: String(c.mime).slice(0, 200), ack });
+      void write();
+    });
   }
 });
 

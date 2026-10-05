@@ -16,7 +16,7 @@ interface Box {
   end: number;
 }
 
-function* boxes(d: DataView, from: number, to: number): Generator<Box> {
+export function* boxes(d: DataView, from: number, to: number): Generator<Box> {
   let at = from;
   while (at + 8 <= to) {
     let size = d.getUint32(at);
@@ -33,7 +33,7 @@ function* boxes(d: DataView, from: number, to: number): Generator<Box> {
   }
 }
 
-const find = (d: DataView, from: number, to: number, type: string) => {
+export const find = (d: DataView, from: number, to: number, type: string) => {
   for (const b of boxes(d, from, to)) if (b.type === type) return b;
   return undefined;
 };
@@ -92,6 +92,8 @@ export function readSamples(buf: Uint8Array, init: SubInit): Sample[] {
   for (const [k, moof] of top.entries()) {
     if (moof.type !== 'moof') continue;
     const mdat = top.slice(k + 1).find((b) => b.type === 'mdat');
+    // A fragment whose data hasn't come in full is left out.
+    if (!mdat) continue;
     for (const traf of boxes(d, moof.body, moof.end)) {
       if (traf.type !== 'traf') continue;
       const tfhd = find(d, traf.body, traf.end, 'tfhd');

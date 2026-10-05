@@ -1,6 +1,24 @@
 /**
  * Experimental YouTube support.
  */
+import { PART_LEAD } from '../shared/clip';
+import type { CapturedCaption } from '../shared/plan';
+
+/** Subtitles to keep, written in the hidden player's address: "en", "en.asr", "en>fr" (translated). */
+export const captionKey = (c: CapturedCaption): string => `${c.lang}${c.auto ? '.asr' : ''}${c.tlang ? `>${c.tlang}` : ''}`;
+
+/** The subtitles a hidden player is asked to keep, read back from its address. */
+export function captionsFromUrl(value: string | null): CapturedCaption[] {
+  if (!value) return [];
+  return value
+    .split(',')
+    .slice(0, 16)
+    .flatMap((k) => {
+      const m = /^([\w-]{2,20})(\.asr)?(?:>([\w-]{2,20}))?$/.exec(k);
+      return m ? [{ lang: m[1]!, ...(m[2] ? { auto: true } : {}), ...(m[3] ? { tlang: m[3] } : {}) }] : [];
+    });
+}
+
 export interface YouTubeInfo {
   id: string;
   title: string;
@@ -72,8 +90,10 @@ export function hiddenPlayerUrl(o: {
   session?: number;
   from?: number;
   part?: { start: number; end: number };
-  /** Subtitles to show while it plays, so that Grabby keeps them. */
-  captions?: { lang: string; auto?: boolean };
+  /** Subtitles to show while it plays (one after the other), so that Grabby keeps them. */
+  captions?: CapturedCaption[];
+  /** No faster than this many times the normal speed (a speed limit is set). */
+  maxRate?: number;
 }): string {
   const q = new URLSearchParams({
     autoplay: '0',
@@ -90,16 +110,14 @@ export function hiddenPlayerUrl(o: {
     gya: o.acodec,
   });
   if (o.session) q.set('gys', String(o.session));
-  const from = Math.floor(o.from ?? o.part?.start ?? 0);
+  const from = Math.floor(o.from ?? (o.part ? Math.max(0, o.part.start - PART_LEAD) : 0));
   // The player's own "start" parameter: it begins there, nothing before is loaded.
   if (from > 0) q.set('start', String(from));
   if (o.part) {
     q.set('gyb', String(o.part.start));
     q.set('gye', String(o.part.end));
   }
-  if (o.captions) {
-    q.set('gysl', o.captions.lang);
-    if (o.captions.auto) q.set('gysk', 'asr');
-  }
+  if (o.captions?.length) q.set('gysc', o.captions.map(captionKey).join(','));
+  if (o.maxRate) q.set('gyr', String(o.maxRate));
   return `https://www.youtube.com/embed/${encodeURIComponent(o.videoId)}?${q}`;
 }

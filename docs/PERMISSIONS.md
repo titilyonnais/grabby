@@ -16,7 +16,7 @@ comme protégée, et aucun téléchargement n'est proposé.
 | `offscreen` | Une page invisible de l'extension télécharge les morceaux des flux et lance ffmpeg.wasm (inclus dans l'extension) pour produire le format choisi, réduire l'image si une qualité plus petite est demandée, et héberger le lecteur YouTube caché. |
 | `storage` | Réglages, historique (50 entrées au plus, effaçable), vidéos repérées par onglet (mémoire de session) et téléchargements en cours, pour les reprendre après un redémarrage. La popup garde aussi le thème choisi pour s'ouvrir sans clignoter. |
 | `unlimitedStorage` | Les morceaux d'un téléchargement sont rangés dans la base locale de l'extension au fur et à mesure (c'est ce qui permet la pause et la reprise), comme les données du mode capture avant l'assemblage ; une longue vidéo dépasse le quota par défaut. Tout est effacé dès que le fichier est enregistré ou le téléchargement annulé. |
-| `alarms` | Réveiller Grabby pour retenter un téléchargement coupé par une perte de connexion (après 3 s, 6 s… jusqu'à 2 min), même si le navigateur a mis l'extension en veille entre-temps. |
+| `alarms` | Réveiller Grabby pour retenter un téléchargement coupé par une perte de connexion (après 3 s, 6 s… jusqu'à 2 min), même si le navigateur a mis l'extension en veille entre-temps ; lancer les téléchargements en attente quand s'ouvre la plage horaire choisie ; et, seulement si tu as activé « Prévenir des nouvelles versions », vérifier une fois par jour la dernière version publiée. |
 | `contextMenus` | Les entrées du clic droit : « Télécharger cette vidéo avec Grabby » sur une vidéo, « Télécharger la vidéo de la page avec Grabby » ailleurs sur la page. |
 | Raccourcis clavier (`commands`, sans autorisation) | Alt+Maj+G ouvre Grabby, Alt+Maj+D télécharge la vidéo principale de la page. Modifiables dans `chrome://extensions/shortcuts`. |
 | Scripts dans les pages | `scanner.js` liste les `<video>` (et leurs fichiers de sous-titres `<track>`), le titre et la miniature de la page et les fichiers vidéo qu'elle cite (12 au plus) ; il affiche aussi la bulle « Téléchargement terminé ». `hook.js` repère l'usage d'un DRM et suit les tampons Media Source pour pouvoir enregistrer la lecture quand — et seulement quand — tu le demandes. Dans le lecteur YouTube caché, il active les sous-titres que tu as choisis et garde ce que le lecteur charge, sans autre requête. |
@@ -26,5 +26,11 @@ comme protégée, et aucun téléchargement n'est proposé.
 
 **Code distant** : aucun. Tout le JavaScript et le WebAssembly sont dans l'extension, et le
 code n'est pas minifié.
+
+**Requêtes de Grabby lui-même** : aucune par défaut. Si tu actives « Prévenir des
+nouvelles versions », une requête par jour vers
+`https://api.github.com/repos/titilyonnais/grabby/releases/latest` (sans cookie ni
+identifiant), pour connaître le numéro de la dernière version. Rien n'est téléchargé ni
+installé : le bandeau donne seulement le lien vers la page de la version.
 
 **Données** : rien n'est collecté ni envoyé (voir [PRIVACY.md](PRIVACY.md)).

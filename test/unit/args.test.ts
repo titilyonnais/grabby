@@ -45,7 +45,7 @@ describe('muxAttempts', () => {
 
   it('extracts mp3 from the video when there is no separate audio', () => {
     const [only] = muxAttempts({ video: '/j/v.ts' }, 'mp3', true, '/j/out');
-    expect(only!.args).toEqual(['-y', '-i', '/j/v.ts', '-vn', '-map', '0:a:0', '-c:a', 'libmp3lame', '-q:a', '2', '/j/out.mp3']);
+    expect(only!.args).toEqual(['-y', '-i', '/j/v.ts', '-vn', '-map', '0:a:0', '-c:a', 'libmp3lame', '-q:a', '2', '-id3v2_version', '3', '/j/out.mp3']);
   });
 
   it.each([

@@ -5,6 +5,7 @@ import { Icon } from './components/Icon';
 import { isActive } from './components/JobBar';
 import { MediaCard } from './components/MediaCard';
 import { OtherJobs } from './components/OtherJobs';
+import { Playlist, UpdateNotice } from './components/Playlist';
 import { BulkBar, bulkable, BulkStart } from './components/Bulk';
 import type { OutputFormat } from '../shared/plan';
 import { FirstRun, HistoryList, StateCard } from './components/Panels';
@@ -202,11 +203,15 @@ export function App() {
               ) : (
                 <>
                   {!settings!.firstRunAck && <FirstRun onOk={() => send({ type: 'settings', patch: { firstRunAck: true } })} />}
+                  {state.update && <UpdateNotice release={state.update} send={send} />}
                   <OtherJobs jobs={elsewhere} send={send} />
+                  {state.ytList && !state.blocked && <Playlist key={state.ytList.title} list={state.ytList} preferred={prefs} send={send} />}
                   {state.blocked === 'restricted' ? (
                     <StateCard icon="lock" title={t('restrictedTitle')} body={t('restrictedBody')} />
                   ) : !items.length ? (
-                    <StateCard icon="film" title={t('emptyTitle')} body={t('emptyBody')} />
+                    state.ytList ? null : (
+                      <StateCard icon="film" title={t('emptyTitle')} body={t('emptyBody')} />
+                    )
                   ) : (
                     <section class="list" aria-label={t('tabPage')}>
                       {many.length > 1 && !picked && <BulkStart count={many.length} onStart={() => setPicking(many.map((i) => i.id))} />}

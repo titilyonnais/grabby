@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'preact/hooks';
+import { audioChoices } from '../../shared/audio';
 import { canClip } from '../../shared/clip';
 import { formatDuration } from '../../shared/format';
 import { SUB_CODEC } from '../../shared/subtitles';
-import { AUDIO_FORMATS, FORMAT_NAMES, isAudioFormat, videoFormatsFor } from '../../shared/formats';
-import type { PopupToBg } from '../../shared/messages';
+import { AUDIO_FORMATS, CHAPTER_FORMATS, FORMAT_NAMES, IMAGE_FORMATS, isAudioFormat, isImageFormat, videoFormatsFor } from '../../shared/formats';
+import type { DownloadExtra, PopupToBg } from '../../shared/messages';
 import type { AudioFormat, Clip, OutputFormat, VideoFormat } from '../../shared/plan';
 import { canShrink, scaleChoices, SHRUNK_FORMATS } from '../../shared/scale';
 import type { Job, MediaItem, Variant } from '../../shared/types';
@@ -12,7 +13,10 @@ import { useUnfold } from '../unfold';
 import { Icon } from './Icon';
 import { canPause, isActive, JobBar } from './JobBar';
 import { Select, type SelectOption } from './Select';
-import { Trim } from './Trim';
+import { Moment, Trim } from './Trim';
+
+/** The longest animated picture (GIF, WebP), in seconds. */
+const MAX_ANIMATION = 30;
 
 interface Props {
   item: MediaItem;
@@ -83,17 +87,28 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
       ? preferred.video
       : (videoFormats[0] ?? preferred.audio);
   const [format, setFormat] = useState<OutputFormat>(initial);
-  // "Couper un extrait": the panel, and the part chosen in it (null: the whole video).
+  // "Couper un extrait": the panel, and the parts chosen in it (null: the whole video), joined
+  // in one file or saved one by one.
   const [trimming, setTrimming] = useState(false);
-  const [clip, setClip] = useState<Clip | null>(null);
+  const [parts, setParts] = useState<Clip[] | null>(null);
+  const [joined, setJoined] = useState(true);
   const clippable = canClip(item);
-  // Subtitles: none, or one of the stream's tracks, put in the video or saved next to it.
-  const [subsId, setSubsId] = useState('');
+  // Subtitles: none, or some of the stream's tracks, put in the video or saved next to it.
+  const [subsIds, setSubsIds] = useState<string[]>([]);
   const [subsApart, setSubsApart] = useState(false);
-  const cut = trimming && clip && item.duration && (clip.start > 0 || clip.end < Math.floor(item.duration)) ? clip : null;
+  // Sound tracks (other languages), when the stream has several: null, its own choice.
+  const choices = audioChoices(item);
+  const [audioIds, setAudioIds] = useState<string[] | null>(null);
+  const [chapters, setChapters] = useState(true);
+  // A still picture: where in the video.
+  const [at, setAt] = useState(0);
+  const image = isImageFormat(format);
+  const whole = (c: Clip) => !!item.duration && c.start <= 0 && c.end >= Math.floor(item.duration);
+  const chosen = trimming && parts ? parts.filter((c) => !whole(c) || parts.length > 1) : [];
+  const cut = chosen.length === 1 ? chosen[0]! : null;
   // A format the chosen quality can't go in (WebM for a shrunk picture, MOV back on a VP9
   // source): back to the preferred one, so what is shown is what gets sent.
-  const formatOk = isAudioFormat(format) || videoFormats.includes(format as VideoFormat);
+  const formatOk = isAudioFormat(format) || (isImageFormat(format) && !item.audioOnly) || videoFormats.includes(format as VideoFormat);
   useEffect(() => {
     if (!formatOk) setFormat(videoFormats.includes(preferred.video) ? preferred.video : (videoFormats[0] ?? preferred.audio));
   }, [formatOk]);
@@ -104,8 +119,9 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
   // Size of what will actually be saved, when the source tells (YouTube: per quality and format).
   const wholeSize =
     (!audio && scale && shrunkSize(scale)) || (!audio && variant && variantSize(variant, format, item.duration)) || item.size;
-  // A part weighs its share of the whole.
-  const shownSize = cut && wholeSize ? Math.round((wholeSize * (cut.end - cut.start)) / item.duration!) : wholeSize;
+  // Parts weigh their share of the whole.
+  const kept = chosen.reduce((n, c) => n + (c.end - c.start), 0);
+  const shownSize = image ? undefined : chosen.length && wholeSize ? Math.round((wholeSize * kept) / item.duration!) : wholeSize;
   // YouTube: a hidden player records it, the user keeps watching — it's a plain download for them.
   const hidden = !!item.ytId;
   const blocked = item.protection !== 'none' || item.live;
@@ -119,7 +135,7 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
       const bytes = variantSize(v, format, item.duration);
       return { value: v.id, label: v.label, ...(bytes ? { detail: size(bytes) } : {}), ...(shrinkTo.length ? { group: t('quality_group_source') } : {}) };
     }),
-    ...shrinkTo.map((lines) => {
+    ...(image ? [] : shrinkTo).map((lines) => {
       const bytes = shrunkSize(lines);
       return { value: `${SCALE_PREFIX}${lines}`, label: `${lines}p`, detail: bytes ? `≈ ${size(bytes)}` : t('quality_shrunk'), group: t('quality_group_shrink') };
     }),
@@ -130,35 +146,78 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
       return { value: f, label: FORMAT_NAMES[f], detail: bytes ? size(bytes) : t(`fmt_${f}`), group: t('fmt_group_video') };
     }),
     ...AUDIO_FORMATS.map((f) => ({ value: f, label: FORMAT_NAMES[f], detail: t(`fmt_${f}`), group: t('fmt_group_audio') })),
+    // Pictures made from the video.
+    ...(item.audioOnly ? [] : IMAGE_FORMATS.map((f) => ({ value: f, label: FORMAT_NAMES[f], detail: t(`fmt_${f}`), group: t('fmt_group_image') }))),
   ];
 
-  const subsOffered = !!item.subtitles?.length && !audio;
+  const subsOffered = !!item.subtitles?.length && !audio && !image;
   // MPEG-TS and AVI hold no subtitles: they can only go next to the video.
   const subsMustApart = !SUB_CODEC[scale && format === 'webm' ? 'mp4' : format];
-  const subs = subsOffered && subsId ? { id: subsId, separate: subsApart || subsMustApart } : null;
-  const subsOptions: SelectOption<string>[] = [
-    { value: '', label: t('subsNone') },
-    ...(item.subtitles ?? []).map((s) => {
-      const name = s.label === s.lang ? languageName(s.lang) : s.label;
-      return {
-        value: s.id,
-        label: s.forced ? `${name} (${t('subsForced')})` : name,
-        ...(s.lang && s.lang !== name ? { detail: s.lang } : {}),
-      };
-    }),
-  ];
+  const subs = subsOffered && subsIds.length ? { ids: subsIds, separate: subsApart || subsMustApart } : null;
+  const subsOptions: SelectOption<string>[] = (item.subtitles ?? []).map((s) => {
+    const name = s.label === s.lang ? languageName(s.lang) : s.label;
+    // Translated by YouTube: the language it becomes, from the one it comes from.
+    const label = s.tlang ? t('subsTranslated', [languageName(s.tlang), name]) : s.forced ? `${name} (${t('subsForced')})` : name;
+    return { value: s.id, label, ...(s.tlang ? { detail: s.tlang } : s.lang && s.lang !== name ? { detail: s.lang } : {}) };
+  });
+  const subsSummary = !subsIds.length
+    ? t('subsNone')
+    : subsIds.length === 1
+      ? (subsOptions.find((o) => o.value === subsIds[0])?.label ?? '')
+      : t('subsCount', String(subsIds.length));
+  const toggleSub = (id: string) => setSubsIds((l) => (l.includes(id) ? l.filter((x) => x !== id) : [...l, id]));
 
-  const start = () =>
-    send({
-      type: 'download',
+  // Sound tracks: the stream's default first when nothing was chosen.
+  const audiosOffered = choices.length > 1 && !image;
+  const audioSel = audioIds ?? [(choices.find((c) => c.isDefault) ?? choices[0])?.id ?? ''];
+  const audioOptions: SelectOption<string>[] = choices.map((c) => ({
+    value: c.id,
+    label: c.lang && (c.label === c.lang || !c.label) ? languageName(c.lang) : c.label,
+    ...(c.lang ? { detail: c.lang } : {}),
+  }));
+  const audioSummary =
+    audioSel.length === 1 ? (audioOptions.find((o) => o.value === audioSel[0])?.label ?? '') : t('audioCount', String(audioSel.length));
+  // One stays: the sound of the video can't be taken away here.
+  const toggleAudio = (id: string) => setAudioIds(audioSel.includes(id) ? (audioSel.length > 1 ? audioSel.filter((x) => x !== id) : audioSel) : [...audioSel, id]);
+  const chaptersOffered = !!item.chapters?.length && !image && CHAPTER_FORMATS.has(format);
+
+  const start = () => {
+    const base = {
+      type: 'download' as const,
       mediaId: item.id,
-      mode: audio ? 'audio' : 'video',
+      mode: audio ? ('audio' as const) : ('video' as const),
       ...(!audio && variantId ? { variantId } : {}),
-      ...(!audio && scale ? { scale } : {}),
-      ...(cut ? { clip: cut } : {}),
-      ...(subs ? { subtitles: subs } : {}),
       format,
-    });
+    };
+    const extra: DownloadExtra = {
+      ...(!audio && !image && scale ? { scale } : {}),
+      ...(subs ? { subtitles: subs } : {}),
+      ...(audiosOffered && audioIds ? { audios: audio ? audioSel.slice(0, 1) : audioSel } : {}),
+      ...(chaptersOffered && !chapters ? { noChapters: true } : {}),
+    };
+    if (format === 'jpg') return send({ ...base, at });
+    if (image) return send({ ...base, clip: parts?.[0] ?? { start: 0, end: Math.min(item.duration ?? 5, 5) } });
+    // Several parts: one file with all of them, or one file each.
+    if (chosen.length > 1 && !joined) {
+      for (const clip of chosen) send({ ...base, ...extra, clip });
+      return;
+    }
+    send({ ...base, ...extra, ...(chosen.length > 1 ? { parts: chosen } : cut ? { clip: cut } : {}) });
+  };
+  const buttonLabel =
+    format === 'jpg'
+      ? t('saveStill')
+      : image
+        ? t('saveAnimation')
+        : chosen.length > 1
+          ? t(joined ? 'downloadParts' : 'downloadPartsApart', String(chosen.length))
+          : item.kind === 'capture' && !hidden
+            ? cut
+              ? t('captureClip')
+              : t('capture')
+            : cut
+              ? t('downloadClip')
+              : t('download');
 
   return (
     <article
@@ -272,10 +331,13 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
                   <Select label={t('formatLabel')} value={format} options={formatOptions} onChange={setFormat} />
                 </div>
               )}
+              {!showJob && audiosOffered && (
+                <Select label={t('audioLabel')} value="" values={audioSel} summary={audioSummary} options={audioOptions} onChange={toggleAudio} />
+              )}
               {!showJob && subsOffered && (
                 <div class="subs">
-                  <Select label={t('subsLabel')} value={subsId} options={subsOptions} onChange={setSubsId} />
-                  {subsId && (
+                  <Select label={t('subsLabel')} value="" values={subsIds} summary={subsSummary} options={subsOptions} onChange={toggleSub} />
+                  {subsIds.length > 0 && (
                     <label class="subs__apart">
                       <span>{t('subsApart')}</span>
                       <input
@@ -288,16 +350,35 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
                       />
                     </label>
                   )}
-                  {subsId && subsMustApart && <p class="hint">{t('subsApartHint')}</p>}
+                  {subsIds.length > 0 && subsMustApart && <p class="hint">{t('subsApartHint')}</p>}
                 </div>
               )}
-              {!showJob && clippable && (
+              {!showJob && chaptersOffered && (
+                <label class="option">
+                  <span>
+                    {t('chaptersLabel')}
+                    <span class="option__detail">{t('chaptersCount', String(item.chapters!.length))}</span>
+                  </span>
+                  <input class="switch" type="checkbox" role="switch" checked={chapters} onChange={(e) => setChapters(e.currentTarget.checked)} />
+                </label>
+              )}
+              {!showJob && format === 'jpg' && <Moment duration={item.duration ?? 1} at={at} onChange={setAt} />}
+              {!showJob && image && format !== 'jpg' && clippable && (
+                <Trim key="animation" duration={item.duration!} parts={parts} onChange={setParts} single={{ max: MAX_ANIMATION }} />
+              )}
+              {!showJob && clippable && !image && (
                 <button class="trim-toggle" aria-expanded={trimming} onClick={() => setTrimming((v) => !v)}>
                   <Icon name={trimming ? 'close' : 'scissors'} size={16} />
                   {trimming ? t('trimWhole') : t('trimOpen')}
                 </button>
               )}
-              {!showJob && clippable && trimming && <Trim duration={item.duration!} clip={clip} onChange={setClip} />}
+              {!showJob && clippable && trimming && !image && <Trim key="parts" duration={item.duration!} parts={parts} onChange={setParts} />}
+              {!showJob && chosen.length > 1 && !image && (
+                <label class="option">
+                  <span>{t('partsJoined')}</span>
+                  <input class="switch" type="checkbox" role="switch" checked={joined} onChange={(e) => setJoined(e.currentTarget.checked)} />
+                </label>
+              )}
               {showJob ? (
                 <>
                   <JobBar job={job} send={send} />
@@ -305,13 +386,14 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
                 </>
               ) : (
                 <button class="btn btn--primary btn--wide" onClick={start}>
-                  <Icon name={item.kind === 'capture' && !hidden ? 'record' : audio ? 'audio' : 'download'} />
-                  {item.kind === 'capture' && !hidden ? (cut ? t('captureClip') : t('capture')) : cut ? t('downloadClip') : t('download')}
+                  <Icon name={image ? 'image' : item.kind === 'capture' && !hidden ? 'record' : audio ? 'audio' : 'download'} />
+                  {buttonLabel}
                 </button>
               )}
               {item.kind === 'capture' && !showJob && <p class="hint">{t(hidden ? 'hiddenHint' : 'captureHint')}</p>}
-              {scale && !audio && !showJob && <p class="hint">{t('shrinkHint')}</p>}
-              {cut && !audio && !showJob && <p class="hint">{t('trimHint')}</p>}
+              {scale && !audio && !image && !showJob && <p class="hint">{t('shrinkHint')}</p>}
+              {chosen.length > 0 && !audio && !image && !showJob && <p class="hint">{t('trimHint')}</p>}
+              {image && !showJob && <p class="hint">{t(format === 'jpg' ? 'stillHint' : 'animationHint')}</p>}
             </>
           )}
         </div>

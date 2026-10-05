@@ -1,5 +1,41 @@
 import type { HistoryEntry, Job, JobMode, JobStatus, MediaItem } from './types';
-import type { Clip, ErrorCode, OutputFormat, Plan, SubsChoice, VideoFormat } from './plan';
+import type { Chapter, Clip, ErrorCode, OutputFormat, Plan, SubsChoice, VideoFormat } from './plan';
+import type { Release } from './release';
+import type { YtList } from './ytlist';
+
+/** What a download asks for besides the quality and the format. */
+export interface DownloadExtra {
+  /** A smaller quality made by shrinking the picture (e.g. 360 for 360p). */
+  scale?: number;
+  /** Only this part of the video. */
+  clip?: Clip;
+  /** Several parts joined in one file. */
+  parts?: Clip[];
+  subtitles?: SubsChoice;
+  /** Sound tracks (other languages), the main one first. */
+  audios?: string[];
+  /** Leave the chapters out. */
+  noChapters?: boolean;
+  /** A still picture: where in the video. */
+  at?: number;
+}
+
+/** What a download asks for besides the quality and the format. */
+export interface DownloadExtra {
+  /** A smaller quality made by shrinking the picture (e.g. 360 for 360p). */
+  scale?: number;
+  /** Only this part of the video. */
+  clip?: Clip;
+  /** Several parts joined in one file. */
+  parts?: Clip[];
+  subtitles?: SubsChoice;
+  /** Sound tracks (other languages), the main one first. */
+  audios?: string[];
+  /** Leave the chapters out. */
+  noChapters?: boolean;
+  /** A still picture: where in the video. */
+  at?: number;
+}
 import type { Settings } from './settings';
 
 /** A <video> element found in a frame by the scanner. */
@@ -13,6 +49,8 @@ export interface PageVideo {
   isProtected: boolean;
   /** Its subtitle files (<track kind="subtitles|captions" src>). */
   tracks?: { src: string; lang?: string; label?: string; isDefault?: boolean }[];
+  /** Its chapters (<track kind="chapters">, once the browser has read it). */
+  chapters?: Chapter[];
   poster?: string;
   muted?: boolean;
   loop?: boolean;
@@ -30,6 +68,12 @@ export interface YtInfo {
   qualities: { label: string; height: number; quality: string; avc: boolean; vp9: boolean; sizes: Partial<Record<VideoFormat, number>> }[];
   /** Its subtitles: the player's own list (`auto`: made by speech recognition). */
   captions?: { url: string; lang: string; name: string; auto: boolean }[];
+  /** Languages YouTube can translate its subtitles into. */
+  translations?: string[];
+  /** Its channel. */
+  author?: string;
+  /** Chapters its description lists. */
+  chapters?: Chapter[];
 }
 
 export interface PageInfo {
@@ -46,6 +90,8 @@ export interface PageInfo {
   declared?: string[];
   /** YouTube player metadata. */
   youtube?: { id: string; title: string; thumbnail?: string; duration?: number; player?: YtInfo };
+  /** A YouTube playlist or channel: the videos it lists. */
+  ytList?: YtList;
 }
 
 /* ---------- content script → service worker ---------- */
@@ -82,11 +128,17 @@ export interface PopupState {
   settings: Settings;
   /** The browser asks where to save every file (its own setting, which wins over ours). */
   browserAsks?: boolean;
+  /** A newer Grabby is out (only when the user asked to be told). */
+  update?: Release;
+  /** The YouTube playlist or channel on screen. */
+  ytList?: YtList;
 }
 
 export type PopupToBg =
   | { type: 'subscribe'; tabId: number }
-  | { type: 'download'; mediaId: string; variantId?: string; mode: JobMode; format?: OutputFormat; scale?: number; clip?: Clip; subtitles?: SubsChoice }
+  | ({ type: 'download'; mediaId: string; variantId?: string; mode: JobMode; format?: OutputFormat } & DownloadExtra)
+  /** Every video of the playlist (or channel) on screen, in this quality (none: the sound only). */
+  | { type: 'download-list'; quality: string; mode: JobMode; format?: OutputFormat }
   | { type: 'cancel'; jobId: string }
   | { type: 'pause'; jobId: string }
   | { type: 'resume'; jobId: string }
@@ -94,6 +146,10 @@ export type PopupToBg =
   | { type: 'open-browser-downloads' }
   | { type: 'finish-capture'; jobId: string }
   | { type: 'retry'; jobId: string }
+  /** A download waiting for its time window (or Wi-Fi) starts anyway. */
+  | { type: 'start-now'; jobId: string }
+  /** Hides the "new version" notice until the next one. */
+  | { type: 'update-seen'; version: string }
   | { type: 'dismiss'; jobId: string }
   | { type: 'show'; downloadId: number }
   | { type: 'clear-history' }
@@ -104,14 +160,17 @@ export type BgToPopup = { type: 'state'; state: PopupState };
 
 /* ---------- service worker ⇄ offscreen ---------- */
 export type BgToOffscreen =
-  | { target: 'offscreen'; type: 'run'; jobId: string; plan: Plan }
+  | { target: 'offscreen'; type: 'run'; jobId: string; plan: Plan; rate?: number }
+  /** The speed limit changed (bytes per second, 0: none). */
+  | { target: 'offscreen'; type: 'rate'; rate: number }
   | { target: 'offscreen'; type: 'cancel'; jobId: string }
   /** Stops fetching, keeping what is stored. */
   | { target: 'offscreen'; type: 'pause'; jobId: string }
   | { target: 'offscreen'; type: 'release'; jobId: string }
   /** Plays a YouTube video in a hidden player, recorded by the page hook. */
   | { target: 'offscreen'; type: 'yt-start'; jobId: string; src: string }
-  | { target: 'offscreen'; type: 'yt-stop'; jobId: string }
+  /** `hold`: paused; the player is left a moment so what it recorded last can be stored. */
+  | { target: 'offscreen'; type: 'yt-stop'; jobId: string; hold?: boolean }
   | { target: 'offscreen'; type: 'ping' };
 
 export type OffscreenToBg =
@@ -124,7 +183,7 @@ export type OffscreenToBg =
       bytes: number;
       speed: number;
     }
-  | { target: 'bg'; type: 'job-ready'; jobId: string; blobUrl: string; ext: OutputFormat; size: number; /** An .srt to save next to it. */ subtitles?: string }
+  | { target: 'bg'; type: 'job-ready'; jobId: string; blobUrl: string; ext: OutputFormat; size: number; /** .srt files to save next to it. */ subtitles?: { srt: string; lang?: string }[] }
   | { target: 'bg'; type: 'job-error'; jobId: string; error: ErrorCode }
   | { target: 'bg'; type: 'job-paused'; jobId: string }
   /** capture-sink → SW: may this job write capture chunks? */

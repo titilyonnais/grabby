@@ -20,6 +20,12 @@ interface Props<T extends string> {
   disabled?: boolean;
   /** The label is already written next to the list (settings). */
   hideLabel?: boolean;
+  /**
+   * Several choices at once: the ones ticked. Picking one ticks or unticks it (`onChange`
+   * gets it) and the list stays open; `summary` is what the button shows.
+   */
+  values?: T[];
+  summary?: string;
 }
 
 interface Place {
@@ -38,7 +44,9 @@ const MENU_OUT_MS = 170;
  * Drop-down list styled like the rest of the popup (a native <select> opens an OS menu
  * that ignores the theme). Keyboard: arrows, Home/End, Enter, Escape, type-ahead free.
  */
-export function Select<T extends string>({ label, value, options, onChange, disabled, hideLabel }: Props<T>) {
+export function Select<T extends string>({ label, value, options, onChange, disabled, hideLabel, values, summary }: Props<T>) {
+  const multi = values !== undefined;
+  const isOn = (v: T) => (multi ? values.includes(v) : v === value);
   const [open, setOpen] = useState(false);
   // Closed but still folding away: drawn, out of reach (no clicks, hidden from assistive tech).
   const [leaving, setLeaving] = useState(false);
@@ -51,24 +59,28 @@ export function Select<T extends string>({ label, value, options, onChange, disa
   // The list scrolls to the active option only when the keyboard moved it: following the
   // mouse would scroll under it, pick the next option, scroll again… down to the end.
   const byKey = useRef(true);
-  const current = options.find((o) => o.value === value) ?? options[0];
+  const current = multi ? { value: summary ?? '', label: summary ?? '' } : (options.find((o) => o.value === value) ?? options[0]);
 
   const show = () => {
     if (disabled || !btn.current) return;
     const r = btn.current.getBoundingClientRect();
-    const vh = window.innerHeight;
-    const below = vh - r.bottom - 10;
-    const above = r.top - 10;
+    // The list is "fixed", but the popup is drawn on its own layer (.app): that is what it is
+    // placed in, which is the window only when both are the same size.
+    const box = btn.current.closest('.app')?.getBoundingClientRect() ?? new DOMRect(0, 0, window.innerWidth, window.innerHeight);
+    const top = Math.max(0, box.top);
+    const bottom = Math.min(window.innerHeight, box.bottom);
+    const below = bottom - r.bottom - 10;
+    const above = r.top - top - 10;
     const groups = new Set(options.map((o) => o.group).filter(Boolean)).size;
     const wanted = Math.min(options.length * 38 + groups * 30 + 12, 340);
     const width = Math.max(r.width, 230);
-    const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+    const left = Math.max(8, Math.min(r.left - box.left, Math.min(window.innerWidth, box.right) - box.left - width - 8));
     setPlace(
       below >= wanted || below >= above
-        ? { left, width, top: r.bottom + 6, maxHeight: below - 6 }
-        : { left, width, bottom: vh - r.top + 6, maxHeight: above - 6 },
+        ? { left, width, top: r.bottom - box.top + 6, maxHeight: below - 6 }
+        : { left, width, bottom: box.bottom - r.top + 6, maxHeight: above - 6 },
     );
-    setActive(Math.max(0, options.findIndex((o) => o.value === value)));
+    setActive(Math.max(0, options.findIndex((o) => isOn(o.value))));
     byKey.current = true;
     clearTimeout(leave.current);
     setLeaving(false);
@@ -89,7 +101,8 @@ export function Select<T extends string>({ label, value, options, onChange, disa
   const choose = (i: number) => {
     const o = options[i];
     if (o) onChange(o.value);
-    close();
+    // Several choices: the list stays open for the next one.
+    if (!multi) close();
   };
 
   useEffect(() => {
@@ -180,6 +193,7 @@ export function Select<T extends string>({ label, value, options, onChange, disa
           class={`menu${place.bottom !== undefined ? ' menu--up' : ''}${open ? '' : ' menu--out'}`}
           role="listbox"
           aria-label={label}
+          aria-multiselectable={multi || undefined}
           aria-hidden={!open}
           tabIndex={-1}
           aria-activedescendant={`${id}-${active}`}
@@ -201,7 +215,7 @@ export function Select<T extends string>({ label, value, options, onChange, disa
               <li
                 id={`${id}-${i}`}
                 role="option"
-                aria-selected={o.value === value}
+                aria-selected={isOn(o.value)}
                 class={`menu__item${i === active ? ' menu__item--active' : ''}`}
                 onPointerMove={() => {
                   byKey.current = false;
@@ -209,7 +223,7 @@ export function Select<T extends string>({ label, value, options, onChange, disa
                 }}
                 onClick={() => choose(i)}
               >
-                <span class="menu__check">{o.value === value && <Icon name="check" size={15} />}</span>
+                <span class={`menu__check${multi ? ' menu__check--box' : ''}${multi && isOn(o.value) ? ' menu__check--on' : ''}`}>{isOn(o.value) && <Icon name="check" size={15} />}</span>
                 <span class="menu__label">{o.label}</span>
                 {o.detail && <span class="menu__detail">{o.detail}</span>}
               </li>

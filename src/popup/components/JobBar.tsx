@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { PopupToBg } from '../../shared/messages';
 import type { Job } from '../../shared/types';
+import { hhmm, minutesOf } from '../../shared/schedule';
 import { size, t } from '../i18n';
 import { Icon } from './Icon';
 
@@ -31,6 +32,11 @@ export function label(job: Job): string {
       if (job.pausedBy === 'restart') return t('st_resuming');
       return wait > 0 ? t('st_offline', String(wait)) : t('st_retrying');
     }
+    case 'queued':
+      // Waiting for the time window chosen in the settings, or for Wi-Fi.
+      if (job.held?.why === 'schedule') return t('st_heldUntil', hhmm(minutesOf(new Date(job.held.until))));
+      if (job.held?.why === 'wifi') return t('st_heldWifi');
+      return t('st_queued');
     case 'downloading':
       return job.progress > 0 ? `${t('st_downloading')} ${pct}` : t('st_downloading');
     case 'capturing':
@@ -133,14 +139,15 @@ export function JobBar({ job, send, canFinish = true }: { job: Job; send: (m: Po
   const paused = job.status === 'paused';
   // A countdown to the next try for the network.
   useTick(paused && job.pausedBy === 'network');
-  const indeterminate = !paused && (job.status === 'queued' || (job.status === 'processing' && !job.scale) || job.status === 'saving' || job.progress === 0);
+  const held = job.status === 'queued' && !!job.held;
+  const indeterminate = !paused && !held && (job.status === 'queued' || (job.status === 'processing' && !job.scale) || job.status === 'saving' || job.progress === 0);
   const stats = jobStats(job);
   const text = label(job);
   return (
     <div class="job-wrap">
       <div class="job job--active">
         <div
-          class={`meter${indeterminate ? ' meter--busy' : ''}${paused ? ' meter--paused' : ''}`}
+          class={`meter${indeterminate ? ' meter--busy' : ''}${paused || held ? ' meter--paused' : ''}`}
           style={{ '--p': String(indeterminate ? 1 : job.progress) }}
           role="progressbar"
           aria-label={text}
@@ -154,7 +161,11 @@ export function JobBar({ job, send, canFinish = true }: { job: Job; send: (m: Po
             <span class="meter__label">{text}</span>
           </span>
         </div>
-        {paused ? (
+        {job.status === 'queued' && job.held ? (
+          <button class="btn btn--primary btn--icon" title={t('startNow')} aria-label={t('startNow')} onClick={() => send({ type: 'start-now', jobId: job.id })}>
+            <Icon name="play" />
+          </button>
+        ) : paused ? (
           <button class="btn btn--primary btn--icon" title={t('resume')} aria-label={t('resume')} onClick={() => send({ type: 'resume', jobId: job.id })}>
             <Icon name="play" />
           </button>

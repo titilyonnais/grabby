@@ -1,8 +1,9 @@
 import { parseDash, type DashRep } from '../parsers/dash';
 import { parseHls, type HlsMedia } from '../parsers/hls';
 import { extOf, reachableFrom } from '../parsers/url';
-import { isAudioFormat, sourceFormat } from '../shared/formats';
-import { RAW_THRESHOLD, type Clip, type ErrorCode, type OutputFormat, type Plan, type SubsChoice, type TrackPlan } from '../shared/plan';
+import { hlsRendition } from '../shared/audio';
+import { CHAPTER_FORMATS, isAudioFormat, isImageFormat, sourceFormat } from '../shared/formats';
+import { RAW_THRESHOLD, subsIds, type Clip, type ErrorCode, type OutputFormat, type Plan, type PlanSubs, type SubsChoice, type TrackPlan } from '../shared/plan';
 import { SUB_CODEC, type SubsClock } from '../shared/subtitles';
 import type { Settings } from '../shared/settings';
 import { scaleBox, scaleSource } from '../shared/scale';
@@ -31,13 +32,21 @@ export interface PlanOptions {
   clip?: Clip;
   /** Subtitles to save with the video. */
   subtitles?: SubsChoice;
+  /** Sound tracks (ids from `audioChoices`): the first is the main one, the others are added. */
+  audios?: string[];
+  /** Leave the video's chapters out. */
+  noChapters?: boolean;
+  /** Several parts of the video, joined in one file. */
+  parts?: Clip[];
+  /** A still picture (JPEG): where in the video. */
+  at?: number;
   settings: Settings;
   fetchText: (url: string) => Promise<string>;
 }
 
 const audioOut = (o: PlanOptions): OutputFormat => (isAudioFormat(o.format) ? o.format : o.settings.audioFormat);
 const videoOut = (o: PlanOptions): OutputFormat => {
-  const f = o.format && !isAudioFormat(o.format) ? o.format : o.settings.videoFormat;
+  const f = o.format && !isAudioFormat(o.format) && !isImageFormat(o.format) ? o.format : o.settings.videoFormat;
   // Shrunk pictures are H.264, which WebM can't hold.
   return scaling(o) && f === 'webm' ? 'mp4' : f;
 };
@@ -86,7 +95,8 @@ async function planHls(item: MediaItem, o: PlanOptions): Promise<Plan> {
   if (o.mode === 'audio') {
     const variant = pick(o.variantId);
     const group = item.audioTracks.filter((a) => !variant?.audioGroup || a.groupId === variant.audioGroup);
-    const audioTrack = group.find((a) => a.isDefault) ?? group[0];
+    const chosen = o.audios?.[0] ? hlsRendition(item, o.audios[0], variant?.audioGroup) : undefined;
+    const audioTrack = chosen ?? group.find((a) => a.isDefault) ?? group[0];
     if (audioTrack) {
       const { track } = await hlsTrack(audioTrack.url, o.fetchText);
       return { ...common, audio: track, output: audioOut(o), raw: false, audioOnly: true };
@@ -99,10 +109,26 @@ async function planHls(item: MediaItem, o: PlanOptions): Promise<Plan> {
   const variant = chosenVariant(variants, o);
   const { track: video, media } = await hlsTrack(variant?.url ?? item.url, o.fetchText);
   let audio: TrackPlan | undefined;
-  if (variant?.audioGroup) {
+  let audioInfo: Plan['audioInfo'];
+  const audios: NonNullable<Plan['audios']> = [];
+  if (o.audios?.length) {
+    // The sound tracks chosen, in their order: the first one is the main one.
+    for (const id of o.audios) {
+      const r = hlsRendition(item, id, variant?.audioGroup);
+      if (!r) continue;
+      const { track } = await hlsTrack(r.url, o.fetchText);
+      if (!audio) {
+        audio = track;
+        audioInfo = { label: r.label, ...(r.lang ? { lang: r.lang } : {}) };
+      } else audios.push({ track, label: r.label, ...(r.lang ? { lang: r.lang } : {}) });
+    }
+  } else if (variant?.audioGroup) {
     const group = item.audioTracks.filter((a) => a.groupId === variant.audioGroup && a.url);
     const choice = group.find((a) => a.isDefault) ?? group[0];
-    if (choice) audio = (await hlsTrack(choice.url, o.fetchText)).track;
+    if (choice) {
+      audio = (await hlsTrack(choice.url, o.fetchText)).track;
+      audioInfo = { label: choice.label, ...(choice.lang ? { lang: choice.lang } : {}) };
+    }
   }
   const duration = media.duration || item.duration || 0;
   const estimatedSize = variant?.bandwidth ? Math.round((variant.bandwidth * duration) / 8) : undefined;
@@ -112,6 +138,8 @@ async function planHls(item: MediaItem, o: PlanOptions): Promise<Plan> {
     ...common,
     video,
     ...(audio ? { audio } : {}),
+    ...(audios.length && !raw ? { audios } : {}),
+    ...(audioInfo?.lang ? { audioInfo } : {}),
     ...scale,
     output: raw ? (video.container === 'ts' ? 'ts' : 'mp4') : videoOut(o),
     raw,
@@ -153,7 +181,9 @@ async function planDash(item: MediaItem, o: PlanOptions): Promise<Plan> {
   const byBw = (a: DashRep, b: DashRep) => b.bandwidth - a.bandwidth;
   const pickedId = chosenVariant(item.variants, o)?.id ?? o.variantId;
   const videoRep = mpd.video.find((r) => r.id === pickedId) ?? [...mpd.video].sort(byBw)[0];
-  const audioRep = [...mpd.audio].sort(byBw)[0];
+  // The sound tracks chosen (the first is the main one), else the best one.
+  const chosen = (o.audios ?? []).flatMap((id) => mpd.audio.filter((r) => r.id === id));
+  const audioRep = chosen[0] ?? [...mpd.audio].sort(byBw)[0];
   const common = { kind: 'stream' as const, pageUrl: item.pageUrl };
 
   if (o.mode === 'audio') {
@@ -169,10 +199,13 @@ async function planDash(item: MediaItem, o: PlanOptions): Promise<Plan> {
   const estimatedSize = Math.round(((videoRep.bandwidth + (audioRep?.bandwidth ?? 0)) * mpd.duration) / 8) || undefined;
   const scale = scaled(o, item.variants.find((v) => v.id === videoRep.id), estimatedSize);
   const raw = tooBig(estimatedSize, !!audio);
+  const audios = raw || o.mode !== 'video' ? [] : chosen.slice(1).map((r) => ({ track: dashTrack(r, item.url), label: r.lang ?? r.id, ...(r.lang ? { lang: r.lang } : {}) }));
   return {
     ...common,
     video,
     ...(audio ? { audio } : {}),
+    ...(audios.length ? { audios } : {}),
+    ...(audioRep?.lang ? { audioInfo: { lang: audioRep.lang, label: audioRep.lang } } : {}),
     ...scale,
     output: raw && webm ? 'webm' : raw ? 'mp4' : videoOut(o),
     raw,
@@ -226,6 +259,11 @@ function applyClip(plan: Plan, clip: Clip, o: PlanOptions, duration?: number): P
     out[key] = c.track;
     out.clip![key] = c.offset;
   }
+  if (plan.audios?.length) {
+    const cut = plan.audios.map((a) => ({ a, c: clipTrack(a.track, clip) }));
+    out.audios = cut.map(({ a, c }) => ({ ...a, track: c.track }));
+    out.clip!.audios = cut.map(({ c }) => c.offset);
+  }
   if (plan.estimatedSize && duration) out.estimatedSize = Math.round((plan.estimatedSize * (clip.end - clip.start)) / duration);
   // A part of a huge video can fit in memory: then it is assembled (and cut) normally.
   // Otherwise its segments are put end to end, cut to the nearest segment.
@@ -247,7 +285,10 @@ async function subsTrack(
   // YouTube: its hidden player shows them while it records, Grabby keeps what it loads.
   if (item.ytId && item.kind === 'capture') {
     if (!sub.lang) return null;
-    return { track: { segments: [], container: 'vtt' }, captured: { lang: sub.lang, ...(sub.auto ? { auto: true } : {}) } };
+    return {
+      track: { segments: [], container: 'vtt' },
+      captured: { lang: sub.lang, ...(sub.auto ? { auto: true } : {}), ...(sub.tlang ? { tlang: sub.tlang } : {}) },
+    };
   }
   if (item.kind === 'hls') {
     const parsed = parseHls(await fetchText(sub.url), sub.url);
@@ -274,41 +315,140 @@ async function subsTrack(
 
 /** Adds the chosen subtitles to a video's plan; a track that can't be read is left out. */
 async function withSubs(plan: Plan, item: MediaItem, o: PlanOptions): Promise<Plan> {
-  if (!o.subtitles || o.mode !== 'video' || plan.audioOnly) return plan;
-  const sub = item.subtitles?.find((s) => s.id === o.subtitles!.id);
-  const found = sub ? await subsTrack(item, sub.id, o.fetchText).catch(() => null) : null;
-  if (!sub || !found) return plan;
+  const ids = subsIds(o.subtitles);
+  if (!ids.length || o.mode !== 'video' || plan.audioOnly || plan.image) return plan;
+  const found: { sub: NonNullable<MediaItem['subtitles']>[number]; got: NonNullable<Awaited<ReturnType<typeof subsTrack>>> }[] = [];
+  for (const id of ids) {
+    const sub = item.subtitles?.find((s) => s.id === id);
+    const got = sub ? await subsTrack(item, sub.id, o.fetchText).catch(() => null) : null;
+    if (sub && got) found.push({ sub, got });
+  }
+  if (!found.length) return plan;
   let out = plan;
   // Putting them in a file saved as is means assembling it: fetched by Grabby, then remuxed.
-  if (plan.kind === 'file' && !o.subtitles.separate && SUB_CODEC[plan.output] && (item.size ?? 0) <= RAW_THRESHOLD) {
+  if (plan.kind === 'file' && !o.subtitles!.separate && SUB_CODEC[plan.output] && (item.size ?? 0) <= RAW_THRESHOLD) {
     out = { ...plan, raw: false };
     delete out.direct;
     delete out.fast;
   }
-  // Not assembled (saved as is, huge) or a container without subtitles: an .srt next to it.
-  const separate = o.subtitles.separate || !!out.raw || !!out.direct || !SUB_CODEC[out.output];
-  return {
-    ...out,
-    subtitles: {
-      track: found.track,
-      ...(found.clock ? { clock: found.clock } : {}),
-      ...(found.captured ? { captured: found.captured } : {}),
-      label: sub.label,
-      ...(sub.lang ? { lang: sub.lang } : {}),
-      separate,
-    },
-  };
+  // Not assembled (saved as is, huge) or a container without subtitles: .srt files next to it.
+  const separate = o.subtitles!.separate || !!out.raw || !!out.direct || !SUB_CODEC[out.output];
+  const subtitles = found.map<PlanSubs>(({ sub, got }) => ({
+    track: got.track,
+    ...(got.clock ? { clock: got.clock } : {}),
+    ...(got.captured ? { captured: got.captured } : {}),
+    // Translated: named after the language it became.
+    label: sub.tlang ? languageName(sub.tlang) : sub.label,
+    // Translated: in the language it was translated into.
+    ...(sub.tlang ? { lang: sub.tlang } : sub.lang ? { lang: sub.lang } : {}),
+    separate,
+  }));
+  return { ...out, subtitles };
+}
+
+/** The video's chapters, and what the file says it is (its cover for a sound file). */
+function withMeta(plan: Plan, item: MediaItem, o: PlanOptions): Plan {
+  let out: Plan = { ...plan };
+  const chapters = !!item.chapters?.length && !o.noChapters && !plan.image && CHAPTER_FORMATS.has(plan.output);
+  // A file saved as is gets its chapters by being fetched by Grabby, then remuxed.
+  if (chapters && plan.kind === 'file' && (plan.direct || plan.raw) && (item.size ?? 0) <= RAW_THRESHOLD) {
+    out = { ...out, raw: false };
+    delete out.direct;
+    delete out.fast;
+  }
+  if (chapters && !out.raw && !out.direct) out.chapters = item.chapters!;
+  if (!out.raw && !out.direct && !plan.image) {
+    // A video of a list: its own title, not the numbered file name.
+    const title = item.fromList?.title ?? item.title;
+    out.meta = {
+      ...(title ? { title } : {}),
+      ...(item.author ? { artist: item.author } : {}),
+      ...(plan.audioOnly && item.thumbnail ? { cover: item.thumbnail } : {}),
+    };
+  }
+  return out;
+}
+
+/** "Français" for "fr", in the browser's language (the code itself when unknown). */
+export function languageName(code: string, ui = (typeof chrome !== 'undefined' && chrome.i18n?.getUILanguage?.()) || 'en'): string {
+  try {
+    const name = new Intl.DisplayNames([ui], { type: 'language' }).of(code);
+    return name ? name[0]!.toLocaleUpperCase(ui) + name.slice(1) : code;
+  } catch {
+    return code;
+  }
+}
+
+/** The longest an animated picture can be (it holds every frame as a picture). */
+export const MAX_ANIMATION = 30;
+
+/** The part of the video a picture is made from: a second for a still, the part (or its first seconds) for an animation. */
+export function imageClip(still: boolean, at: number | undefined, clip: Clip | undefined, duration?: number): Clip {
+  const len = duration ?? 0;
+  if (still) {
+    const t = Math.max(0, Math.min(at ?? 0, len ? Math.max(0, len - 1) : Infinity));
+    return { start: t, end: t + 1 };
+  }
+  const c = clip && clip.end - clip.start >= 1 ? { start: Math.max(0, clip.start), end: len ? Math.min(len, clip.end) : clip.end } : { start: 0, end: len ? Math.min(len, 5) : 5 };
+  return { start: c.start, end: Math.min(c.end, c.start + MAX_ANIMATION) };
+}
+
+/**
+ * A picture made from the video: a still at `at` (its second is fetched), or an animation of
+ * the part (the first seconds when none is chosen). Only the picture is fetched.
+ */
+async function imagePlan(item: MediaItem, o: PlanOptions): Promise<Plan> {
+  const len = item.duration ?? 0;
+  const clip = imageClip(o.format === 'jpg', o.at ?? o.clip?.start, o.clip, item.duration);
+  const base = await planFor(item, { ...o, mode: 'video', format: o.settings.videoFormat });
+  if (base.kind === 'file' && (item.size ?? 0) > RAW_THRESHOLD) throw new PlanError('too_large');
+  const plan: Plan = { ...base, raw: false, audioOnly: false };
+  delete plan.direct;
+  delete plan.fast;
+  delete plan.scale;
+  // The sound of a stream isn't needed (a recording records it anyway).
+  if (plan.kind === 'stream' && plan.video) delete plan.audio;
+  const cut = len ? applyClip(plan, clip, o, item.duration) : { ...plan, clip: { start: clip.start, duration: clip.end - clip.start, video: clip.start } };
+  return { ...cut, output: o.format!, image: { at: clip.start } };
 }
 
 /** Turns a detected item + user choice into a concrete download plan. */
 export async function buildPlan(item: MediaItem, o: PlanOptions): Promise<Plan> {
   if (item.protection !== 'none') throw new PlanError('protected');
   if (item.live) throw new PlanError('live');
-  return withSubs(await clipped(item, o), item, o);
+  if (isImageFormat(o.format)) {
+    if (item.audioOnly) throw new PlanError('unknown');
+    return imagePlan(item, o);
+  }
+  // Several parts joined: everything from the first to the last is fetched, then cut.
+  const parts = joinedParts(o.parts, item.duration);
+  if (parts) {
+    const hull = { start: parts[0]!.start, end: parts[parts.length - 1]!.end };
+    const plan = await clipped(item, o, hull);
+    if (plan.clip) return withMeta(await withSubs({ ...plan, parts }, item, o), item, o);
+  }
+  return withMeta(await withSubs(await clipped(item, o), item, o), item, o);
 }
 
-async function clipped(item: MediaItem, o: PlanOptions): Promise<Plan> {
-  const clip = validClip(o.clip, item.duration);
+/** Parts to join: valid, in order, overlapping ones merged; fewer than two is not joining. */
+export function joinedParts(parts: Clip[] | undefined, duration?: number): Clip[] | undefined {
+  const valid = (parts ?? [])
+    .filter((p) => Number.isFinite(p.start) && Number.isFinite(p.end))
+    .map((p) => ({ start: Math.max(0, p.start), end: duration ? Math.min(duration, p.end) : p.end }))
+    .filter((p) => p.end - p.start >= 1);
+  valid.sort((a, b) => a.start - b.start);
+  const out: Clip[] = [];
+  for (const p of valid) {
+    const last = out[out.length - 1];
+    if (last && p.start <= last.end) last.end = Math.max(last.end, p.end);
+    else out.push({ ...p });
+  }
+  return out.length >= 2 ? out : undefined;
+}
+
+/** `hull`: the span of parts to join, cut even when it reaches both ends of the video. */
+async function clipped(item: MediaItem, o: PlanOptions, hull?: Clip): Promise<Plan> {
+  const clip = hull ?? validClip(o.clip, item.duration);
   if (!clip) return planFor(item, o);
   // Cutting needs ffmpeg, which works in memory: a huge file can't be cut.
   if (item.kind === 'file' && (item.size ?? 0) > RAW_THRESHOLD) throw new PlanError('too_large');

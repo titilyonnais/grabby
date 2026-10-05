@@ -1,4 +1,6 @@
-import type { Clip, OutputFormat, Plan, SubsChoice, VideoFormat } from './plan';
+import type { Chapter, Clip, OutputFormat, Plan, SubsChoice, VideoFormat } from './plan';
+import type { Hold } from './schedule';
+import type { YtEntry } from './ytlist';
 
 export type MediaKind = 'file' | 'hls' | 'dash' | 'capture';
 export type Protection = 'none' | 'drm' | 'encrypted';
@@ -39,6 +41,8 @@ export interface SubtitleTrack {
   forced?: boolean;
   /** Made by speech recognition (YouTube). */
   auto?: boolean;
+  /** Translated by YouTube into this language (from the track in `lang`). */
+  tlang?: string;
 }
 
 export interface MediaItem {
@@ -76,6 +80,12 @@ export interface MediaItem {
   formats?: VideoFormat[];
   /** YouTube video id, recorded by a hidden player. */
   ytId?: string;
+  /** Who made it (a YouTube channel): written in the file. */
+  author?: string;
+  /** Its chapters (YouTube, a page's <track kind="chapters">). */
+  chapters?: Chapter[];
+  /** A video of a YouTube playlist or channel (not the one on screen). */
+  fromList?: YtEntry;
 }
 
 export type JobStatus =
@@ -131,6 +141,14 @@ export interface Job {
   scale?: number;
   /** Only this part of the video is kept. */
   clip?: Clip;
+  /** Several parts joined in one file (`clip` is unset then). */
+  parts?: Clip[];
+  /** Sound tracks chosen (`audioChoices` ids), the main one first. */
+  audios?: string[];
+  /** The video's chapters are left out. */
+  noChapters?: boolean;
+  /** A still picture: where in the video. */
+  at?: number;
   /** Subtitles saved with the video. */
   subtitles?: SubsChoice;
   /** Recorded by a hidden player (YouTube), not the one the user watches. */
@@ -167,6 +185,14 @@ export interface Job {
   replanned?: boolean;
   /** Taken up again after a pause: links that fail now may just have expired. */
   resumed?: boolean;
+  /** Started at least once (a job that never did waits for the time window or Wi-Fi). */
+  begun?: boolean;
+  /** Waiting to start: outside the time window chosen, or for Wi-Fi. */
+  held?: Hold;
+  /** "Start now": the user didn't want to wait for the window. */
+  startNow?: boolean;
+  /** A video of a YouTube playlist or channel: enough to find it again. */
+  entry?: YtEntry;
 }
 
 export interface HistoryEntry {

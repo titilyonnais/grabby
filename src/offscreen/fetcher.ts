@@ -1,5 +1,9 @@
 import type { SegRef } from '../shared/plan';
 import { Pacer } from './pacer';
+import { RateLimiter } from '../shared/schedule';
+
+/** The speed limit chosen in the settings, shared by everything this document fetches. */
+export const limiter = new RateLimiter();
 
 export class HttpError extends Error {
   constructor(public status: number) {
@@ -53,7 +57,7 @@ const sleep = (ms: number, signal?: AbortSignal) =>
   });
 
 /** Reads a body to the end, calling `tick` on every chunk (that's what keeps it alive). */
-async function readBody(res: Response, tick: (n: number) => void): Promise<Uint8Array<ArrayBuffer>> {
+async function readBody(res: Response, tick: (n: number) => void, signal?: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
   if (!res.body) {
     const all = new Uint8Array(await res.arrayBuffer());
     tick(all.length);
@@ -69,6 +73,7 @@ async function readBody(res: Response, tick: (n: number) => void): Promise<Uint8
     const { done, value } = await reader.read();
     if (done) break;
     tick(value.length);
+    await limiter.take(value.length, signal);
     if (out && len + value.length <= out.length) out.set(value, len);
     else {
       // More than announced (or nothing announced): collect the pieces instead.
@@ -110,10 +115,14 @@ export async function fetchSegment(
     }
     // The deadline is for silence, not for the whole transfer: a big file (a whole video in
     // one piece) may take many minutes and that's fine as long as data keeps coming.
-    buf = await readBody(res, (n) => {
-      dl.arm();
-      opts.onChunk?.(n);
-    });
+    buf = await readBody(
+      res,
+      (n) => {
+        dl.arm();
+        opts.onChunk?.(n);
+      },
+      dl.signal,
+    );
   } catch (e) {
     // Report our own timeout as a network error, not as the user's cancel.
     throw dl.signal.aborted && !opts.signal?.aborted ? dl.signal.reason : e;
@@ -151,6 +160,8 @@ export async function streamFile(
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
+      dl.arm();
+      await limiter.take(value.length, dl.signal);
       dl.arm();
       received += value.length;
       await opts.onData(value as Uint8Array<ArrayBuffer>, received, total);

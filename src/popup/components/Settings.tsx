@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { buildFilename, NAME_PARTS, namePartsOf, templateOf, type NamePart } from '../../shared/filename';
 import { AUDIO_FORMATS, FORMAT_NAMES, VIDEO_FORMATS } from '../../shared/formats';
 import type { Settings as S } from '../../shared/settings';
-import { t } from '../i18n';
+import { hhmm, parseHhmm, RATE_LIMITS } from '../../shared/schedule';
+import { size, t } from '../i18n';
 import { Icon, type IconName } from './Icon';
 import { Select } from './Select';
 
@@ -79,6 +80,41 @@ function Group({ title, icon, index, children }: { title: string; icon: IconName
     </section>
   );
 }
+
+/** A time of day the user types ("22:00", "7h"); what doesn't read as one goes back as it was. */
+function HourField({ label, value, onCommit }: { label: string; value: number; onCommit: (m: number) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft === null) return;
+    const m = parseHhmm(draft);
+    setDraft(null);
+    if (m !== null) onCommit(m);
+  };
+  return (
+    <label class="hours__field">
+      <span class="hours__label">{label}</span>
+      <input
+        class="trim__time hours__time"
+        inputMode="numeric"
+        spellcheck={false}
+        value={draft ?? hhmm(value)}
+        onFocus={(e) => e.currentTarget.select()}
+        onInput={(e) => setDraft(e.currentTarget.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+          if (e.key === 'Escape') {
+            e.stopPropagation();
+            setDraft(null);
+          }
+        }}
+      />
+    </label>
+  );
+}
+
+/** Only some systems (ChromeOS, Android) tell the browser what kind of connection it has. */
+const knowsConnection = () => typeof (navigator as Navigator & { connection?: { type?: string } }).connection?.type === 'string';
 
 /** Example the file name preview is built on. */
 const SAMPLE = { site: 'exemple.fr', quality: '1080p' };
@@ -190,7 +226,7 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
       </header>
 
       {/* --n: how many groups, so closing can send them away last-first. */}
-      <div class="page__body" style={{ '--n': '4' }}>
+      <div class="page__body" style={{ '--n': '6' }}>
         <Group title={t('set_group_look')} icon="sun" index={0}>
           <div class="row-setting">
             <span class="setting__label">{t('set_theme')}</span>
@@ -250,6 +286,36 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
 
         <Group title={t('set_group_end')} icon="check" index={3}>
           <Toggle label={t('set_notify')} hint={t('set_notify_hint')} checked={settings.notify} onChange={(notify) => onChange({ notify })} />
+        </Group>
+
+        <Group title={t('set_group_when')} icon="clock" index={4}>
+          <Toggle label={t('set_schedule')} hint={t('set_schedule_hint')} checked={settings.scheduleOn} onChange={(scheduleOn) => onChange({ scheduleOn })} />
+          {settings.scheduleOn && (
+            <div class="hours" role="group" aria-label={t('set_schedule')}>
+              <HourField label={t('set_schedule_from')} value={settings.scheduleFrom} onCommit={(scheduleFrom) => onChange({ scheduleFrom })} />
+              <HourField label={t('set_schedule_to')} value={settings.scheduleTo} onCommit={(scheduleTo) => onChange({ scheduleTo })} />
+            </div>
+          )}
+          {knowsConnection() && <Toggle label={t('set_wifi')} hint={t('set_wifi_hint')} checked={settings.wifiOnly} onChange={(wifiOnly) => onChange({ wifiOnly })} />}
+          <div class="row-setting">
+            <span class="row-setting__text">
+              <span class="setting__label">{t('set_rate')}</span>
+              <span class="setting__hint">{t('set_rate_hint')}</span>
+            </span>
+            <span class="setting__control">
+              <Select
+                label={t('set_rate')}
+                hideLabel
+                value={String(settings.rateLimit)}
+                options={RATE_LIMITS.map((r) => ({ value: String(r), label: r ? `${size(r)}/s` : t('set_rate_none') }))}
+                onChange={(v) => onChange({ rateLimit: Number(v) })}
+              />
+            </span>
+          </div>
+        </Group>
+
+        <Group title={t('set_group_updates')} icon="gift" index={5}>
+          <Toggle label={t('set_updates')} hint={t('set_updates_hint')} checked={settings.updateCheck} onChange={(updateCheck) => onChange({ updateCheck })} />
         </Group>
 
         <p class="page__foot">

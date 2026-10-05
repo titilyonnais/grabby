@@ -1,9 +1,13 @@
-import type { AudioFormat, OutputFormat, VideoFormat } from './plan';
+import type { AudioFormat, ImageFormat, OutputFormat, VideoFormat } from './plan';
 
 /** Containers offered for a video, most compatible first. */
 export const VIDEO_FORMATS: VideoFormat[] = ['mp4', 'mkv', 'webm', 'mov', 'avi', 'ts'];
 /** Audio-only outputs: copied when the source codec fits, encoded otherwise. */
 export const AUDIO_FORMATS: AudioFormat[] = ['m4a', 'mp3', 'opus', 'ogg', 'flac', 'wav'];
+/** Pictures made from a video: a still, or an animation of a short part. */
+export const IMAGE_FORMATS: ImageFormat[] = ['jpg', 'gif', 'webp'];
+/** Containers that hold chapters (video and sound). */
+export const CHAPTER_FORMATS: ReadonlySet<string> = new Set(['mp4', 'mov', 'mkv', 'webm', 'm4a', 'mp3', 'flac', 'ogg', 'opus']);
 
 export const FORMAT_NAMES: Record<OutputFormat, string> = {
   mp4: 'MP4',
@@ -18,9 +22,13 @@ export const FORMAT_NAMES: Record<OutputFormat, string> = {
   ogg: 'OGG',
   flac: 'FLAC',
   wav: 'WAV',
+  jpg: 'JPEG',
+  gif: 'GIF',
+  webp: 'WebP',
 };
 
 export const isAudioFormat = (f: string | undefined): f is AudioFormat => !!f && (AUDIO_FORMATS as string[]).includes(f);
+export const isImageFormat = (f: string | undefined): f is ImageFormat => !!f && (IMAGE_FORMATS as string[]).includes(f);
 export const isVideoFormat = (f: string | undefined): f is VideoFormat => !!f && (VIDEO_FORMATS as string[]).includes(f);
 
 /**

@@ -1,4 +1,5 @@
-import { isCaptionTrack, readTracks, sessionOf, type StoredChunk } from '../shared/idb';
+import { captionIndex, isCaptionTrack, readTracks, sessionOf, type StoredChunk } from '../shared/idb';
+import { storedEnd, untangle } from '../shared/mediatime';
 
 export interface CapturedTrack {
   mime: string;
@@ -31,6 +32,21 @@ function sameBytes(a: StoredChunk, b: StoredChunk): boolean {
   return true;
 }
 
+/** Where a track's stored data ends, in seconds (diagnostics): read from its last 24 MB. */
+function storedTo(mime: string, chunks: StoredChunk[]): number | undefined {
+  const init = chunks.find((c) => c.init);
+  if (!init) return undefined;
+  const tail: Uint8Array[] = [];
+  let held = 0;
+  for (let i = chunks.length - 1; i >= 0 && held < 24 * 2 ** 20; i--) {
+    if (chunks[i]!.init) break;
+    tail.unshift(new Uint8Array(chunks[i]!.data));
+    held += chunks[i]!.data.byteLength;
+  }
+  const end = storedEnd(mime, new Uint8Array(init.data), tail);
+  return end === undefined ? undefined : Math.round(end * 100) / 100;
+}
+
 function concat(chunks: StoredChunk[]): Uint8Array {
   const total = chunks.reduce((n, c) => n + c.data.byteLength, 0);
   const out = new Uint8Array(total);
@@ -58,9 +74,11 @@ export async function assembleSessions(jobId: string, keep?: number[]): Promise<
   return out;
 }
 
-/** The subtitles the recorded player loaded: the most complete copy, if any. */
-export async function capturedCaptions(jobId: string): Promise<Uint8Array | null> {
-  const copies = (await readTracks(jobId)).filter((t) => isCaptionTrack(t.track)).flatMap((t) => t.chunks.map((c) => new Uint8Array(c.data)));
+/** The subtitles the recorded player loaded (the `k`-th language asked for): the most complete copy, if any. */
+export async function capturedCaptions(jobId: string, k = 0): Promise<Uint8Array | null> {
+  const copies = (await readTracks(jobId))
+    .filter((t) => isCaptionTrack(t.track) && captionIndex(t.track) === k)
+    .flatMap((t) => t.chunks.map((c) => new Uint8Array(c.data)));
   return copies.sort((a, b) => b.byteLength - a.byteLength)[0] ?? null;
 }
 
@@ -81,14 +99,19 @@ export async function assembleCapture(jobId: string, keep?: number[], from?: Awa
         mb: Math.round(t.chunks.reduce((n, c) => n + c.data.byteLength, 0) / 1e6),
         inits: t.chunks.filter((c) => c.init).length,
         kept: bestRun(t.chunks).length,
+        to: storedTo(t.mime, t.chunks),
       })),
     }),
   );
   return tracks
-    .map((t) => ({
-      mime: t.mime,
-      kind: t.mime.toLowerCase().startsWith('audio/') ? ('audio' as const) : ('video' as const),
-      data: concat(bestRun(t.chunks)),
-    }))
+    .map((t) => {
+      const run = bestRun(t.chunks);
+      return {
+        mime: t.mime,
+        kind: t.mime.toLowerCase().startsWith('audio/') ? ('audio' as const) : ('video' as const),
+        // A player that went back appended part of the video twice: time must never go back.
+        data: untangle(t.mime, concat(run), run[0]?.init ? run[0].data.byteLength : 0),
+      };
+    })
     .filter((t) => t.data.byteLength > 0);
 }
