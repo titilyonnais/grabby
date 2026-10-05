@@ -60,7 +60,8 @@ et ne la partage pas.
     fichier est enregistré ou le téléchargement annulé ;
   - les médias détectés dans tes onglets ouverts, gardés en mémoire de session et effacés à
     la fermeture de l'onglet ou du navigateur ;
-  - les données temporaires du mode capture, supprimées dès que le fichier est enregistré
+  - les données temporaires du mode capture (et les sous-titres chargés par le lecteur
+    enregistré), gardées pendant une pause et supprimées dès que le fichier est enregistré
     ou la capture annulée.
 - **Accès aux pages.** Grabby lit les réponses réseau et les éléments `<video>` des pages
   visitées uniquement pour reconnaître les ressources vidéo, ainsi que le titre de la page et
@@ -69,6 +70,12 @@ et ne la partage pas.
   chiffrement). Quand une page n'a pas d'image d'aperçu, il prend une petite image de la
   vidéo en cours pour illustrer la liste. Tout cela reste en mémoire de session sur ton
   appareil. Il ne lit ni les formulaires, ni les mots de passe, ni le contenu des cookies.
+- **Sous-titres.** Grabby reconnaît les fichiers de sous-titres que la page déclare
+  (`<track>`) ou que son lecteur charge, pour te les proposer. Ils ne sont téléchargés que
+  si tu les choisis.
+- **Enregistrement interrompu.** Pour finir un enregistrement coupé par la fermeture du
+  navigateur ou de la page, Grabby rouvre cette page dans un onglet en arrière-plan, puis le
+  referme.
 - **Liens.** Quand une page cite des fichiers vidéo sans les lire (métadonnées de partage,
   liens directs), Grabby lit les 256 premiers Ko d'au plus 12 d'entre eux pour vérifier que
   ce sont de vraies vidéos.

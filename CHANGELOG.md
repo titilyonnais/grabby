@@ -13,6 +13,61 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 ## [Non publié]
 
+## [1.7.0] — 2026-10-05
+
+Pause, reprise, extraits et sous-titres pour **toutes** les vidéos : YouTube et tous les
+lecteurs enregistrés compris. Sous-titres dans tous les formats courants.
+
+### Ajouté
+- **Pause et reprise des enregistrements** (YouTube et mode capture, sur tous les sites) :
+  Pause arrête l'enregistrement en gardant ce qui est déjà enregistré ; Reprendre repart un
+  peu avant l'endroit où il s'était arrêté, et les morceaux sont raccordés sans trou ni
+  passage en double, en un seul fichier.
+- **Reprise automatique des enregistrements** :
+  - **connexion perdue** ou lecteur bloqué en route : l'enregistrement s'arrête et repart
+    seul dès que possible, comme un téléchargement ;
+  - **navigateur fermé** ou redémarré : l'enregistrement reprend à la réouverture. Si la
+    page n'est plus ouverte, Grabby la rouvre dans un onglet en arrière-plan, finit
+    l'enregistrement, puis referme cet onglet ;
+  - **page fermée** pendant la pause : la barre affiche « En pause · page fermée » ;
+    Reprendre rouvre la page, ou « Arrêter et enregistrer » garde ce qui est déjà là.
+- **Extraits des enregistrements** : « Couper un extrait » est maintenant proposé pour
+  YouTube et pour tout lecteur enregistré. Le lecteur part du début de l'extrait et
+  s'arrête à sa fin : seule la partie demandée est lue (en accéléré) et enregistrée, et le
+  bouton devient « Enregistrer l'extrait ».
+- **Sous-titres de YouTube** : la liste « Sous-titres » propose les pistes de la vidéo, y
+  compris celles générées automatiquement. Le lecteur caché de
+  Grabby les affiche pendant qu'il enregistre, et Grabby garde ce que le lecteur charge :
+  aucune requête supplémentaire vers YouTube.
+- **Sous-titres de tous les lecteurs enregistrés** et **des fichiers simples** :
+  - les fichiers de sous-titres d'une vidéo (`<track>` dans la page) sont proposés ;
+  - les fichiers de sous-titres qu'un lecteur charge lui-même (WebVTT, SubRip, TTML) sont
+    repérés et proposés avec son lecteur, quand il est le seul de son cadre ;
+  - avec un fichier enregistré tel quel, ils sont mis dans un `.srt` à côté ; avec une
+    conversion, ils sont intégrés à la vidéo.
+- **Nouveaux formats de sous-titres** :
+  - **WebVTT et TTML dans des segments MP4** (`wvtt` et `stpp`), utilisés par beaucoup de
+    flux DASH et par les flux HLS en fMP4 ;
+  - **fichiers TTML / DFXP** (DASH ou fichiers à part), avec leurs temps en heures, en
+    images, en ticks ou en secondes, l'italique et le gras ;
+  - **formats propres à YouTube** (`json3`, `srv3`, `srv1`) ;
+  - le décalage de présentation des flux DASH (`presentationTimeOffset`) est appliqué.
+- **Extrait et sous-titres ensemble** pour les enregistrements : seules les répliques de la
+  partie enregistrée sont gardées, recalées à partir de zéro.
+
+### Modifié
+- **Tout télécharger** prend aussi les vidéos YouTube et les lecteurs à enregistrer : toutes
+  les vidéos de la page peuvent être cochées.
+- Les **enregistrements** affichent leur bouton Pause comme les téléchargements, et les
+  données d'un enregistrement en pause sont gardées jusqu'à sa reprise (elles étaient
+  effacées au redémarrage du navigateur).
+
+### Corrigé
+- Les **sous-titres MP4 d'un flux DASH** (`wvtt`, `stpp`) étaient ignorés, et un flux qui
+  n'avait que ceux-là ne proposait aucun sous-titre.
+- Un enregistrement **bloqué à mi-chemin** (lecteur figé, réseau coupé) s'arrêtait avec
+  seulement ce qui était déjà enregistré, au lieu de reprendre.
+
 ## [1.6.0] — 2026-10-05
 
 Téléchargements plus rapides qu'on peut mettre en pause et qui reprennent seuls, extraits,
@@ -487,7 +542,8 @@ Première version.
 - Capture YouTube expérimentale.
 - Interface en français et en anglais, thème clair et sombre.
 
-[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.5.3...HEAD
+[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/titilyonnais/grabby/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/titilyonnais/grabby/compare/v1.5.3...v1.6.0
 [1.5.3]: https://github.com/titilyonnais/grabby/compare/v1.5.2...v1.5.3
 [1.5.2]: https://github.com/titilyonnais/grabby/compare/v1.5.1...v1.5.2

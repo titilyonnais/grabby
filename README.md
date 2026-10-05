@@ -17,8 +17,18 @@
 
 ---
 
-<!-- release:1.6.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
-## Nouveautés de la version 1.6.0
+<!-- release:1.7.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
+## Nouveautés de la version 1.7.0
+
+- **Pause, reprise et extraits pour tout** : YouTube et tous les lecteurs enregistrés se
+  mettent en pause, reprennent seuls après une coupure ou un redémarrage (la page est
+  rouverte en arrière-plan si besoin) et peuvent être coupés en extrait.
+- **Sous-titres de YouTube**, générés automatiquement compris.
+- **Sous-titres partout** : fichiers `<track>` des pages, sous-titres chargés par les
+  lecteurs, WebVTT et TTML dans des segments MP4 (`wvtt`, `stpp`), fichiers TTML/DFXP.
+- **Tout télécharger** prend aussi YouTube et les lecteurs à enregistrer.
+
+**Rappel de la 1.6.0** :
 
 - **Pause et reprise** : les morceaux reçus sont gardés sur le disque, Reprendre repart de
   là. Connexion perdue, veille ou navigateur fermé : le téléchargement **reprend tout seul**.
@@ -111,7 +121,8 @@ Le détail de chaque version est dans le [journal des modifications](CHANGELOG.m
   - vidéos que la page annonce sans les avoir lues : métadonnées de partage, `contentUrl`
     schema.org, balises `<source>`, liens directs vers des fichiers.
 - **Mode capture** pour les lecteurs qui ne publient aucun fichier (lecteurs `blob:`/MSE) :
-  instantané pour les vidéos déjà chargées, sinon enregistrement accéléré de la lecture.
+  instantané pour les vidéos déjà chargées, sinon enregistrement accéléré de la lecture,
+  qu'on peut mettre en pause, reprendre et couper en extrait comme un téléchargement.
 - **Tri des vraies vidéos** : chaque fichier est vérifié à partir de ses premiers octets
   (vraie vidéo, durée, chiffrement). Sont écartés :
   - les pages d'erreur et les publicités ;
@@ -124,9 +135,12 @@ Le détail de chaque version est dans le [journal des modifications](CHANGELOG.m
   réunies dans une seule carte, avec la résolution réelle de chaque fichier.
 - **Réduire la qualité** : les qualités plus petites que la source (jusqu'à 144p) peuvent
   être fabriquées par Grabby, même quand le site ne les propose pas.
-- **Couper un extrait** : début et fin au choix ; pour un flux, seuls les segments de
-  l'extrait sont téléchargés.
-- **Sous-titres** des flux HLS et DASH (WebVTT), intégrés à la vidéo ou en `.srt` à côté.
+- **Couper un extrait** : début et fin au choix, pour toutes les vidéos ; pour un flux,
+  seuls les segments de l'extrait sont téléchargés, pour un enregistrement seule cette
+  partie est lue.
+- **Sous-titres** intégrés à la vidéo ou en `.srt` à côté : flux HLS et DASH (WebVTT,
+  TTML, et les deux dans des segments MP4), fichiers `<track>` des pages, sous-titres
+  chargés par les lecteurs, et ceux de YouTube (générés automatiquement compris).
 - **Tout télécharger** : toutes les vidéos de la page en une fois, un format pour toutes.
 - **Clic droit et raccourcis** : « Télécharger cette vidéo avec Grabby » sur une vidéo,
   Alt+Maj+G pour ouvrir Grabby, Alt+Maj+D pour télécharger la vidéo de la page.
@@ -154,8 +168,10 @@ Le détail de chaque version est dans le [journal des modifications](CHANGELOG.m
 ## YouTube (expérimental)
 
 Grabby propose les qualités réellement disponibles sur YouTube (jusqu'en 4K/8K) avec leur
-taille, en MP4, WebM ou MKV, ou l'audio seul. L'enregistrement se fait dans un lecteur
-caché : la vidéo que tu regardes n'est pas touchée et tu peux quitter la page. La vitesse
+taille, en MP4, WebM ou MKV, ou l'audio seul, avec ses sous-titres si tu en choisis.
+L'enregistrement se fait dans un lecteur caché : la vidéo que tu regardes n'est pas touchée
+et tu peux quitter la page. Il se met en pause, reprend après une coupure ou un redémarrage,
+et peut se limiter à un extrait. La vitesse
 dépend de ce lecteur. Fonction fragile, et contraire aux conditions de YouTube : à tes
 risques.
 
@@ -203,13 +219,15 @@ npm run zip        # → release/grabby-vX.Y.Z.zip
    est envoyée. Le bouton **Afficher** ouvre le dossier du fichier.
 5. **Pause** arrête le téléchargement en gardant ce qui est reçu ; **Reprendre** repart de
    là. Une coupure de connexion, la veille ou la fermeture du navigateur n'obligent pas à
-   recommencer : Grabby reprend tout seul.
+   recommencer : Grabby reprend tout seul. C'est pareil pour un enregistrement (YouTube,
+   lecteur sans fichier) : il repart un peu avant l'endroit où il s'était arrêté, et si la
+   page a été fermée, Grabby la rouvre dans un onglet en arrière-plan le temps de finir.
 
 **Avant de télécharger**, la carte propose aussi :
 
-- **Sous-titres** (quand le flux en a) : « Aucun » ou une langue ; ils sont mis dans la
+- **Sous-titres** (quand la vidéo en a) : « Aucun » ou une langue ; ils sont mis dans la
   vidéo, ou dans un fichier `.srt` à part si tu coches l'option (toujours à part en TS et
-  AVI, qui ne savent pas les garder).
+  AVI, qui ne savent pas les garder, et pour un fichier enregistré tel quel).
 - **Couper un extrait** : fais glisser les deux poignées ou tape le début et la fin
   (`1:05`). La coupe tombe sur l'image clé la plus proche : l'extrait peut commencer
   quelques secondes plus tôt. Le fichier s'appelle « Titre (1m05-2m40).mp4 ».
@@ -321,7 +339,11 @@ sur un serveur local :
 - HLS enregistré en MOV avec bulle de fin et ✓ sur l'icône, son DASH en FLAC ;
 - liens directs (liens cassés et pages ignorés), segments de flux ignorés ;
 - HLS chiffré et MP4 chiffré (DRM) affichés « Protégé », aperçus au survol écartés ;
-- capture d'un lecteur MSE (MP4, et WebM → MP4), pages restreintes.
+- capture d'un lecteur MSE (MP4, et WebM → MP4), pages restreintes ;
+- pause et reprise, coupure réseau et redémarrage du navigateur (téléchargements et
+  enregistrements), extraits de flux, de fichiers et d'enregistrements ;
+- sous-titres HLS et DASH (WebVTT, TTML, `wvtt` et `stpp` en MP4), `<track>` d'un fichier
+  et d'un lecteur enregistré, intégrés ou en `.srt`.
 
 **Vérifications sur de vrais sites** (Brave, sans fenêtre visible ; `HEADED=1` pour la voir) :
 
@@ -350,8 +372,9 @@ Pour publier une version :
 
 ```
 page ─ hook.ts (MAIN)      DRM (EME), suivi MediaSource, capture ; YouTube
-     ├ scanner.ts          <video> (Shadow DOM compris), titre, miniature, manifestes,
-     │                     vidéos annoncées et liens directs
+     ├ scanner.ts          <video> (Shadow DOM compris) et leurs <track>, titre, miniature,
+     │                     manifestes, vidéos annoncées et liens directs ; sessions
+     │                     d'enregistrement (pause, reprise)
      └ toast.ts            bulle « Téléchargement terminé »
               │
 service worker ─ detector  webRequest (lecture seule) → classify → probe (premiers octets)
@@ -364,8 +387,9 @@ service worker ─ detector  webRequest (lecture seule) → classify → probe (
 offscreen ─ fetcher        morceaux en parallèle (pacer : 2 à 16 connexions), plages HTTP,
           │                rangés dans IndexedDB au fur et à mesure (reprise)
           ├ ffmpeg         ffmpeg.wasm : remux sans réencodage de l'image, 12 formats,
-          │                coupe d'extrait, sous-titres WebVTT → SRT intégrés
-          └ youtube-player lecteur YouTube caché
+          │                coupe d'extrait, raccord des sessions d'un enregistrement,
+          │                sous-titres (WebVTT, SRT, TTML, wvtt/stpp, YouTube) → SRT
+          └ youtube-player lecteur YouTube caché (sous-titres choisis activés)
 popup (Preact) ─ liste, listes qualité/format, progression, historique, réglages
 ```
 
