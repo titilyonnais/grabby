@@ -31,7 +31,7 @@
   "st_retrying": { "message": "Nouvel essai…" },
   "pause": { "message": "Mettre en pause" },
   "resume": { "message": "Reprendre" },
-  "err_expired": { "message": "Le lien de la vidéo a expiré pendant la pause. Rouvre la page de la vidéo, puis relance le téléchargement : ce qui a déjà été reçu sera réutilisé si possible." },
+  "err_expired": { "message": "Le lien de la vidéo a expiré pendant la pause. Rouvre la page de la vidéo, puis relance le téléchargement." },
   "err_no_ranges": { "message": "Le serveur ne permet pas ce mode de téléchargement." },
   "othersTitle": { "message": "Autres téléchargements" },
   "menuMedia": { "message": "Télécharger cette vidéo avec Grabby" },

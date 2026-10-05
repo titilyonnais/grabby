@@ -17,20 +17,27 @@
 
 ---
 
-<!-- release:1.5.3 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
-## Nouveautés de la version 1.5.3
+<!-- release:1.6.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
+## Nouveautés de la version 1.6.0
+
+- **Pause et reprise** : les morceaux reçus sont gardés sur le disque, Reprendre repart de
+  là. Connexion perdue, veille ou navigateur fermé : le téléchargement **reprend tout seul**.
+- **Téléchargements plus rapides** : connexions ajustées au débit (2 à 16), gros fichiers
+  récupérés en plusieurs plages à la fois.
+- **Couper un extrait** : deux poignées ou des temps à taper ; pour un flux, seuls les
+  segments de l'extrait sont téléchargés.
+- **Sous-titres** des flux HLS et DASH, intégrés à la vidéo ou dans un `.srt` à côté.
+- **Tout télécharger** : toutes les vidéos de la page cochées, un format pour toutes.
+- **Clic droit** sur une vidéo et **raccourcis** : Alt+Maj+G ouvre Grabby, Alt+Maj+D
+  télécharge la vidéo de la page.
+- **Nouvel historique** par jour, avec miniature, qualité et fichiers introuvables signalés.
+- Interface plus nette à tout zoom, listes et réglages qui se referment en douceur.
+
+**Rappel de la 1.5.3** :
 
 - **Finitions** : interrupteurs sans à-coup au clic, ligne d'une vidéo en cours plus
   propre (barre sous le texte, miniature sur toute la hauteur), icône du format décollée du
   bord, page Réglages plus animée, plus d'étiquette « Expérimental ».
-
-**Rappel de la 1.5.2** :
-
-- **Finitions** : interrupteurs qui ne débordent plus de leur rail, liste des formats qui
-  ne défile plus toute seule au survol, textes moins collés au bord des cartes, petites
-  miniatures moins arrondies.
-- **Corrigé en 1.5.1** : une liste déroulante ouverte juste après avoir déplié une carte se
-  refermait toute seule.
 
 **Rappel de la 1.5.0** :
 
@@ -117,10 +124,19 @@ Le détail de chaque version est dans le [journal des modifications](CHANGELOG.m
   réunies dans une seule carte, avec la résolution réelle de chaque fichier.
 - **Réduire la qualité** : les qualités plus petites que la source (jusqu'à 144p) peuvent
   être fabriquées par Grabby, même quand le site ne les propose pas.
+- **Couper un extrait** : début et fin au choix ; pour un flux, seuls les segments de
+  l'extrait sont téléchargés.
+- **Sous-titres** des flux HLS et DASH (WebVTT), intégrés à la vidéo ou en `.srt` à côté.
+- **Tout télécharger** : toutes les vidéos de la page en une fois, un format pour toutes.
+- **Clic droit et raccourcis** : « Télécharger cette vidéo avec Grabby » sur une vidéo,
+  Alt+Maj+G pour ouvrir Grabby, Alt+Maj+D pour télécharger la vidéo de la page.
 - **Vrais titres et miniatures** : métadonnées de la page, sinon une image de la vidéo.
+- **Rapide et reprenable** : morceaux téléchargés en parallèle (connexions ajustées au
+  débit), gros fichiers en plusieurs plages ; **pause et reprise**, reprise automatique après
+  une coupure de connexion, la veille ou un redémarrage du navigateur.
 - **Suivi** : progression dans la popup et sur l'icône, bulle et notification à la fin,
   annulation, nouvel essai, bouton retélécharger, historique des 50 derniers
-  téléchargements.
+  téléchargements (par jour, avec miniature).
 - Assemblage par **ffmpeg.wasm embarqué** : aucun code distant, rien n'est envoyé ailleurs.
 - Interface **français / anglais**, thème **clair / sombre / auto**.
 
@@ -185,6 +201,26 @@ npm run zip        # → release/grabby-vX.Y.Z.zip
    **vitesse** et le **temps restant**, et l'icône le **pourcentage**. À la fin, elle affiche
    **✓**, une **bulle** apparaît en bas à droite de la page et une notification système
    est envoyée. Le bouton **Afficher** ouvre le dossier du fichier.
+5. **Pause** arrête le téléchargement en gardant ce qui est reçu ; **Reprendre** repart de
+   là. Une coupure de connexion, la veille ou la fermeture du navigateur n'obligent pas à
+   recommencer : Grabby reprend tout seul.
+
+**Avant de télécharger**, la carte propose aussi :
+
+- **Sous-titres** (quand le flux en a) : « Aucun » ou une langue ; ils sont mis dans la
+  vidéo, ou dans un fichier `.srt` à part si tu coches l'option (toujours à part en TS et
+  AVI, qui ne savent pas les garder).
+- **Couper un extrait** : fais glisser les deux poignées ou tape le début et la fin
+  (`1:05`). La coupe tombe sur l'image clé la plus proche : l'extrait peut commencer
+  quelques secondes plus tôt. Le fichier s'appelle « Titre (1m05-2m40).mp4 ».
+
+Quand la page a plusieurs vidéos, **Tout télécharger** (au-dessus de la liste) les coche
+toutes : décoche celles que tu ne veux pas, choisis un format, puis **Télécharger (N)**. Elles
+partent deux par deux, en meilleure qualité.
+
+Sans ouvrir Grabby : **clic droit** sur une vidéo → « Télécharger cette vidéo avec
+Grabby », ou **Alt+Maj+D** pour la vidéo principale de la page (raccourcis modifiables dans
+`chrome://extensions/shortcuts`).
 
 **Réglages** (icône à droite de la lune/du soleil) :
 
@@ -320,12 +356,15 @@ page ─ hook.ts (MAIN)      DRM (EME), suivi MediaSource, capture ; YouTube
               │
 service worker ─ detector  webRequest (lecture seule) → classify → probe (premiers octets)
                ├ registry  médias par onglet (storage.session) ; visible : doublons, flux
-               ├ plan      variante, piste audio, format, conversion des fichiers directs
-               ├ jobs      file d'attente, en-têtes Referer (DNR), downloads
+               ├ plan      variante, piste audio, sous-titres, extrait, format
+               ├ jobs      file d'attente, pause/reprise (alarms), en-têtes Referer (DNR),
+               │           downloads ; quick : clic droit et raccourcis
                └ badge     nombre de vidéos, progression, ✓ / !
               │
-offscreen ─ fetcher        segments en parallèle, reprises, ordre garanti
-          ├ ffmpeg         ffmpeg.wasm : remux sans réencodage de l'image, 12 formats
+offscreen ─ fetcher        morceaux en parallèle (pacer : 2 à 16 connexions), plages HTTP,
+          │                rangés dans IndexedDB au fur et à mesure (reprise)
+          ├ ffmpeg         ffmpeg.wasm : remux sans réencodage de l'image, 12 formats,
+          │                coupe d'extrait, sous-titres WebVTT → SRT intégrés
           └ youtube-player lecteur YouTube caché
 popup (Preact) ─ liste, listes qualité/format, progression, historique, réglages
 ```

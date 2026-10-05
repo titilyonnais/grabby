@@ -31,7 +31,7 @@
   "st_retrying": { "message": "Trying again…" },
   "pause": { "message": "Pause" },
   "resume": { "message": "Resume" },
-  "err_expired": { "message": "The video's link expired during the pause. Open the video's page again, then restart the download: what was already received is reused when possible." },
+  "err_expired": { "message": "The video's link expired during the pause. Open the video's page again, then restart the download." },
   "err_no_ranges": { "message": "The server doesn't allow this kind of download." },
   "othersTitle": { "message": "Other downloads" },
   "menuMedia": { "message": "Download this video with Grabby" },

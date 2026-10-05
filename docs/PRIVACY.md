@@ -1,6 +1,6 @@
 # Grabby — Privacy policy / Politique de confidentialité
 
-_Last updated: 2026-10-04 (1.5.3)_
+_Last updated: 2026-10-05 (1.6.0)_
 
 ## English
 
@@ -14,8 +14,11 @@ Grabby does **not** collect, store on a server, sell or share any personal data.
   - your settings (theme, video and audio formats, file name parts, save options) in the
     browser's extension storage, and the theme again in the popup's own storage so it opens
     without a flash;
-  - the list of your last 50 downloads (file name, page address, size, date), which you can
-    clear at any time from the History tab;
+  - the list of your last 50 downloads (file name, page address, size, date, quality and a
+    small thumbnail), which you can clear at any time from the History tab;
+  - the downloads in progress or paused, and the parts of them already received, so they can
+    resume after a lost connection or a browser restart; deleted as soon as the file is saved
+    or the download canceled;
   - the media detected in your open tabs, kept in session memory and deleted when the tab
     closes or the browser exits;
   - temporary data recorded in capture mode, deleted as soon as the file is saved or the
@@ -50,7 +53,11 @@ et ne la partage pas.
     d'enregistrement), et le thème une seconde fois dans la mémoire de la popup pour qu'elle
     s'ouvre sans clignoter ;
   - la liste de tes 50 derniers téléchargements (nom du fichier, adresse de la page, taille,
-    date), effaçable à tout moment depuis l'onglet Historique ;
+    date, qualité et une petite miniature), effaçable à tout moment depuis l'onglet
+    Historique ;
+  - les téléchargements en cours ou en pause, et les morceaux déjà reçus, pour reprendre
+    après une coupure de connexion ou un redémarrage du navigateur ; supprimés dès que le
+    fichier est enregistré ou le téléchargement annulé ;
   - les médias détectés dans tes onglets ouverts, gardés en mémoire de session et effacés à
     la fermeture de l'onglet ou du navigateur ;
   - les données temporaires du mode capture, supprimées dès que le fichier est enregistré

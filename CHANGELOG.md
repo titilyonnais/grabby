@@ -13,11 +13,108 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 ## [Non publié]
 
+## [1.6.0] — 2026-10-05
+
+Téléchargements plus rapides qu'on peut mettre en pause et qui reprennent seuls, extraits,
+sous-titres, « Tout télécharger », clic droit et raccourcis clavier, nouvel historique.
+
+### Ajouté
+- **Pause et reprise** : bouton Pause sur la carte, sur la ligne repliée et dans « Autres
+  téléchargements ». Les morceaux déjà reçus sont rangés sur le disque au fur et à mesure :
+  Reprendre repart de là, sans retélécharger ce qui est déjà arrivé.
+- **Reprise automatique** :
+  - **connexion perdue** : la barre affiche « Connexion perdue » avec un compte à rebours, et
+    Grabby réessaie seul (après 3 s, 6 s, 12 s… jusqu'à 2 min entre deux essais), tout de
+    suite dès que le réseau revient ;
+  - **ordinateur en veille** ou **navigateur fermé** : le téléchargement reprend au réveil
+    ou au redémarrage, là où il s'était arrêté ;
+  - **liens expirés** pendant la pause (beaucoup de sites signent leurs liens pour quelques
+    heures) : Grabby redemande des liens neufs à la page si elle est encore ouverte ; sinon il
+    explique qu'il faut rouvrir la page et relancer le téléchargement.
+- **Couper un extrait** : sous les choix de qualité et de format, « Couper un extrait »
+  ouvre un rail à deux poignées (début et fin) et deux champs où taper les temps exacts
+  (`1:05`, `65`, `1:02:03`). La durée de l'extrait et sa taille estimée s'affichent, le
+  bouton devient « Télécharger l'extrait » et le fichier est nommé d'après lui
+  (« Titre (1m05-2m40).mp4 »).
+  - Pour un flux HLS ou DASH, **seuls les segments de l'extrait sont téléchargés** : une
+    minute d'un film de deux heures se télécharge en quelques secondes.
+  - Un fichier simple est téléchargé en entier puis coupé.
+  - La coupe se fait sans réencoder l'image, sur l'image clé la plus proche : l'extrait peut
+    commencer quelques secondes plus tôt que demandé (c'est indiqué sous le bouton).
+  - Un extrait d'une très longue vidéo, trop lourde pour être assemblée en entier, tient
+    souvent en mémoire : il est alors assemblé et converti normalement.
+- **Sous-titres** : quand un flux en propose (HLS `EXT-X-MEDIA TYPE=SUBTITLES`, DASH en
+  WebVTT), une liste « Sous-titres » permet d'en choisir un.
+  - Ils sont **intégrés à la vidéo** (MP4 et MOV en `mov_text`, MKV en SubRip, WebM en
+    WebVTT), avec leur langue, ou enregistrés **dans un fichier .srt à part** nommé comme la
+    vidéo (« Titre.fr.srt »), que les lecteurs chargent tout seuls.
+  - Les formats qui ne savent pas les garder (TS, AVI) les enregistrent toujours à côté.
+  - Les segments WebVTT sont recalés sur l'horloge de la vidéo, les répliques répétées à
+    la jonction de deux segments ne sont gardées qu'une fois, l'italique et le gras sont
+    conservés.
+  - Avec un extrait, seules ses répliques sont gardées, recalées à partir de zéro.
+  - Un sous-titre illisible ne fait pas échouer la vidéo : elle est enregistrée sans.
+- **Tout télécharger** : au-dessus de la liste, quand la page a plusieurs vidéos. Chaque
+  ligne reçoit une case ronde (toutes cochées au départ), un seul format s'applique à
+  toutes, et « Télécharger (N) » les met en file d'attente, deux à la fois, en meilleure
+  qualité. Un fichier audio reste un fichier audio.
+- **Clic droit** : « Télécharger cette vidéo avec Grabby » sur une vidéo, « Télécharger la
+  vidéo de la page avec Grabby » ailleurs. Une bulle dans la page confirme le départ, ou
+  explique pourquoi rien n'est parti (vidéo protégée, rien trouvé).
+- **Raccourcis clavier** : Alt+Maj+G ouvre Grabby, Alt+Maj+D télécharge la vidéo principale
+  de la page dans les formats des réglages. Modifiables dans `chrome://extensions/shortcuts`.
+- **Nouvel historique** : téléchargements regroupés par jour (« Aujourd'hui », « Hier »,
+  puis la date), avec miniature, format, qualité, taille et heure. Un fichier supprimé ou
+  déplacé est signalé « introuvable ». Chaque entrée peut rouvrir sa page ou être retirée,
+  et l'en-tête compte les entrées avec un bouton pour tout effacer.
+- **Autres téléchargements** : les téléchargements lancés depuis un autre onglet (ou avant
+  un redémarrage) apparaissent sous la liste, avec leur progression, Pause et Annuler.
+- **Bouton Annuler** sur la ligne repliée d'une vidéo en cours de téléchargement.
+
 ### Modifié
+- **Téléchargements nettement plus rapides** :
+  - les morceaux arrivent dans n'importe quel ordre : un morceau lent ne retient plus les
+    autres ;
+  - le nombre de connexions s'adapte au débit (de 2 à 16, 6 au départ) et baisse de moitié
+    quand le serveur dit qu'il sature (réponses 429 ou 503) ;
+  - un fichier de 8 Mo ou plus, enregistré tel quel, est téléchargé par Grabby en plusieurs
+    plages à la fois au lieu d'une seule connexion (si le serveur ne sait pas envoyer de
+    plages, le navigateur s'en charge comme avant).
+- **Barre de progression** qui suit les octets reçus (elle restait à 0 % puis sautait), sans
+  liseré sombre autour de la partie corail.
+- **Netteté à tout zoom et sur tout écran** : la barre de progression est faite de vrais
+  arrondis, le texte est lissé en niveaux de gris (plus de franges jaunes et bleues sous
+  Windows), icônes et lettres sont dessinées en précision géométrique. Vérifié à 100 %,
+  125 %, 150 % et 300 %.
+- **Listes qui se referment en douceur** : qualité, format et listes des réglages se
+  replient dans leur bouton au lieu de disparaître d'un coup.
+- **Pilule des onglets** : elle s'étire puis s'écrase contre son bord au lieu de dépasser
+  de son rail.
+- **Réglages** : la page se ferme comme elle s'ouvre, à l'envers (les groupes descendent
+  l'un après l'autre, puis le titre, puis la page).
+- **Boutons d'une carte tous à 48 px**, quel que soit l'état (prêt, en cours, terminé).
+- **Valeurs qui changent** : la qualité, le format et la taille montent à leur place au lieu
+  de changer d'un coup.
 - **Un seul paquet** : chaque version est publiée dans un unique `grabby-vX.Y.Z.zip`, qui
   comprend la prise en charge expérimentale de YouTube. `npm run build` produit `dist/`.
-- **Page des autorisations** (`docs/PERMISSIONS.md`) réécrite pour les utilisateurs : à quoi
-  sert chacune, en clair.
+- **Pages des autorisations et de confidentialité** réécrites pour les utilisateurs : à
+  quoi sert chaque autorisation, en clair, et ce qui reste sur l'appareil.
+
+### Corrigé
+- **Liste des téléchargements jamais enregistrée pendant un téléchargement actif** : les
+  mises à jour de progression repoussaient sans cesse la sauvegarde. Elle est maintenant
+  enregistrée régulièrement, ce qui permet la reprise après un redémarrage.
+
+### Sécurité
+- Deux nouvelles autorisations, détaillées dans `docs/PERMISSIONS.md` : `alarms` (réveiller
+  Grabby pour retenter un téléchargement coupé) et `contextMenus` (les entrées du clic
+  droit). Les raccourcis clavier n'en demandent aucune.
+
+### Limites connues
+- Les sous-titres embarqués dans des segments MP4 (`wvtt`, `stpp`/TTML) et les sous-titres
+  des fichiers simples (`<track>`) ne sont pas encore proposés.
+- Pas d'extrait ni de sous-titres pour un enregistrement de lecture (mode capture), qui se
+  fait en temps réel.
 
 ## [1.5.3] — 2026-10-04
 
@@ -391,6 +488,7 @@ Première version.
 - Interface en français et en anglais, thème clair et sombre.
 
 [Non publié]: https://github.com/titilyonnais/grabby/compare/v1.5.3...HEAD
+[1.6.0]: https://github.com/titilyonnais/grabby/compare/v1.5.3...v1.6.0
 [1.5.3]: https://github.com/titilyonnais/grabby/compare/v1.5.2...v1.5.3
 [1.5.2]: https://github.com/titilyonnais/grabby/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/titilyonnais/grabby/compare/v1.5.0...v1.5.1
