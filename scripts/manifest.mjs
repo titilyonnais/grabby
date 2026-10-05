@@ -28,7 +28,12 @@ export function buildManifest(version) {
       'offscreen',
       'declarativeNetRequestWithHostAccess',
       'alarms',
+      'contextMenus',
     ],
+    commands: {
+      _execute_action: { suggested_key: { default: 'Alt+Shift+G' }, description: '__MSG_cmdOpen__' },
+      'download-best': { suggested_key: { default: 'Alt+Shift+D' }, description: '__MSG_cmdDownload__' },
+    },
     host_permissions: ['<all_urls>'],
     content_scripts: [
       {

@@ -9,7 +9,7 @@ import { FirstRun, HistoryList, StateCard } from './components/Panels';
 import { Settings } from './components/Settings';
 import { t } from './i18n';
 import { reducedMotion } from './motion';
-import { rank } from './rank';
+import { rank } from '../shared/rank';
 import { useGrabby } from './store';
 import { rememberTheme } from './theme';
 

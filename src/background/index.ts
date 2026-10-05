@@ -13,6 +13,7 @@ import { Registry, sessionKV } from './registry';
 import { forgetTab, rememberTabUrl, samePage, tabUrl } from './tabs';
 import { visibleItems } from './visible';
 import { clearAll, putChunk } from '../shared/idb';
+import { quickDownload } from './quick';
 
 const registry = new Registry(sessionKV);
 const jobs = new JobManager(registry);
@@ -26,7 +27,26 @@ chrome.runtime.onStartup.addListener(() => {
   // Captures never survive a browser restart: drop leftovers.
   void clearAll().catch(() => {});
 });
-chrome.runtime.onInstalled.addListener(() => void resetHeaderRules());
+chrome.runtime.onInstalled.addListener(() => {
+  void resetHeaderRules();
+  // Right-click on a video (or anywhere on a page whose player hides its own menu).
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({ id: 'grabby-media', title: chrome.i18n.getMessage('menuMedia'), contexts: ['video', 'audio'] });
+    chrome.contextMenus.create({ id: 'grabby-page', title: chrome.i18n.getMessage('menuPage'), contexts: ['page', 'frame', 'link', 'image'] });
+  });
+});
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (tab?.id === undefined || tab.id < 0) return;
+  void quickDownload(registry, jobs, tab.id, info.menuItemId === 'grabby-media' ? info.srcUrl : undefined);
+});
+// Keyboard shortcut: the page's best video, straight away.
+chrome.commands.onCommand.addListener((command, tab) => {
+  if (command !== 'download-best') return;
+  void (async () => {
+    const id = tab?.id ?? (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]?.id;
+    if (id !== undefined && id >= 0) await quickDownload(registry, jobs, id);
+  })();
+});
 // A download waiting for the network tries again, even if the worker went to sleep meanwhile.
 chrome.alarms.onAlarm.addListener((a) => a.name === 'grabby-resume' && void jobs.wake());
 // The connection is back: waiting downloads don't wait for their next try.

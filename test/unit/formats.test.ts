@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { buildPlan } from '../../src/background/plan';
 import { classify } from '../../src/parsers/classify';
 import { sniffMedia } from '../../src/parsers/sniff';
-import { rank } from '../../src/popup/rank';
+import { rank } from '../../src/shared/rank';
 import { AUDIO_FORMATS, isAudioFormat, sourceFormat, videoFormatsFor } from '../../src/shared/formats';
 import { DEFAULT_SETTINGS } from '../../src/shared/settings';
 import type { MediaItem } from '../../src/shared/types';

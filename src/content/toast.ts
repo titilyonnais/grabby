@@ -12,13 +12,13 @@ const CSS = `
   position: fixed; right: 20px; bottom: 20px; z-index: 2147483647;
   display: flex; align-items: center; gap: 12px;
   width: min(360px, calc(100vw - 40px)); box-sizing: border-box;
-  padding: 12px 12px 12px 14px; border-radius: 16px;
+  padding: 10px 10px 10px 10px; border-radius: 26px;
   background: #ffffff; color: #000000;
   box-shadow: 0 16px 40px rgba(0,0,0,.22), 0 0 0 1px rgba(0,0,0,.06);
   font: 400 13.5px/1.35 system-ui, -apple-system, 'Segoe UI', sans-serif;
   animation: in 220ms cubic-bezier(.2,.7,.2,1);
 }
-.i { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: #ff5b4f; color: #fff; }
+.i { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 999px; background: #ff5b4f; color: #fff; }
 .i.ko { background: #d93025; }
 .b { flex: 1; min-width: 0; }
 .h { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
