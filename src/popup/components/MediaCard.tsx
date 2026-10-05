@@ -134,25 +134,43 @@ export function MediaCard({ item, job, open, onToggle, index, preferred, send }:
             {running && !open ? (
               <span class="card__pct">{Math.round(job!.progress * 100)} %</span>
             ) : shownSize ? (
-              <span>{size(shownSize)}</span>
+              // Keyed: another quality's size rises into place.
+              <span key={shownSize} class="swap">
+                {size(shownSize)}
+              </span>
             ) : null}
             {blocked && !open && <Icon name={item.live ? 'live' : 'lock'} size={14} />}
           </p>
           {/* A download running in a row: its bar under the text, not over the layout. */}
           {running && !open && <span class="card__progress" style={{ '--p': String(job!.progress) }} aria-hidden="true" />}
         </div>
-        <button
-          class="card__toggle"
-          aria-expanded={open}
-          aria-label={open ? t('hideOptions') : t('showOptions')}
-          title={open ? t('hideOptions') : t('showOptions')}
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggle();
-          }}
-        >
-          <Icon name="chevron" size={18} />
-        </button>
+        <span class="card__tools">
+          {running && !open && (
+            <button
+              class="card__cancel"
+              aria-label={t('cancel')}
+              title={t('cancel')}
+              onClick={(e) => {
+                e.stopPropagation();
+                send({ type: 'cancel', jobId: job!.id });
+              }}
+            >
+              <Icon name="close" size={16} />
+            </button>
+          )}
+          <button
+            class="card__toggle"
+            aria-expanded={open}
+            aria-label={open ? t('hideOptions') : t('showOptions')}
+            title={open ? t('hideOptions') : t('showOptions')}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggle();
+            }}
+          >
+            <Icon name="chevron" size={18} />
+          </button>
+        </span>
       </div>
 
       {open && (

@@ -1,5 +1,6 @@
 import { Fragment } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { reducedMotion } from '../motion';
 import { Icon } from './Icon';
 
 export interface SelectOption<T extends string> {
@@ -30,6 +31,8 @@ interface Place {
 }
 
 let seq = 0;
+/** How long the list takes to fold away before it leaves the page (see .menu--out). */
+const MENU_OUT_MS = 170;
 
 /**
  * Drop-down list styled like the rest of the popup (a native <select> opens an OS menu
@@ -37,6 +40,9 @@ let seq = 0;
  */
 export function Select<T extends string>({ label, value, options, onChange, disabled, hideLabel }: Props<T>) {
   const [open, setOpen] = useState(false);
+  // Closed but still folding away: drawn, out of reach (no clicks, hidden from assistive tech).
+  const [leaving, setLeaving] = useState(false);
+  const leave = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [active, setActive] = useState(0);
   const [place, setPlace] = useState<Place | null>(null);
   const btn = useRef<HTMLButtonElement>(null);
@@ -64,13 +70,21 @@ export function Select<T extends string>({ label, value, options, onChange, disa
     );
     setActive(Math.max(0, options.findIndex((o) => o.value === value)));
     byKey.current = true;
+    clearTimeout(leave.current);
+    setLeaving(false);
     setOpen(true);
   };
 
   const close = (refocus = true) => {
     setOpen(false);
+    if (!reducedMotion()) {
+      setLeaving(true);
+      clearTimeout(leave.current);
+      leave.current = setTimeout(() => setLeaving(false), MENU_OUT_MS);
+    }
     if (refocus) btn.current?.focus();
   };
+  useEffect(() => () => clearTimeout(leave.current), []);
 
   const choose = (i: number) => {
     const o = options[i];
@@ -152,17 +166,21 @@ export function Select<T extends string>({ label, value, options, onChange, disa
       >
         <span class="select__text">
           {!hideLabel && <span class="select__label">{label}</span>}
-          <span class="select__value">{current?.label}</span>
+          {/* Keyed: a new choice slides in. */}
+          <span key={current?.value} class="select__value">
+            {current?.label}
+          </span>
         </span>
         <Icon name="chevron" size={16} />
       </button>
-      {open && place && (
+      {(open || leaving) && place && (
         <ul
           ref={list}
           id={`${id}-list`}
-          class={`menu${place.bottom !== undefined ? ' menu--up' : ''}`}
+          class={`menu${place.bottom !== undefined ? ' menu--up' : ''}${open ? '' : ' menu--out'}`}
           role="listbox"
           aria-label={label}
+          aria-hidden={!open}
           tabIndex={-1}
           aria-activedescendant={`${id}-${active}`}
           style={{

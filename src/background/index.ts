@@ -5,7 +5,7 @@ import { hostOf } from '../parsers/url';
 import { forgetBadge, paintTab, showJobs, updateBadge } from './badge';
 import { startDetector } from './detector';
 import { resetHeaderRules } from './headers';
-import { clearHistory, getHistory } from './history';
+import { clearHistory, historyWithPresence, removeHistory } from './history';
 import { BROWSER_ASKS_KEY, JobManager } from './jobs';
 import { listenNotificationClicks } from './notify';
 import { handlePageInfo } from './pageinfo';
@@ -75,7 +75,7 @@ async function buildState(tabId: number): Promise<PopupState> {
   const tabTitle = tab?.title ? cleanTitle(tab.title, hostOf(tab.url ?? pageUrl)) : undefined;
   const [items, history, settings, asks] = await Promise.all([
     registry.get(tabId, tabTitle),
-    getHistory(),
+    historyWithPresence(),
     getSettings(),
     chrome.storage.local.get(BROWSER_ASKS_KEY),
   ]);
@@ -181,6 +181,10 @@ async function onPopupMessage(port: chrome.runtime.Port, msg: PopupToBg) {
       return;
     case 'clear-history':
       await clearHistory();
+      schedulePush(port);
+      return;
+    case 'history-remove':
+      await removeHistory(msg.id);
       schedulePush(port);
       return;
     case 'settings':

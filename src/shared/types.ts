@@ -128,4 +128,10 @@ export interface HistoryEntry {
   size: number;
   date: number;
   downloadId?: number;
+  /** The video's picture, when the page had one (small enough to keep). */
+  thumbnail?: string;
+  /** "1080p", "360p"… */
+  quality?: string;
+  /** Set when the state is built: the file was moved, deleted or erased from the browser's list. */
+  missing?: boolean;
 }

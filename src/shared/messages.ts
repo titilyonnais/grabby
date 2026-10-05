@@ -88,6 +88,7 @@ export type PopupToBg =
   | { type: 'dismiss'; jobId: string }
   | { type: 'show'; downloadId: number }
   | { type: 'clear-history' }
+  | { type: 'history-remove'; id: string }
   | { type: 'settings'; patch: Partial<Settings> };
 
 export type BgToPopup = { type: 'state'; state: PopupState };

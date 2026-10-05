@@ -206,14 +206,16 @@ p {
   flex-direction: column;
   height: 100%;
   transform-origin: 50% 40%;
+  /* Coming back waits for the settings to start sliding away (their exit is staged). */
   transition:
-    transform 320ms var(--ease-out),
-    opacity 320ms var(--ease-out);
+    transform 340ms var(--ease-out) 140ms,
+    opacity 340ms var(--ease-out) 140ms;
 }
 
 .shell--behind {
   transform: translateX(-28px) scale(0.97);
   opacity: 0.4;
+  transition-delay: 0ms;
 }
 
 .top {
@@ -289,7 +291,11 @@ p {
 }
 
 /* -------------------------------------------------------- segmented tabs */
-/* The white pill slides under the chosen tab (and overshoots a hair). */
+/*
+ * The white pill slides under the chosen tab without overshooting (it would poke out of the
+ * track at the ends); the bounce is in its shape instead — it stretches behind as it goes and
+ * squashes against the side it lands on, so it always stays inside.
+ */
 .seg {
   position: relative;
   display: grid;
@@ -306,15 +312,31 @@ p {
   bottom: 4px;
   left: 4px;
   width: calc((100% - 8px) / var(--n, 2));
+  transform: translateX(calc(var(--at, 0) * 100%));
+  transition: transform 360ms var(--ease-out);
+}
+
+.seg__jelly {
+  position: absolute;
+  inset: 0;
   border-radius: 999px;
   background: var(--bg);
   box-shadow: var(--lift);
-  transform: translateX(calc(var(--at, 0) * 100%));
-  transition: transform var(--t-bouncy) var(--spring-bouncy);
 }
 
-:root[data-theme='dark'] .seg__thumb {
+:root[data-theme='dark'] .seg__jelly {
   background: var(--surface-2);
+}
+
+/* Anchored on the side it travels to: stretching and squashing only ever go inwards. */
+.seg__jelly--next {
+  transform-origin: 100% 50%;
+  animation: jelly 640ms linear;
+}
+
+.seg__jelly--prev {
+  transform-origin: 0 50%;
+  animation: jelly 640ms linear;
 }
 
 .seg button {
@@ -549,6 +571,37 @@ p {
   font-weight: 600;
 }
 
+.card__tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Stop a download right from its row, without unfolding it. */
+.card__cancel {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  color: var(--text);
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--line);
+  animation: pop-in var(--t-bouncy) var(--spring-bouncy);
+  transition:
+    box-shadow 140ms var(--ease),
+    transform var(--t-bouncy) var(--spring-bouncy);
+}
+
+.card__cancel:hover {
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+.card__cancel:active {
+  transform: scale(0.86);
+  transition-duration: 140ms, 90ms;
+}
+
 .card__toggle {
   display: grid;
   place-items: center;
@@ -767,6 +820,7 @@ p {
   overflow: hidden;
   text-overflow: ellipsis;
   font-variant-numeric: tabular-nums;
+  animation: value-in 420ms var(--spring-bouncy);
 }
 
 .select .icon {
@@ -794,6 +848,12 @@ p {
 
 .menu--up {
   transform-origin: 50% 100%;
+}
+
+/* Closing: the list folds back into its button, faster than it opened. */
+.menu--out {
+  pointer-events: none;
+  animation: menu-out 170ms cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
 .menu:focus {
@@ -948,10 +1008,6 @@ p {
   animation: meter-in var(--t-bouncy) var(--spring-bouncy);
 }
 
-.job--active .btn--icon {
-  height: 48px;
-  width: 48px;
-}
 
 .meter__label {
   position: absolute;
@@ -1010,16 +1066,17 @@ p {
   padding: 0 6px;
 }
 
-.job--done .job__actions .btn:not(.btn--icon) {
+/* Every button of a card's job is the height of the bar it sits next to. */
+.job .btn {
+  height: 48px;
+}
+
+.job .btn--icon {
+  width: 48px;
+}
+
+.job .job__actions .btn:not(.btn--icon) {
   flex: 1;
-}
-
-.job--done .btn {
-  height: 46px;
-}
-
-.job--done .btn--icon {
-  width: 46px;
 }
 
 .job__msg {
@@ -1106,6 +1163,12 @@ p {
   gap: 8px;
 }
 
+/* A new figure (the size for another quality or format) rises into place. */
+.swap {
+  display: inline-block;
+  animation: value-in 420ms var(--spring-bouncy);
+}
+
 /* ---------------------------------------------------------- empty states */
 .state {
   display: flex;
@@ -1175,82 +1238,195 @@ p {
 }
 
 /* ---------------------------------------------------------------- history */
-.history ul {
+/* Saved files, grouped by day; each one a row like the page's, with its picture. */
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.history__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 0 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  animation: rise var(--t-gentle) var(--spring-gentle);
+}
+
+.history__day ul {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 6px;
 }
 
-.history li {
+.history__date {
+  margin: 0 0 8px;
+  padding: 0 12px;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.history__date::first-letter {
+  text-transform: uppercase;
+}
+
+.hcard {
   --i: 0;
-  animation: rise var(--t-gentle) var(--spring-gentle) backwards;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-radius: 22px;
+  background: var(--surface);
+  transition: background-color 160ms var(--ease);
+  animation: card-in var(--t-gentle) var(--spring-gentle) backwards;
   animation-delay: calc(var(--i) * 35ms);
 }
 
-.history__item {
-  width: 100%;
+.hcard:hover {
+  background: var(--surface-2);
+}
+
+/* Removed: it shrinks and fades while the rows below close the gap. */
+.hcard--out {
+  max-height: 140px;
+  overflow: hidden;
+  pointer-events: none;
+  animation: hcard-out 240ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+.hcard__main {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) auto;
+  grid-template-columns: 88px minmax(0, 1fr);
   align-items: center;
   gap: 12px;
-  padding: 8px 16px 8px 8px;
-  border-radius: var(--r-pill);
+  min-width: 0;
+  padding: 8px;
+  border-radius: 22px;
   text-align: left;
   color: var(--text);
-  transition:
-    background-color 140ms var(--ease),
-    transform var(--t-bouncy) var(--spring-bouncy);
+  transition: transform var(--t-bouncy) var(--spring-bouncy);
 }
 
-.history__item > .icon {
-  color: var(--muted);
-}
-
-.history__item:hover:not(:disabled) {
-  background: var(--surface);
-}
-
-.history__item:active:not(:disabled) {
+.hcard__main:active:not(:disabled) {
   transform: scale(0.98);
-  transition-duration: 140ms, 90ms;
+  transition-duration: 90ms;
 }
 
-.history__icon {
+.hcard__thumb {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
-  border-radius: var(--r-pill);
-  background: var(--surface);
+  aspect-ratio: 16 / 9;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--surface-2);
 }
 
-.history__item:hover:not(:disabled) .history__icon {
+.hcard:hover .hcard__thumb {
   background: var(--bg);
 }
 
-.history__text {
+.hcard__thumb img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.hcard__thumb .file__badge {
+  width: 26px;
+  height: 32px;
+  padding-bottom: 4px;
+  font-size: 8.5px;
+}
+
+.hcard__text {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 5px;
 }
 
-.history__name {
-  font-weight: 550;
+.hcard__title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
-.history__meta {
+.hcard__meta {
   display: flex;
-  gap: 12px;
-  font-size: 12.5px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 12px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+}
+
+.hcard__meta .tag {
+  font-size: 10.5px;
+  line-height: 17px;
+}
+
+.hcard__missing {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--focus);
+}
+
+.hcard--missing .hcard__thumb {
+  filter: grayscale(1);
+  opacity: 0.5;
+}
+
+.hcard__main:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.hcard__tools {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-right: 8px;
+}
+
+.hcard__btn {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  color: var(--muted);
+  transition:
+    background-color 140ms var(--ease),
+    color 140ms var(--ease),
+    transform var(--t-bouncy) var(--spring-bouncy);
+}
+
+.hcard__btn:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.hcard__btn:active {
+  transform: scale(0.86);
+  transition-duration: 140ms, 140ms, 90ms;
 }
 
 .link {
@@ -1290,8 +1466,27 @@ p {
   animation: back-in 620ms var(--spring-bouncy) 200ms backwards;
 }
 
+/*
+ * Closing plays the opening backwards: the groups leave last-first, then the title and the
+ * back arrow, then the page slides away (the same curve, reversed).
+ */
 .page--out {
-  animation: page-out 260ms cubic-bezier(0.4, 0, 0.7, 0.2) forwards;
+  animation: page-out 340ms cubic-bezier(0.7, 0, 0.84, 0) 140ms forwards;
+}
+
+.page--out .top--page > * {
+  animation: sink 200ms cubic-bezier(0.7, 0, 0.84, 0) 60ms forwards;
+}
+
+.page--out .group,
+.page--out .page__foot {
+  animation: group-out 220ms cubic-bezier(0.5, 0, 0.75, 0) forwards;
+  animation-delay: calc((var(--n, 4) - 1 - var(--i, 0)) * 40ms);
+}
+
+.page--out .page__foot {
+  /* It came in last: it leaves first, with the last group. */
+  --i: 3;
 }
 
 .page:focus {
@@ -1768,6 +1963,63 @@ label.row-setting:hover {
 @keyframes page-out {
   to {
     transform: translateX(100%);
+  }
+}
+
+@keyframes hcard-out {
+  to {
+    transform: scale(0.94);
+    opacity: 0;
+    max-height: 0;
+    /* The list's gap closes too. */
+    margin-bottom: -6px;
+  }
+}
+
+@keyframes menu-out {
+  to {
+    transform: scale(0.94, 0.86);
+    opacity: 0;
+  }
+}
+
+@keyframes value-in {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+}
+
+@keyframes sink {
+  to {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+}
+
+@keyframes group-out {
+  to {
+    transform: translateY(22px) scale(0.97);
+    opacity: 0;
+  }
+}
+
+/* Stretch behind while travelling, squash on landing, settle. */
+@keyframes jelly {
+  0% {
+    transform: none;
+  }
+  28% {
+    transform: scaleX(1.22) scaleY(0.88);
+  }
+  52% {
+    transform: scaleX(0.93) scaleY(1.04);
+  }
+  72% {
+    transform: scaleX(1.03) scaleY(0.99);
+  }
+  100% {
+    transform: none;
   }
 }
 

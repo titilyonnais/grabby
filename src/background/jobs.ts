@@ -498,6 +498,7 @@ export class JobManager {
       const [info] = await chrome.downloads.search({ id: d.id });
       const size = info?.fileSize || info?.totalBytes || job.bytes;
       this.update(job.id, { status: 'done', progress: 1, speed: 0, bytes: size });
+      const thumbnail = this.items.get(`${job.tabId}:${job.mediaId}`)?.thumbnail;
       await addHistory({
         id: job.id,
         filename: job.filename,
@@ -506,6 +507,8 @@ export class JobManager {
         size,
         date: Date.now(),
         downloadId: d.id,
+        ...(thumbnail ? { thumbnail } : {}),
+        ...(job.mode === 'video' && job.quality ? { quality: job.quality } : {}),
       });
       void notifyFinished(this.jobs.get(job.id) ?? job);
       await this.cleanup(job.id);

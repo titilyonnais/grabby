@@ -55,6 +55,13 @@
   "emptyBody": { "message": "Lance la lecture : Grabby repère la vidéo dès qu'elle se charge." },
 
   "historyEmpty": { "message": "Tes téléchargements apparaîtront ici." },
+  "historyToday": { "message": "Aujourd'hui" },
+  "historyYesterday": { "message": "Hier" },
+  "historyOne": { "message": "1 fichier" },
+  "historyCount": { "message": "$N$ fichiers", "placeholders": { "n": { "content": "$1" } } },
+  "historyMissing": { "message": "Fichier déplacé ou supprimé" },
+  "historyOpenPage": { "message": "Ouvrir la page de la vidéo" },
+  "historyRemove": { "message": "Retirer de l'historique" },
   "clearHistory": { "message": "Effacer l'historique" },
 
   "firstRunTitle": { "message": "Avant de commencer" },

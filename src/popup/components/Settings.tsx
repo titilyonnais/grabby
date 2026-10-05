@@ -20,9 +20,18 @@ interface Props {
 
 function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: [T, string][]; onChange: (v: T) => void; label: string }) {
   const at = Math.max(0, options.findIndex(([v]) => v === value));
+  // Which way the pill last moved: it squashes against the side it lands on.
+  const prev = useRef(at);
+  const dir = useRef('');
+  if (prev.current !== at) {
+    dir.current = at > prev.current ? 'next' : 'prev';
+    prev.current = at;
+  }
   return (
     <div class="seg seg--small" role="radiogroup" aria-label={label} style={{ '--n': String(options.length), '--at': String(at) }}>
-      <span class="seg__thumb" aria-hidden="true" />
+      <span class="seg__thumb" aria-hidden="true">
+        <span key={at} class={`seg__jelly${dir.current ? ` seg__jelly--${dir.current}` : ''}`} />
+      </span>
       {options.map(([v, text]) => (
         <button
           key={v}
@@ -180,7 +189,8 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
         <span />
       </header>
 
-      <div class="page__body">
+      {/* --n: how many groups, so closing can send them away last-first. */}
+      <div class="page__body" style={{ '--n': '4' }}>
         <Group title={t('set_group_look')} icon="sun" index={0}>
           <div class="row-setting">
             <span class="setting__label">{t('set_theme')}</span>

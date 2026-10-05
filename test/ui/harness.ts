@@ -63,9 +63,10 @@ const job = (over: Partial<Job>): Job => ({
 });
 
 const history = [
-  { id: 'h1', filename: 'Sunset over the harbour.mp4', title: '', pageUrl: '', size: 412_000_000, date: now - 60_000 * 4, downloadId: 1 },
-  { id: 'h2', filename: 'interview-raw.mp4', title: '', pageUrl: '', size: 98_000_000, date: now - 3_600_000 * 5, downloadId: 2 },
-  { id: 'h3', filename: 'Podcast episode 12.m4a', title: '', pageUrl: '', size: 54_000_000, date: now - 86_400_000 * 2, downloadId: 3 },
+  { id: 'h1', filename: 'Sunset over the harbour.mp4', title: hero.title, pageUrl: hero.pageUrl, size: 412_000_000, date: now - 60_000 * 4, downloadId: 1, thumbnail: '/thumb1.jpg', quality: '1080p' },
+  { id: 'h2', filename: 'interview-raw.mp4', title: 'interview-raw', pageUrl: hero.pageUrl, size: 98_000_000, date: now - 60_000 * 50, downloadId: 2, thumbnail: '/thumb3.jpg', quality: '720p', missing: true },
+  { id: 'h3', filename: 'Podcast episode 12.m4a', title: 'Podcast episode 12', pageUrl: hero.pageUrl, size: 54_000_000, date: now - 86_400_000, downloadId: 3 },
+  { id: 'h4', filename: 'Clip from the embedded player.webm', title: 'Clip from the embedded player', pageUrl: hero.pageUrl, size: 21_000_000, date: now - 86_400_000 * 3, downloadId: 4, thumbnail: '/thumb2.jpg', quality: '480p' },
 ];
 
 const theme = (q.get('theme') ?? 'light') as 'light' | 'dark';
@@ -98,7 +99,10 @@ const listeners: ((m: unknown) => void)[] = [];
 (globalThis as unknown as { chrome: unknown }).chrome = {
   i18n: {
     getMessage: (key: string, subs?: string | string[]) => {
-      let m = messages[key]?.message ?? '';
+      const entry = messages[key] as { message: string; placeholders?: Record<string, { content: string }> } | undefined;
+      let m = entry?.message ?? '';
+      // Named placeholders ($T$) first, like Chrome, then the positional $1, $2…
+      for (const [name, p] of Object.entries(entry?.placeholders ?? {})) m = m.split(`$${name.toUpperCase()}$`).join(p.content);
       [subs ?? []].flat().forEach((s, i) => (m = m.replace(`$${i + 1}`, s)));
       return m;
     },

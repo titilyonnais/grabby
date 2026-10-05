@@ -55,6 +55,13 @@
   "emptyBody": { "message": "Start playing the video: Grabby picks it up as soon as it loads." },
 
   "historyEmpty": { "message": "Your downloads will appear here." },
+  "historyToday": { "message": "Today" },
+  "historyYesterday": { "message": "Yesterday" },
+  "historyOne": { "message": "1 file" },
+  "historyCount": { "message": "$N$ files", "placeholders": { "n": { "content": "$1" } } },
+  "historyMissing": { "message": "File moved or deleted" },
+  "historyOpenPage": { "message": "Open the video's page" },
+  "historyRemove": { "message": "Remove from history" },
   "clearHistory": { "message": "Clear history" },
 
   "firstRunTitle": { "message": "Before you start" },

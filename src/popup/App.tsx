@@ -12,8 +12,8 @@ import { useGrabby } from './store';
 import { rememberTheme } from './theme';
 
 const prefersDark = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
-/** How long the settings take to slide away before they leave the DOM. */
-const SETTINGS_OUT_MS = 270;
+/** How long the settings take to go away (groups, then title, then the page) before they leave the DOM. */
+const SETTINGS_OUT_MS = 490;
 const TABS = ['page', 'history'] as const;
 type Tab = (typeof TABS)[number];
 
@@ -145,7 +145,10 @@ export function App() {
         </header>
 
         <nav class="seg" role="tablist" style={{ '--n': '2', '--at': String(TABS.indexOf(tab)) }}>
-          <span class="seg__thumb" aria-hidden="true" />
+          <span class="seg__thumb" aria-hidden="true">
+            {/* Keyed by tab: the pill squashes against the side it lands on, never past it. */}
+            <span key={tab} class={`seg__jelly${dir === 'same' ? '' : ` seg__jelly--${dir}`}`} />
+          </span>
           {TABS.map((k) => (
             <button
               key={k}
