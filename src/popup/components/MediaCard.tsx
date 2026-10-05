@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'preact/hooks';
 import { canClip } from '../../shared/clip';
 import { formatDuration } from '../../shared/format';
+import { SUB_CODEC } from '../../shared/subtitles';
 import { AUDIO_FORMATS, FORMAT_NAMES, isAudioFormat, videoFormatsFor } from '../../shared/formats';
 import type { PopupToBg } from '../../shared/messages';
 import type { AudioFormat, Clip, OutputFormat, VideoFormat } from '../../shared/plan';
 import { canShrink, scaleChoices, SHRUNK_FORMATS } from '../../shared/scale';
 import type { Job, MediaItem, Variant } from '../../shared/types';
-import { size, t } from '../i18n';
+import { size, t, uiLang } from '../i18n';
 import { useUnfold } from '../unfold';
 import { Icon } from './Icon';
 import { canPause, isActive, JobBar } from './JobBar';
@@ -42,6 +43,16 @@ function variantSize(v: Variant, format: OutputFormat, duration?: number): numbe
 const SHRUNK_BPS: Record<number, number> = { 144: 150e3, 240: 300e3, 360: 600e3, 480: 1e6, 720: 2.2e6, 1080: 4.5e6, 1440: 8e6 };
 const SCALE_PREFIX = 'scale:';
 
+/** "fr" → "French" (in the browser's language), for tracks the site names by their code only. */
+function languageName(code: string): string {
+  try {
+    const name = new Intl.DisplayNames([uiLang()], { type: 'language' }).of(code);
+    return name ? name[0]!.toLocaleUpperCase() + name.slice(1) : code;
+  } catch {
+    return code;
+  }
+}
+
 function Thumb({ item }: { item: MediaItem }) {
   const [broken, setBroken] = useState(false);
   return (
@@ -76,6 +87,9 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
   const [trimming, setTrimming] = useState(false);
   const [clip, setClip] = useState<Clip | null>(null);
   const clippable = canClip(item);
+  // Subtitles: none, or one of the stream's tracks, put in the video or saved next to it.
+  const [subsId, setSubsId] = useState('');
+  const [subsApart, setSubsApart] = useState(false);
   const cut = trimming && clip && item.duration && (clip.start > 0 || clip.end < Math.floor(item.duration)) ? clip : null;
   // A format the chosen quality can't go in (WebM for a shrunk picture, MOV back on a VP9
   // source): back to the preferred one, so what is shown is what gets sent.
@@ -118,6 +132,22 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
     ...AUDIO_FORMATS.map((f) => ({ value: f, label: FORMAT_NAMES[f], detail: t(`fmt_${f}`), group: t('fmt_group_audio') })),
   ];
 
+  const subsOffered = !!item.subtitles?.length && !audio;
+  // MPEG-TS and AVI hold no subtitles: they can only go next to the video.
+  const subsMustApart = !SUB_CODEC[scale && format === 'webm' ? 'mp4' : format];
+  const subs = subsOffered && subsId ? { id: subsId, separate: subsApart || subsMustApart } : null;
+  const subsOptions: SelectOption<string>[] = [
+    { value: '', label: t('subsNone') },
+    ...(item.subtitles ?? []).map((s) => {
+      const name = s.label === s.lang ? languageName(s.lang) : s.label;
+      return {
+        value: s.id,
+        label: s.forced ? `${name} (${t('subsForced')})` : name,
+        ...(s.lang && s.lang !== name ? { detail: s.lang } : {}),
+      };
+    }),
+  ];
+
   const start = () =>
     send({
       type: 'download',
@@ -126,6 +156,7 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
       ...(!audio && variantId ? { variantId } : {}),
       ...(!audio && scale ? { scale } : {}),
       ...(cut ? { clip: cut } : {}),
+      ...(subs ? { subtitles: subs } : {}),
       format,
     });
 
@@ -239,6 +270,25 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
                     <Select label={t('qualityLabel')} value={quality ?? ''} options={qualityOptions} onChange={setQuality} disabled={audio} />
                   )}
                   <Select label={t('formatLabel')} value={format} options={formatOptions} onChange={setFormat} />
+                </div>
+              )}
+              {!showJob && subsOffered && (
+                <div class="subs">
+                  <Select label={t('subsLabel')} value={subsId} options={subsOptions} onChange={setSubsId} />
+                  {subsId && (
+                    <label class="subs__apart">
+                      <span>{t('subsApart')}</span>
+                      <input
+                        class="switch"
+                        type="checkbox"
+                        role="switch"
+                        checked={subsApart || subsMustApart}
+                        disabled={subsMustApart}
+                        onChange={(e) => setSubsApart(e.currentTarget.checked)}
+                      />
+                    </label>
+                  )}
+                  {subsId && subsMustApart && <p class="hint">{t('subsApartHint')}</p>}
                 </div>
               )}
               {!showJob && clippable && (

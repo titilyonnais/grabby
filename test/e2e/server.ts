@@ -72,6 +72,7 @@ const TYPES: Record<string, string> = {
   '.ts': 'video/mp2t',
   '.m3u8': 'application/vnd.apple.mpegurl',
   '.mpd': 'application/dash+xml',
+  '.vtt': 'text/vtt',
   '.bin': 'application/octet-stream',
   '.js': 'text/javascript',
 };

@@ -104,7 +104,7 @@ describe('buildPlan with a part', () => {
   it('HLS: fetches only the segments of the part, and tells ffmpeg where to cut', async () => {
     const p = await buildPlan(item({}), { mode: 'video', settings: DEFAULT_SETTINGS, fetchText, clip: { start: 20, end: 31 } });
     expect(p.video!.segments.map((s) => s.url)).toEqual(['https://cdn.com/s3.ts', 'https://cdn.com/s4.ts', 'https://cdn.com/s5.ts']);
-    expect(p.clip).toEqual({ duration: 11, video: 2 });
+    expect(p.clip).toEqual({ start: 20, duration: 11, video: 2 });
     expect(p.raw).toBe(false);
   });
 
@@ -122,7 +122,7 @@ describe('buildPlan with a part', () => {
     expect(p.direct).toBeUndefined();
     expect(p.fast).toBeUndefined();
     expect(p.raw).toBe(false);
-    expect(p.clip).toEqual({ duration: 15, video: 15 });
+    expect(p.clip).toEqual({ start: 15, duration: 15, video: 15 });
     expect(p.estimatedSize).toBe(10e6);
   });
 

@@ -2,7 +2,8 @@ import { parseDash, type DashRep } from '../parsers/dash';
 import { parseHls, type HlsMedia } from '../parsers/hls';
 import { extOf, reachableFrom } from '../parsers/url';
 import { isAudioFormat, sourceFormat } from '../shared/formats';
-import { RAW_THRESHOLD, type Clip, type ErrorCode, type OutputFormat, type Plan, type TrackPlan } from '../shared/plan';
+import { RAW_THRESHOLD, type Clip, type ErrorCode, type OutputFormat, type Plan, type SubsChoice, type TrackPlan } from '../shared/plan';
+import { SUB_CODEC } from '../shared/subtitles';
 import type { Settings } from '../shared/settings';
 import { scaleBox, scaleSource } from '../shared/scale';
 import type { JobMode, MediaItem, Variant } from '../shared/types';
@@ -28,6 +29,8 @@ export interface PlanOptions {
   scale?: number;
   /** Keep only this part of the video. */
   clip?: Clip;
+  /** Subtitles to save with the video. */
+  subtitles?: SubsChoice;
   settings: Settings;
   fetchText: (url: string) => Promise<string>;
 }
@@ -215,7 +218,7 @@ export function validClip(clip: Clip | undefined, duration?: number): Clip | und
 }
 
 function applyClip(plan: Plan, clip: Clip, o: PlanOptions, duration?: number): Plan {
-  const out: Plan = { ...plan, clip: { duration: clip.end - clip.start } };
+  const out: Plan = { ...plan, clip: { start: clip.start, duration: clip.end - clip.start } };
   for (const key of ['video', 'audio'] as const) {
     const t = plan[key];
     if (!t) continue;
@@ -233,10 +236,42 @@ function applyClip(plan: Plan, clip: Clip, o: PlanOptions, duration?: number): P
   return out;
 }
 
+/** The WebVTT segments of a subtitle track, or nothing when they can't be read. */
+async function subsTrack(item: MediaItem, id: string, fetchText: PlanOptions['fetchText']): Promise<TrackPlan | null> {
+  const sub = item.subtitles?.find((s) => s.id === id);
+  if (!sub) return null;
+  if (item.kind === 'hls') {
+    const parsed = parseHls(await fetchText(sub.url), sub.url);
+    if (parsed.type !== 'media' || parsed.encrypted || !parsed.segments.length) return null;
+    return checkReachable(sub.url, { segments: parsed.segments.map(({ url, range }) => (range ? { url, range } : { url })), container: 'vtt' });
+  }
+  if (item.kind === 'dash') {
+    const rep = parseDash(await fetchText(item.url), item.url).text.find((r) => r.id === id);
+    if (!rep?.segments.length) return null;
+    return checkReachable(item.url, { segments: rep.segments, container: 'vtt' });
+  }
+  return null;
+}
+
+/** Adds the chosen subtitles to a video's plan; a track that can't be read is left out. */
+async function withSubs(plan: Plan, item: MediaItem, o: PlanOptions): Promise<Plan> {
+  if (!o.subtitles || o.mode !== 'video' || plan.audioOnly) return plan;
+  const sub = item.subtitles?.find((s) => s.id === o.subtitles!.id);
+  const track = sub ? await subsTrack(item, sub.id, o.fetchText).catch(() => null) : null;
+  if (!sub || !track) return plan;
+  // Not assembled (huge) or a container without subtitles: an .srt next to the video.
+  const separate = o.subtitles.separate || plan.raw || !SUB_CODEC[plan.output];
+  return { ...plan, subtitles: { track, label: sub.label, ...(sub.lang ? { lang: sub.lang } : {}), separate } };
+}
+
 /** Turns a detected item + user choice into a concrete download plan. */
 export async function buildPlan(item: MediaItem, o: PlanOptions): Promise<Plan> {
   if (item.protection !== 'none') throw new PlanError('protected');
   if (item.live) throw new PlanError('live');
+  return withSubs(await clipped(item, o), item, o);
+}
+
+async function clipped(item: MediaItem, o: PlanOptions): Promise<Plan> {
   const clip = item.kind === 'capture' ? undefined : validClip(o.clip, item.duration);
   if (!clip) return planFor(item, o);
   // Cutting needs ffmpeg, which works in memory: a huge file can't be cut.

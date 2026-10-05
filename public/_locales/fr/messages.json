@@ -55,6 +55,11 @@
   "trimEnd": { "message": "Fin" },
   "downloadClip": { "message": "Télécharger l'extrait" },
   "trimHint": { "message": "Coupé sur l'image clé la plus proche : l'extrait peut commencer quelques secondes plus tôt." },
+  "subsLabel": { "message": "Sous-titres" },
+  "subsNone": { "message": "Aucun" },
+  "subsForced": { "message": "forcés" },
+  "subsApart": { "message": "Dans un fichier .srt à part" },
+  "subsApartHint": { "message": "Ce format ne garde pas les sous-titres : ils seront enregistrés à côté de la vidéo, en .srt." },
   "st_done": { "message": "Enregistré" },
   "st_canceled": { "message": "Annulé" },
 

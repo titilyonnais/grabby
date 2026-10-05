@@ -40,6 +40,11 @@ const hero = base({
     { id: 'c', label: '480p', height: 480, url: '' },
     { id: 'd', label: '360p', height: 360, url: '' },
   ],
+  subtitles: [
+    { id: 's-en', label: 'English', lang: 'en', url: '' },
+    { id: 's-fr', label: 'Français', lang: 'fr', url: '' },
+    { id: 's-fr-f', label: 'Français', lang: 'fr', url: '', forced: true },
+  ],
 });
 const capture = base({ id: 'cap', kind: 'capture', title: 'Clip from the embedded player', thumbnail: '/thumb2.jpg', duration: 48 });
 const file = base({ id: 'file', kind: 'file', title: 'interview-raw.mp4', thumbnail: '/thumb3.jpg', duration: 1820, size: 98_000_000, variants: [] });

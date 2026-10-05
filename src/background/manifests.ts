@@ -4,7 +4,7 @@ import { parseHls } from '../parsers/hls';
 import { extOf, normalizeMediaUrl, reachableFrom } from '../parsers/url';
 import { qualityLabel } from '../shared/format';
 import { hashId } from '../shared/ids';
-import type { AudioTrack, MediaItem, Variant } from '../shared/types';
+import type { AudioTrack, MediaItem, SubtitleTrack, Variant } from '../shared/types';
 
 export interface DetectContext {
   tabId: number;
@@ -45,6 +45,17 @@ const baseItem = (url: string, ctx: DetectContext, kind: MediaItem['kind']): Med
   detectedAt: Date.now(),
 });
 
+/** One choice per name: the same subtitles are often listed once per audio group. */
+function uniqueSubs(subs: SubtitleTrack[]): SubtitleTrack[] {
+  const seen = new Set<string>();
+  return subs.filter((s) => {
+    const key = `${s.label}|${s.lang ?? ''}|${s.forced ? 1 : 0}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function resolveHls(url: string, ctx: DetectContext, fetchText: FetchText): Promise<MediaItem | null> {
   return cached(url, async () => {
     const parsed = parseHls(await fetchText(url, ctx.pageUrl), url);
@@ -78,6 +89,17 @@ export function resolveHls(url: string, ctx: DetectContext, fetchText: FetchText
           isDefault: a.isDefault,
           ...(a.lang ? { lang: a.lang } : {}),
         }));
+      const subs = parsed.subtitles
+        .filter((s) => reachableFrom(url, s.url))
+        .map<SubtitleTrack>((s) => ({
+          id: hashId(s.url),
+          label: s.name,
+          url: s.url,
+          ...(s.lang ? { lang: s.lang } : {}),
+          ...(s.isDefault ? { isDefault: true } : {}),
+          ...(s.forced ? { forced: true } : {}),
+        }));
+      if (subs.length) item.subtitles = uniqueSubs(subs);
       if (parsed.encrypted) item.protection = 'encrypted';
       // Probe the best variant for duration, liveness and encryption.
       const best = item.variants[0];
@@ -133,6 +155,8 @@ export function resolveDash(url: string, ctx: DetectContext, fetchText: FetchTex
         bandwidth: r.bandwidth,
         ...(r.lang ? { lang: r.lang } : {}),
       }));
+    const subs = mpd.text.map<SubtitleTrack>((r) => ({ id: r.id, label: r.label || r.lang || r.id, url, ...(r.lang ? { lang: r.lang } : {}) }));
+    if (subs.length) item.subtitles = uniqueSubs(subs);
     const best = mpd.video.find((r) => r.id === item.variants[0]?.id);
     const audioBw = mpd.audio[0]?.bandwidth ?? 0;
     if (best && mpd.duration) item.size = Math.round(((best.bandwidth + audioBw) * mpd.duration) / 8);

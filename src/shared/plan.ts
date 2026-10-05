@@ -12,7 +12,7 @@ export interface Clip {
   end: number;
 }
 
-export type Container = 'ts' | 'fmp4' | 'file' | 'webm';
+export type Container = 'ts' | 'fmp4' | 'file' | 'webm' | 'vtt';
 /** Containers the user can pick for a video. */
 export type VideoFormat = 'mp4' | 'mkv' | 'webm' | 'mov' | 'avi' | 'ts';
 /** Audio-only outputs. */
@@ -52,7 +52,18 @@ export interface Plan {
    * Keep only part of the video: how long, and where it starts in what each track fetched
    * (only the segments it covers are fetched, so each track starts a little before it).
    */
-  clip?: { duration: number; video?: number; audio?: number };
+  clip?: { start: number; duration: number; video?: number; audio?: number };
+  /**
+   * Subtitles (WebVTT, fetched as a third track): put in the video, or saved next to it as
+   * an .srt file (always, when the video can't hold them or isn't assembled).
+   */
+  subtitles?: { track: TrackPlan; label: string; lang?: string; separate: boolean };
+}
+
+/** The user's subtitle choice: which track, and as a separate file or not. */
+export interface SubsChoice {
+  id: string;
+  separate: boolean;
 }
 
 export const RAW_THRESHOLD = 1.5e9;

@@ -18,10 +18,21 @@ export interface HlsAudio {
   isDefault: boolean;
 }
 
+/** A subtitle rendition: a playlist of WebVTT segments. */
+export interface HlsSubtitle {
+  name: string;
+  lang?: string;
+  url: string;
+  isDefault: boolean;
+  /** Only the lines spoken in another language (signs, foreign dialogue). */
+  forced: boolean;
+}
+
 export interface HlsMaster {
   type: 'master';
   variants: HlsVariant[];
   audio: HlsAudio[];
+  subtitles: HlsSubtitle[];
   encrypted: boolean;
 }
 
@@ -76,6 +87,7 @@ export function parseHls(text: string, baseUrl: string): HlsMaster | HlsMedia {
   if (isMaster) {
     const variants: HlsVariant[] = [];
     const audio: HlsAudio[] = [];
+    const subtitles: HlsSubtitle[] = [];
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i]!;
       if (line.startsWith('#EXT-X-STREAM-INF:')) {
@@ -96,6 +108,15 @@ export function parseHls(text: string, baseUrl: string): HlsMaster | HlsMedia {
         });
       } else if (line.startsWith('#EXT-X-MEDIA:')) {
         const a = parseAttributes(line.slice(13));
+        if (a.TYPE === 'SUBTITLES' && a.URI) {
+          subtitles.push({
+            name: a.NAME ?? a.LANGUAGE ?? 'Subtitles',
+            ...(a.LANGUAGE ? { lang: a.LANGUAGE } : {}),
+            url: resolveUrl(a.URI, baseUrl),
+            isDefault: a.DEFAULT === 'YES',
+            forced: a.FORCED === 'YES',
+          });
+        }
         if (a.TYPE !== 'AUDIO') continue;
         audio.push({
           groupId: a['GROUP-ID'] ?? '',
@@ -108,7 +129,7 @@ export function parseHls(text: string, baseUrl: string): HlsMaster | HlsMedia {
         if (isEncrypting(parseAttributes(line.slice(19)))) encrypted = true;
       }
     }
-    return { type: 'master', variants, audio, encrypted };
+    return { type: 'master', variants, audio, subtitles, encrypted };
   }
 
   const segments: HlsSegment[] = [];

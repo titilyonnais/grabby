@@ -55,6 +55,11 @@
   "trimEnd": { "message": "End" },
   "downloadClip": { "message": "Download clip" },
   "trimHint": { "message": "Cut at the nearest keyframe: the clip may start a few seconds early." },
+  "subsLabel": { "message": "Subtitles" },
+  "subsNone": { "message": "None" },
+  "subsForced": { "message": "forced" },
+  "subsApart": { "message": "In a separate .srt file" },
+  "subsApartHint": { "message": "This format can't hold subtitles: they'll be saved next to the video, as .srt." },
   "st_done": { "message": "Saved" },
   "st_canceled": { "message": "Canceled" },
 

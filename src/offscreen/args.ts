@@ -1,11 +1,14 @@
 import { extOf } from '../parsers/url';
 import type { Container, OutputFormat } from '../shared/plan';
+import { iso3, SUB_CODEC } from '../shared/subtitles';
 
 export interface MuxInputs {
   /** File holding video (possibly with audio muxed in). */
   video?: string;
   /** Separate audio file. */
   audio?: string;
+  /** Subtitles (.srt) to put in the video. */
+  subs?: { path: string; lang?: string; title?: string };
 }
 
 /** Keep only part: how long, and where it starts in each input. */
@@ -34,6 +37,8 @@ export function inputExt(container: Container, url?: string): string {
       return 'mp4';
     case 'webm':
       return 'webm';
+    case 'vtt':
+      return 'vtt';
     case 'file': {
       const e = url ? extOf(url) : '';
       return e || 'bin';
@@ -108,18 +113,28 @@ export function muxAttempts(
 
   if (!inputs.video) throw new Error('no video input');
   const ins = [...seek(clip?.video), '-i', inputs.video, ...(inputs.audio ? [...seek(clip?.audio), '-i', inputs.audio] : [])];
-  const maps = inputs.audio ? ['-map', '0:v:0', '-map', '1:a:0'] : ['-map', '0:v:0?', '-map', '0:a:0?'];
+  const av = inputs.audio ? ['-map', '0:v:0', '-map', '1:a:0'] : ['-map', '0:v:0?', '-map', '0:a:0?'];
+  // Subtitles: one more input, written in the form the container takes.
+  const subsIn = inputs.subs ? ['-i', inputs.subs.path] : [];
+  const subsMap = inputs.subs ? ['-map', `${inputs.audio ? 2 : 1}:0`] : [];
+  const lang = iso3(inputs.subs?.lang);
+  const subsMeta = [...(lang ? ['-metadata:s:s:0', `language=${lang}`] : []), ...(inputs.subs?.title ? ['-metadata:s:s:0', `title=${inputs.subs.title}`] : [])];
+  const subsAs = (c: string) => (inputs.subs && SUB_CODEC[c] ? ['-c:s', SUB_CODEC[c]!, ...subsMeta] : []);
+  const maps = [...av, ...(inputs.subs ? subsMap : [])];
   // H.264 doesn't go in WebM: a shrunk picture is saved as MP4 instead.
   const container = scale && output === 'webm' ? 'mp4' : ['mkv', 'webm', 'mov', 'avi', 'ts'].includes(output) ? output : 'mp4';
   const video = scale ? shrinkArgs(scale) : ['-c:v', 'copy'];
   const copy = scale ? [...video, '-c:a', 'copy'] : ['-c', 'copy'];
-  if (container === 'mkv') return [mk('mkv', [...ins, ...maps, ...copy])];
+  const all = [...ins, ...subsIn];
+  if (container === 'mkv') return [mk('mkv', [...all, ...maps, ...copy, ...subsAs('mkv')])];
   // MP4/MOV play before they are fully loaded when the index comes first.
   const tag = container === 'mp4' || container === 'mov' ? ['-movflags', '+faststart'] : [];
   const audio = VIDEO_AUDIO_FALLBACK[container] ?? ['-c:a', 'aac', '-b:a', '192k'];
+  // A container without subtitles leaves them out (the plan saves them as a file instead).
+  const own = SUB_CODEC[container] ? maps : av;
   return [
-    mk(container, [...ins, ...maps, ...copy, ...tag]),
-    mk(container, [...ins, ...maps, ...video, ...audio, ...tag]),
-    mk('mkv', [...ins, ...maps, ...copy]),
+    mk(container, [...all, ...own, ...copy, ...subsAs(container), ...tag]),
+    mk(container, [...all, ...own, ...video, ...audio, ...subsAs(container), ...tag]),
+    mk('mkv', [...all, ...maps, ...copy, ...subsAs('mkv')]),
   ];
 }

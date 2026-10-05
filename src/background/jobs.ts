@@ -5,7 +5,7 @@ import { buildFilename } from '../shared/filename';
 import { canClip, clipLabel, sameClip } from '../shared/clip';
 import { uid } from '../shared/ids';
 import type { BgToContent, ContentToBg, OffscreenToBg } from '../shared/messages';
-import type { Clip, ErrorCode, OutputFormat, Plan, VideoFormat } from '../shared/plan';
+import type { Clip, ErrorCode, OutputFormat, Plan, SubsChoice, VideoFormat } from '../shared/plan';
 import { getSettings, type Settings } from '../shared/settings';
 import type { Job, JobMode, JobStatus, MediaItem } from '../shared/types';
 import { fetchTextAs, sweepHeaderRules, withPageHeaders } from './headers';
@@ -249,19 +249,21 @@ export class JobManager {
     variantId: string | undefined,
     mode: JobMode,
     format?: OutputFormat,
-    scale?: number,
-    clip?: Clip,
+    extra: { scale?: number; clip?: Clip; subtitles?: SubsChoice } = {},
   ): Promise<Job | undefined> {
     await this.ready;
+    let { scale, clip } = extra;
     const item = findVisible(await this.registry.get(tabId), mediaId) ?? this.items.get(`${tabId}:${mediaId}`);
     if (!item) return undefined;
     // Only the smaller qualities the card offers.
     if (scale !== undefined && (mode !== 'video' || !canShrink(item) || !scaleChoices(item.variants).includes(scale))) scale = undefined;
     // A part of the video, when it can be cut and isn't the whole of it.
     clip = canClip(item) ? validClip(clip, item.duration) : undefined;
+    // Subtitles go with a video, and only the ones the stream offers.
+    const subtitles = mode === 'video' && extra.subtitles && item.subtitles?.some((s) => s.id === extra.subtitles!.id) ? extra.subtitles : undefined;
     const dup = [...this.jobs.values()].find(
       (j) =>
-        j.tabId === tabId && j.mediaId === mediaId && j.mode === mode && j.variantId === variantId && j.scale === scale && sameClip(j.clip, clip) &&
+        j.tabId === tabId && j.mediaId === mediaId && j.mode === mode && j.variantId === variantId && j.scale === scale && sameClip(j.clip, clip) && j.subtitles?.id === subtitles?.id &&
         !FINISHED.includes(j.status),
     );
     if (dup) return dup;
@@ -283,6 +285,7 @@ export class JobManager {
       startedAt: Date.now(),
       ...(variantId ? { variantId } : {}),
       ...(clip ? { clip } : {}),
+      ...(subtitles ? { subtitles } : {}),
       ...(scale ? { scale, quality: `${scale}p` } : mode === 'video' && variant ? { quality: variant.label } : {}),
       // A recording's size is known beforehand only when the site tells it (YouTube).
       ...(item.kind === 'capture' && mode === 'video' && (variant?.sizes?.[format as VideoFormat] ?? item.size)
@@ -311,7 +314,11 @@ export class JobManager {
     if (!j || !FINISHED.includes(j.status)) return;
     this.jobs.delete(jobId);
     // The video may be gone from the page: the card still has to update.
-    if (!(await this.start(j.tabId, j.mediaId, j.variantId, j.mode, j.format, j.scale, j.clip))) this.changed();
+    if (!(await this.start(j.tabId, j.mediaId, j.variantId, j.mode, j.format, {
+        ...(j.scale ? { scale: j.scale } : {}),
+        ...(j.clip ? { clip: j.clip } : {}),
+        ...(j.subtitles ? { subtitles: j.subtitles } : {}),
+      }))) this.changed();
   }
 
   async dismiss(jobId: string): Promise<void> {
@@ -478,6 +485,7 @@ export class JobManager {
       ...(job.variantId ? { variantId: job.variantId } : {}),
       ...(job.scale ? { scale: job.scale } : {}),
       ...(job.clip ? { clip: job.clip } : {}),
+      ...(job.subtitles ? { subtitles: job.subtitles } : {}),
     });
   }
 
@@ -511,6 +519,23 @@ export class JobManager {
       ext,
       s.subfolder ? 'Grabby' : undefined,
     );
+  }
+
+  /** Subtitles kept apart: an .srt named like the video ("Title.fr.srt"), which players pick up. */
+  private async saveSubtitles(job: Job, srt: string, settings: Settings) {
+    const plan = await this.planOf(job.id);
+    const lang = plan?.subtitles?.lang?.replace(/[^\w-]/g, '');
+    const bytes = new TextEncoder().encode(`﻿${srt}`);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    await chrome.downloads
+      .download({
+        url: `data:application/x-subrip;base64,${btoa(bin)}`,
+        filename: this.filename(job, lang ? `${lang}.srt` : 'srt', settings),
+        saveAs: settings.saveAs,
+        conflictAction: 'uniquify',
+      })
+      .catch((e) => console.warn('[grabby] subtitles not saved', e));
   }
 
   private async direct(job: Job, url: string, ext: string, settings: Settings) {
@@ -670,6 +695,7 @@ export class JobManager {
         if (this.gone(job.id)) return void chrome.downloads.cancel(downloadId).catch(() => {});
         this.update(job.id, { downloadId });
         this.startPolling();
+        if (msg.subtitles) await this.saveSubtitles(job, msg.subtitles, settings);
       } catch {
         this.fail(job.id, 'unknown');
       }

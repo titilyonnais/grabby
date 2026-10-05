@@ -10,6 +10,8 @@ export interface DashRep {
   codecs?: string;
   mimeType: string;
   lang?: string;
+  /** Subtitles: the name the site gives them. */
+  label?: string;
   init?: SegRef;
   segments: SegRef[];
 }
@@ -20,6 +22,8 @@ export interface DashManifest {
   protected: boolean;
   video: DashRep[];
   audio: DashRep[];
+  /** Subtitles in plain WebVTT (a file, or segments). */
+  text: DashRep[];
 }
 
 /** ISO-8601 duration (PnDTnHnMnS) → seconds. */
@@ -131,7 +135,10 @@ function listSegments(list: XmlNode, base: string): { init?: SegRef; segments: S
 const VIDEO_CODEC = /^(avc|hev|hvc|vp0?[89]|av01|dvh|mp4v)/i;
 const AUDIO_CODEC = /^(mp4a|opus|ac-3|ec-3|vorbis|flac|mp3|dtsc)/i;
 
-function kindOf(contentType: string, mime: string, codecs: string): 'video' | 'audio' | null {
+function kindOf(contentType: string, mime: string, codecs: string): 'video' | 'audio' | 'text' | null {
+  // Only WebVTT as text: subtitles packed in MP4 (wvtt, stpp) or TTML are left out.
+  if (mime === 'text/vtt') return 'text';
+  if (contentType === 'text' || mime.startsWith('text/') || /^(stpp|wvtt)/i.test(codecs)) return null;
   if (contentType === 'video' || mime.startsWith('video/')) return 'video';
   if (contentType === 'audio' || mime.startsWith('audio/')) return 'audio';
   if (VIDEO_CODEC.test(codecs)) return 'video';
@@ -154,6 +161,7 @@ export function parseDash(text: string, baseUrl: string): DashManifest {
     protected: hasDescendant(mpd, 'ContentProtection'),
     video: [],
     audio: [],
+    text: [],
   };
 
   // Several periods are usually ads or bumpers around the programme, each with its own
@@ -190,7 +198,7 @@ export function parseDash(text: string, baseUrl: string): DashManifest {
       if (!kind) continue;
 
       const repBase = withBase(rep, setBase);
-      const id = rep.attrs.id ?? String(result.video.length + result.audio.length);
+      const id = rep.attrs.id ?? String(result.video.length + result.audio.length + result.text.length);
       const bandwidth = Number(rep.attrs.bandwidth ?? 0);
       const template = mergeTemplate(setTemplate, child(rep, 'SegmentTemplate'));
       const list = child(rep, 'SegmentList') ?? setList;
@@ -207,6 +215,7 @@ export function parseDash(text: string, baseUrl: string): DashManifest {
       const width = Number(rep.attrs.width ?? set.attrs.width ?? 0);
       const height = Number(rep.attrs.height ?? set.attrs.height ?? 0);
       const lang = set.attrs.lang ?? rep.attrs.lang;
+      const label = child(set, 'Label')?.text || rep.attrs.label || set.attrs.label;
       const out: DashRep = {
         id,
         bandwidth,
@@ -215,9 +224,10 @@ export function parseDash(text: string, baseUrl: string): DashManifest {
         ...(height ? { height } : {}),
         ...(codecs ? { codecs } : {}),
         ...(lang ? { lang } : {}),
+        ...(label && kind === 'text' ? { label } : {}),
         ...segs,
       };
-      (kind === 'video' ? result.video : result.audio).push(out);
+      result[kind].push(out);
     }
   }
   return result;

@@ -1,7 +1,7 @@
 // Generates small media fixtures for E2E tests with the system ffmpeg.
 // Usage: node scripts/make-fixtures.mjs   (requires `ffmpeg` on PATH)
 import { execFileSync } from 'node:child_process';
-import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -23,6 +23,10 @@ const AAC = ['-c:a', 'aac', '-b:a', '64k', '-ac', '2'];
 
 if (process.argv.includes('--extras')) {
   await extras();
+  process.exit(0);
+}
+if (process.argv.includes('--subs')) {
+  await subtitles();
   process.exit(0);
 }
 await rm(out, { recursive: true, force: true });
@@ -56,6 +60,7 @@ ffIn('hls-fmp4', ...SRC('640x360'), ...H264, ...AAC, '-f', 'hls', '-hls_time', '
 // 4. DASH with separate audio/video adaptation sets.
 ffIn('dash', ...SRC('640x360'), ...H264, ...AAC, '-f', 'dash', '-seg_duration', '2', '-use_template', '1', '-use_timeline', '0',
   '-adaptation_sets', 'id=0,streams=v id=1,streams=a', join(out, 'dash/manifest.mpd'));
+await subtitles();
 
 // 5. HLS AES-128 (must be refused as protected).
 await writeFile(join(out, 'hls-aes/key.bin'), Buffer.alloc(16, 7));
@@ -95,4 +100,50 @@ async function extras() {
   ff('-f', 'lavfi', '-i', 'testsrc2=size=426x240:rate=25', '-t', '4', ...H264, '-an', '-movflags', '+faststart', join(out, 'preview/teaser.mp4'));
   // 10. The same video in a smaller quality, offered by the player as a second <source>.
   ff(...SRC('426x240'), ...H264, ...AAC, '-movflags', '+faststart', join(out, 'qualities/clip-240.mp4'));
+}
+
+/**
+ * 11. Subtitles, the way streams carry them. HLS: WebVTT cut in 2-second segments mapped to
+ * the video's clock, a line crossing a segment edge repeated in both. DASH: one WebVTT file
+ * in its own adaptation set.
+ */
+async function subtitles() {
+  const cues = [
+    ['00:00.500 --> 00:01.800', 'Bonjour'],
+    ['00:02.500 --> 00:03.800', '<i>le monde</i>'],
+    ['00:03.900 --> 00:04.600', 'Au revoir'],
+    ['00:05.000 --> 00:05.800', 'Fin'],
+  ];
+  const vtt = (list, map) =>
+    ['WEBVTT', ...(map ? ['X-TIMESTAMP-MAP=MPEGTS:900000,LOCAL:00:00:00.000'] : []), '', ...list.flatMap(([t, x]) => [t, x, ''])].join('\n');
+  const bySegment = [[cues[0]], [cues[1], cues[2]], [cues[2], cues[3]]];
+  await mkdir(join(out, 'hls/subs'), { recursive: true });
+  for (const [i, list] of bySegment.entries()) await writeFile(join(out, `hls/subs/fr${i}.vtt`), vtt(list, true));
+  await writeFile(join(out, 'hls/subs/fr.m3u8'), [
+    '#EXTM3U', '#EXT-X-TARGETDURATION:2', '#EXT-X-PLAYLIST-TYPE:VOD',
+    ...bySegment.flatMap((_, i) => ['#EXTINF:2.0,', `fr${i}.vtt`]),
+    '#EXT-X-ENDLIST', '',
+  ].join('\n'));
+  await writeFile(join(out, 'hls/master.m3u8'), [
+    '#EXTM3U',
+    '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Français",LANGUAGE="fr",DEFAULT=NO,AUTOSELECT=YES,URI="subs/fr.m3u8"',
+    '#EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=640x360,CODECS="avc1.4d401e,mp4a.40.2",SUBTITLES="subs"',
+    '360/index.m3u8',
+    '#EXT-X-STREAM-INF:BANDWIDTH=300000,RESOLUTION=320x180,CODECS="avc1.4d401e,mp4a.40.2",SUBTITLES="subs"',
+    '180/index.m3u8',
+    '',
+  ].join('\n'));
+
+  await writeFile(join(out, 'dash/subs-fr.vtt'), vtt(cues, false));
+  const mpd = join(out, 'dash/manifest.mpd');
+  const text = (await readFile(mpd, 'utf8')).replace(/\s*<AdaptationSet id="2"[\s\S]*?<\/AdaptationSet>/, '');
+  const set = [
+    '\t\t<AdaptationSet id="2" contentType="text" mimeType="text/vtt" lang="fr">',
+    '\t\t\t<Representation id="sub-fr" bandwidth="256">',
+    '\t\t\t\t<BaseURL>subs-fr.vtt</BaseURL>',
+    '\t\t\t</Representation>',
+    '\t\t</AdaptationSet>',
+    '',
+  ].join('\n');
+  await writeFile(mpd, text.replace('\t</Period>', `${set}\t</Period>`));
 }

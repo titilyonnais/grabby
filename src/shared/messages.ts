@@ -1,5 +1,5 @@
 import type { HistoryEntry, Job, JobMode, JobStatus, MediaItem } from './types';
-import type { Clip, ErrorCode, OutputFormat, Plan, VideoFormat } from './plan';
+import type { Clip, ErrorCode, OutputFormat, Plan, SubsChoice, VideoFormat } from './plan';
 import type { Settings } from './settings';
 
 /** A <video> element found in a frame by the scanner. */
@@ -79,7 +79,7 @@ export interface PopupState {
 
 export type PopupToBg =
   | { type: 'subscribe'; tabId: number }
-  | { type: 'download'; mediaId: string; variantId?: string; mode: JobMode; format?: OutputFormat; scale?: number; clip?: Clip }
+  | { type: 'download'; mediaId: string; variantId?: string; mode: JobMode; format?: OutputFormat; scale?: number; clip?: Clip; subtitles?: SubsChoice }
   | { type: 'cancel'; jobId: string }
   | { type: 'pause'; jobId: string }
   | { type: 'resume'; jobId: string }
@@ -117,7 +117,7 @@ export type OffscreenToBg =
       bytes: number;
       speed: number;
     }
-  | { target: 'bg'; type: 'job-ready'; jobId: string; blobUrl: string; ext: OutputFormat; size: number }
+  | { target: 'bg'; type: 'job-ready'; jobId: string; blobUrl: string; ext: OutputFormat; size: number; /** An .srt to save next to it. */ subtitles?: string }
   | { target: 'bg'; type: 'job-error'; jobId: string; error: ErrorCode }
   | { target: 'bg'; type: 'job-paused'; jobId: string }
   /** capture-sink → SW: may this job write capture chunks? */

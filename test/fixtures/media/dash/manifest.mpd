@@ -26,5 +26,10 @@
 				</SegmentTemplate>
 			</Representation>
 		</AdaptationSet>
+		<AdaptationSet id="2" contentType="text" mimeType="text/vtt" lang="fr">
+			<Representation id="sub-fr" bandwidth="256">
+				<BaseURL>subs-fr.vtt</BaseURL>
+			</Representation>
+		</AdaptationSet>
 	</Period>
 </MPD>

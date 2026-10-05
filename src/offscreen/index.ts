@@ -7,11 +7,12 @@ import type { ErrorCode, OutputFormat, Plan, SegRef, TrackPlan } from '../shared
 import type { JobStatus } from '../shared/types';
 import { deleteJob } from '../shared/idb';
 import { deleteParts, putPart, storedBlobs, storedSizes } from '../shared/parts';
-import { inputExt, muxAttempts } from './args';
+import { inputExt, muxAttempts, type MuxInputs } from './args';
 import { assembleCapture } from './capture';
 import { fetchAll, HttpError, rangeSupport, rangesOf, streamFile } from './fetcher';
 import { type FFmpeg, getFFmpeg } from './muxer';
 import { Pacer } from './pacer';
+import { clipCues, joinVtt, toSrt } from '../shared/subtitles';
 import { startHiddenPlayer, stopHiddenPlayer } from '../features/youtube-player';
 
 const controllers = new Map<string, AbortController>();
@@ -173,6 +174,27 @@ async function loadTrack(f: FFmpeg, jobId: string, trackNo: number, path: string
   }
 }
 
+/**
+ * The subtitles as SubRip, on the clock of what is saved (a part starts at zero). A track
+ * that can't be fetched doesn't sink the video: it is saved without them.
+ */
+async function subtitlesOf(jobId: string, plan: Plan, o: TrackRun): Promise<string | null> {
+  if (!plan.subtitles) return null;
+  try {
+    await fetchTrack(jobId, SUBS_TRACK, plan.subtitles.track, o);
+  } catch (e) {
+    if (o.signal.aborted) throw e;
+    console.warn('[grabby] subtitles left out', e);
+    return null;
+  }
+  const texts = await Promise.all((await storedBlobs(jobId, SUBS_TRACK)).map((b) => b.text()));
+  let cues = joinVtt(texts);
+  if (plan.clip) cues = clipCues(cues, plan.clip.start, plan.clip.duration);
+  return cues.length ? toSrt(cues) : null;
+}
+
+const SUBS_TRACK = 2;
+
 /** Jobs paused by the user: their abort is not an error, and their pieces stay. */
 const pausing = new Set<string>();
 
@@ -192,7 +214,8 @@ async function run(jobId: string, plan: Plan) {
   const heartbeat = setInterval(() => rep.beat(), HEARTBEAT_MS);
   try {
     let result: { blob: Blob; ext: string };
-    const inputs: { video?: string; audio?: string } = {};
+    const inputs: MuxInputs = {};
+    let srt: string | null = null;
 
     if (plan.kind !== 'capture') {
       const tracks = ([[0, plan.video], [1, plan.audio]] as const).flatMap(([n, t]) => (t ? [{ n, t }] : []));
@@ -225,6 +248,7 @@ async function run(jobId: string, plan: Plan) {
           onBytes: () => rep.send('downloading', progress()),
         });
       }
+      srt = await subtitlesOf(jobId, plan, { signal, rep, pacer, fast: false, setCount: () => {}, onPart: () => {}, onBytes: () => {} });
     }
     if (signal.aborted) throw signal.reason;
 
@@ -260,6 +284,11 @@ async function run(jobId: string, plan: Plan) {
         }
       }
 
+      if (srt && !plan.subtitles!.separate) {
+        inputs.subs = { path: `${dir}/s.srt`, title: plan.subtitles!.label, ...(plan.subtitles!.lang ? { lang: plan.subtitles!.lang } : {}) };
+        await f.create(inputs.subs.path);
+        await f.append(inputs.subs.path, new TextEncoder().encode(srt));
+      }
       if (signal.aborted) throw signal.reason;
       rep.send('processing', fetched, true);
       let made: { out: string; ext: string } | null = null;
@@ -282,7 +311,9 @@ async function run(jobId: string, plan: Plan) {
     const url = URL.createObjectURL(result.blob);
     blobUrls.set(jobId, url);
     rep.send('saving', 1, true);
-    await toBg({ type: 'job-ready', jobId, blobUrl: url, ext: result.ext as OutputFormat, size: result.blob.size });
+    // Kept apart when asked, or when the video couldn't take them (the MKV fallback can).
+    const apart = srt && (plan.subtitles!.separate || plan.raw || !['mkv', 'mp4', 'mov', 'webm'].includes(result.ext)) ? srt : null;
+    await toBg({ type: 'job-ready', jobId, blobUrl: url, ext: result.ext as OutputFormat, size: result.blob.size, ...(apart ? { subtitles: apart } : {}) });
   } catch (e) {
     if (ff) await ff.rmdir(dir).catch(() => {});
     if (pausing.has(jobId)) {

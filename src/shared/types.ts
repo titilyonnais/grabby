@@ -1,4 +1,4 @@
-import type { Clip, OutputFormat, Plan, VideoFormat } from './plan';
+import type { Clip, OutputFormat, Plan, SubsChoice, VideoFormat } from './plan';
 
 export type MediaKind = 'file' | 'hls' | 'dash' | 'capture';
 export type Protection = 'none' | 'drm' | 'encrypted';
@@ -28,6 +28,17 @@ export interface AudioTrack {
   isDefault?: boolean;
 }
 
+/** Subtitles a stream offers (WebVTT). */
+export interface SubtitleTrack {
+  id: string;
+  label: string;
+  lang?: string;
+  /** HLS: its playlist. DASH: the manifest (the track is its representation `id`). */
+  url: string;
+  isDefault?: boolean;
+  forced?: boolean;
+}
+
 export interface MediaItem {
   id: string;
   tabId: number;
@@ -42,6 +53,8 @@ export interface MediaItem {
   size?: number;
   variants: Variant[];
   audioTracks: AudioTrack[];
+  /** Subtitles that can be saved with the video. */
+  subtitles?: SubtitleTrack[];
   /** Every rendition URL a master references, even those merged out of `variants`. */
   related?: string[];
   protection: Protection;
@@ -116,6 +129,8 @@ export interface Job {
   scale?: number;
   /** Only this part of the video is kept. */
   clip?: Clip;
+  /** Subtitles saved with the video. */
+  subtitles?: SubsChoice;
   /** Recorded by a hidden player (YouTube), not the one the user watches. */
   hidden?: boolean;
   /** Capture jobs: the assembly plan, kept (and persisted) until the recording ends. */

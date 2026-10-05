@@ -725,3 +725,101 @@ for (const [page, label] of [
     }
   });
 }
+
+/** The saved video and the .srt next to it (if any), once both are complete. */
+async function videoAndSrt(sw: Worker, withSrt: boolean): Promise<{ video: string; srt: string | null }> {
+  const list = () =>
+    sw.evaluate(async () =>
+      (await chrome.downloads.search({ state: 'complete', orderBy: ['-startTime'] })).map((d) => ({ file: d.filename, srt: d.url.startsWith('data:application/x-subrip') })),
+    );
+  await expect.poll(async () => (await list()).some((d) => d.srt) || !withSrt, { timeout: 30_000 }).toBe(true);
+  const all = await list();
+  const srt = all.find((d) => d.srt);
+  return { video: all.find((d) => !d.srt)!.file, srt: srt ? readFileSync(srt.file, 'utf8').replace(/^﻿/, '') : null };
+}
+
+/** The subtitles inside a video, as SubRip (null without ffmpeg). */
+function embeddedSrt(file: string): string | null {
+  try {
+    return execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-map', '0:s:0', '-f', 'srt', '-'], { encoding: 'utf8' });
+  } catch {
+    return null;
+  }
+}
+
+const lines = (srt: string) => srt.split(/\r?\n/).filter((l) => l && !/^\d+$/.test(l));
+
+for (const [page, format, label, track] of [
+  ['hls.html', 'MP4', 'HLS in MP4', 'Français'],
+  ['dash.html', 'MKV', 'DASH in MKV', 'French'],
+] as const) {
+  test(`subtitles of ${label}: put in the video, each line once`, async ({ context, sw, extId }) => {
+    const { tabId } = await openFixture(context, sw, page);
+    await expect.poll(() => badge(sw, tabId)).toBe('1');
+    const popup = await openPopup(context, extId, tabId);
+    await pick(popup, 'Format', format);
+    await pick(popup, 'Subtitles', track);
+    await popup.getByRole('button', { name: 'Download', exact: true }).click();
+    await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
+    const { video, srt } = await videoAndSrt(sw, false);
+    expect(srt).toBeNull();
+    const info = probe(video);
+    if (info) expect(info.streams).toEqual(['audio', 'subtitle', 'video']);
+    const inside = embeddedSrt(video);
+    if (inside !== null) {
+      expect(lines(inside)).toEqual([
+        '00:00:00,500 --> 00:00:01,800',
+        'Bonjour',
+        '00:00:02,500 --> 00:00:03,800',
+        '<i>le monde</i>',
+        '00:00:03,900 --> 00:00:04,600',
+        'Au revoir',
+        '00:00:05,000 --> 00:00:05,800',
+        'Fin',
+      ]);
+    }
+  });
+}
+
+test('subtitles a format can not hold are saved next to it, as .srt named after the video', async ({ context, sw, extId }) => {
+  const { tabId } = await openFixture(context, sw, 'hls.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const asked = await recordDownloads(sw);
+  const popup = await openPopup(context, extId, tabId);
+  await pick(popup, 'Format', 'TS');
+  await pick(popup, 'Subtitles', 'Français');
+  const apart = popup.getByRole('switch', { name: 'In a separate .srt file' });
+  await expect(apart).toBeChecked();
+  await expect(apart).toBeDisabled();
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
+  await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
+  const { srt } = await videoAndSrt(sw, true);
+  expect(lines(srt!)).toEqual([
+    '00:00:00,500 --> 00:00:01,800',
+    'Bonjour',
+    '00:00:02,500 --> 00:00:03,800',
+    '<i>le monde</i>',
+    '00:00:03,900 --> 00:00:04,600',
+    'Au revoir',
+    '00:00:05,000 --> 00:00:05,800',
+    'Fin',
+  ]);
+  const names = (await asked()).map((o) => o.filename ?? '');
+  expect(names.some((n) => n.endsWith('.ts'))).toBe(true);
+  expect(names.some((n) => n.endsWith('.fr.srt'))).toBe(true);
+});
+
+test('a clip with its subtitles: only the lines of the part, from zero', async ({ context, sw, extId }) => {
+  const { tabId } = await openFixture(context, sw, 'dash.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  await pick(popup, 'Subtitles', 'French');
+  await popup.getByRole('switch', { name: 'In a separate .srt file' }).check();
+  await cutClip(popup, '0:03', '0:05');
+  await popup.getByRole('button', { name: 'Download clip' }).click();
+  await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
+  const { video, srt } = await videoAndSrt(sw, true);
+  expect(lines(srt!)).toEqual(['00:00:00,000 --> 00:00:00,800', '<i>le monde</i>', '00:00:00,900 --> 00:00:01,600', 'Au revoir']);
+  const info = probe(video);
+  if (info) expect(info.streams).toEqual(['audio', 'video']);
+});

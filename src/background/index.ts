@@ -186,7 +186,11 @@ async function onPopupMessage(port: chrome.runtime.Port, msg: PopupToBg) {
       return;
     case 'download': {
       const tabId = ports.get(port);
-      if (tabId !== undefined) await jobs.start(tabId, msg.mediaId, msg.variantId, msg.mode, msg.format, msg.scale, msg.clip);
+      if (tabId !== undefined) await jobs.start(tabId, msg.mediaId, msg.variantId, msg.mode, msg.format, {
+          ...(msg.scale ? { scale: msg.scale } : {}),
+          ...(msg.clip ? { clip: msg.clip } : {}),
+          ...(msg.subtitles ? { subtitles: msg.subtitles } : {}),
+        });
       return;
     }
     case 'cancel':

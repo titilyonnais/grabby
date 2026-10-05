@@ -1,0 +1,8 @@
+WEBVTT
+X-TIMESTAMP-MAP=MPEGTS:900000,LOCAL:00:00:00.000
+
+00:02.500 --> 00:03.800
+<i>le monde</i>
+
+00:03.900 --> 00:04.600
+Au revoir
