@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'preact/hooks';
+import { canClip } from '../../shared/clip';
 import { formatDuration } from '../../shared/format';
 import { AUDIO_FORMATS, FORMAT_NAMES, isAudioFormat, videoFormatsFor } from '../../shared/formats';
 import type { PopupToBg } from '../../shared/messages';
-import type { AudioFormat, OutputFormat, VideoFormat } from '../../shared/plan';
+import type { AudioFormat, Clip, OutputFormat, VideoFormat } from '../../shared/plan';
 import { canShrink, scaleChoices, SHRUNK_FORMATS } from '../../shared/scale';
 import type { Job, MediaItem, Variant } from '../../shared/types';
 import { size, t } from '../i18n';
@@ -10,6 +11,7 @@ import { useUnfold } from '../unfold';
 import { Icon } from './Icon';
 import { canPause, isActive, JobBar } from './JobBar';
 import { Select, type SelectOption } from './Select';
+import { Trim } from './Trim';
 
 interface Props {
   item: MediaItem;
@@ -70,6 +72,11 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
       ? preferred.video
       : (videoFormats[0] ?? preferred.audio);
   const [format, setFormat] = useState<OutputFormat>(initial);
+  // "Couper un extrait": the panel, and the part chosen in it (null: the whole video).
+  const [trimming, setTrimming] = useState(false);
+  const [clip, setClip] = useState<Clip | null>(null);
+  const clippable = canClip(item);
+  const cut = trimming && clip && item.duration && (clip.start > 0 || clip.end < Math.floor(item.duration)) ? clip : null;
   // A format the chosen quality can't go in (WebM for a shrunk picture, MOV back on a VP9
   // source): back to the preferred one, so what is shown is what gets sent.
   const formatOk = isAudioFormat(format) || videoFormats.includes(format as VideoFormat);
@@ -81,8 +88,10 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
   const shrunkSize = (lines: number) =>
     item.duration ? Math.round((((SHRUNK_BPS[lines] ?? 1e6) + 128e3) * item.duration) / 8) : undefined;
   // Size of what will actually be saved, when the source tells (YouTube: per quality and format).
-  const shownSize =
+  const wholeSize =
     (!audio && scale && shrunkSize(scale)) || (!audio && variant && variantSize(variant, format, item.duration)) || item.size;
+  // A part weighs its share of the whole.
+  const shownSize = cut && wholeSize ? Math.round((wholeSize * (cut.end - cut.start)) / item.duration!) : wholeSize;
   // YouTube: a hidden player records it, the user keeps watching — it's a plain download for them.
   const hidden = !!item.ytId;
   const blocked = item.protection !== 'none' || item.live;
@@ -116,6 +125,7 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
       mode: audio ? 'audio' : 'video',
       ...(!audio && variantId ? { variantId } : {}),
       ...(!audio && scale ? { scale } : {}),
+      ...(cut ? { clip: cut } : {}),
       format,
     });
 
@@ -231,6 +241,13 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
                   <Select label={t('formatLabel')} value={format} options={formatOptions} onChange={setFormat} />
                 </div>
               )}
+              {!showJob && clippable && (
+                <button class="trim-toggle" aria-expanded={trimming} onClick={() => setTrimming((v) => !v)}>
+                  <Icon name={trimming ? 'close' : 'scissors'} size={16} />
+                  {trimming ? t('trimWhole') : t('trimOpen')}
+                </button>
+              )}
+              {!showJob && clippable && trimming && <Trim duration={item.duration!} clip={clip} onChange={setClip} />}
               {showJob ? (
                 <>
                   <JobBar job={job} send={send} canFinish={!job.hidden} />
@@ -239,11 +256,12 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
               ) : (
                 <button class="btn btn--primary btn--wide" onClick={start}>
                   <Icon name={item.kind === 'capture' && !hidden ? 'record' : audio ? 'audio' : 'download'} />
-                  {item.kind === 'capture' && !hidden ? t('capture') : t('download')}
+                  {item.kind === 'capture' && !hidden ? t('capture') : cut ? t('downloadClip') : t('download')}
                 </button>
               )}
               {item.kind === 'capture' && !showJob && <p class="hint">{t(hidden ? 'hiddenHint' : 'captureHint')}</p>}
               {scale && !audio && !showJob && <p class="hint">{t('shrinkHint')}</p>}
+              {cut && !audio && !showJob && <p class="hint">{t('trimHint')}</p>}
             </>
           )}
         </div>

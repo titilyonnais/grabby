@@ -263,7 +263,7 @@ async function run(jobId: string, plan: Plan) {
       if (signal.aborted) throw signal.reason;
       rep.send('processing', fetched, true);
       let made: { out: string; ext: string } | null = null;
-      for (const attempt of muxAttempts(inputs, plan.output, plan.audioOnly, `${dir}/out`, plan.scale)) {
+      for (const attempt of muxAttempts(inputs, plan.output, plan.audioOnly, `${dir}/out`, plan.scale, plan.clip)) {
         const code = await f.exec(attempt.args, (p) => rep.send('processing', fetched + p * (1 - fetched)), signal);
         if (signal.aborted) throw signal.reason;
         if (code === 0) {

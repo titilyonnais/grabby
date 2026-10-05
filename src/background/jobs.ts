@@ -2,16 +2,17 @@ import { hostOf } from '../parsers/url';
 import { isAudioFormat, VIDEO_FORMATS } from '../shared/formats';
 import { canShrink, scaleChoices, SHRUNK_FORMATS } from '../shared/scale';
 import { buildFilename } from '../shared/filename';
+import { canClip, clipLabel, sameClip } from '../shared/clip';
 import { uid } from '../shared/ids';
 import type { BgToContent, ContentToBg, OffscreenToBg } from '../shared/messages';
-import type { ErrorCode, OutputFormat, Plan, VideoFormat } from '../shared/plan';
+import type { Clip, ErrorCode, OutputFormat, Plan, VideoFormat } from '../shared/plan';
 import { getSettings, type Settings } from '../shared/settings';
 import type { Job, JobMode, JobStatus, MediaItem } from '../shared/types';
 import { fetchTextAs, sweepHeaderRules, withPageHeaders } from './headers';
 import { addHistory } from './history';
 import { notifyFinished } from './notify';
 import { scheduleOffscreenClose, sendOffscreen } from './offscreen-client';
-import { buildPlan, PlanError } from './plan';
+import { buildPlan, PlanError, validClip } from './plan';
 import { hiddenPlayerUrl } from '../features/youtube';
 import { allowHiddenPlayer } from './headers';
 import { ensureOffscreen } from './offscreen-client';
@@ -249,15 +250,18 @@ export class JobManager {
     mode: JobMode,
     format?: OutputFormat,
     scale?: number,
+    clip?: Clip,
   ): Promise<Job | undefined> {
     await this.ready;
     const item = findVisible(await this.registry.get(tabId), mediaId) ?? this.items.get(`${tabId}:${mediaId}`);
     if (!item) return undefined;
     // Only the smaller qualities the card offers.
     if (scale !== undefined && (mode !== 'video' || !canShrink(item) || !scaleChoices(item.variants).includes(scale))) scale = undefined;
+    // A part of the video, when it can be cut and isn't the whole of it.
+    clip = canClip(item) ? validClip(clip, item.duration) : undefined;
     const dup = [...this.jobs.values()].find(
       (j) =>
-        j.tabId === tabId && j.mediaId === mediaId && j.mode === mode && j.variantId === variantId && j.scale === scale &&
+        j.tabId === tabId && j.mediaId === mediaId && j.mode === mode && j.variantId === variantId && j.scale === scale && sameClip(j.clip, clip) &&
         !FINISHED.includes(j.status),
     );
     if (dup) return dup;
@@ -278,6 +282,7 @@ export class JobManager {
       kind: item.kind,
       startedAt: Date.now(),
       ...(variantId ? { variantId } : {}),
+      ...(clip ? { clip } : {}),
       ...(scale ? { scale, quality: `${scale}p` } : mode === 'video' && variant ? { quality: variant.label } : {}),
       // A recording's size is known beforehand only when the site tells it (YouTube).
       ...(item.kind === 'capture' && mode === 'video' && (variant?.sizes?.[format as VideoFormat] ?? item.size)
@@ -306,7 +311,7 @@ export class JobManager {
     if (!j || !FINISHED.includes(j.status)) return;
     this.jobs.delete(jobId);
     // The video may be gone from the page: the card still has to update.
-    if (!(await this.start(j.tabId, j.mediaId, j.variantId, j.mode, j.format, j.scale))) this.changed();
+    if (!(await this.start(j.tabId, j.mediaId, j.variantId, j.mode, j.format, j.scale, j.clip))) this.changed();
   }
 
   async dismiss(jobId: string): Promise<void> {
@@ -472,6 +477,7 @@ export class JobManager {
       fetchText: (u) => fetchTextAs(u, item.pageUrl),
       ...(job.variantId ? { variantId: job.variantId } : {}),
       ...(job.scale ? { scale: job.scale } : {}),
+      ...(job.clip ? { clip: job.clip } : {}),
     });
   }
 
@@ -500,7 +506,8 @@ export class JobManager {
   private filename(job: Job, ext: string, s: Settings): string {
     return buildFilename(
       s.template,
-      { title: job.title, site: hostOf(job.pageUrl).replace(/^www\./, ''), date: new Date(), ...(job.quality ? { quality: job.quality } : {}) },
+      // A part says which one: "Title (1m05-2m40)".
+      { title: job.clip ? `${job.title} (${clipLabel(job.clip)})` : job.title, site: hostOf(job.pageUrl).replace(/^www\./, ''), date: new Date(), ...(job.quality ? { quality: job.quality } : {}) },
       ext,
       s.subfolder ? 'Grabby' : undefined,
     );

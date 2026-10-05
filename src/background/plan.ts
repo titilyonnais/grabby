@@ -2,7 +2,7 @@ import { parseDash, type DashRep } from '../parsers/dash';
 import { parseHls, type HlsMedia } from '../parsers/hls';
 import { extOf, reachableFrom } from '../parsers/url';
 import { isAudioFormat, sourceFormat } from '../shared/formats';
-import { RAW_THRESHOLD, type ErrorCode, type OutputFormat, type Plan, type TrackPlan } from '../shared/plan';
+import { RAW_THRESHOLD, type Clip, type ErrorCode, type OutputFormat, type Plan, type TrackPlan } from '../shared/plan';
 import type { Settings } from '../shared/settings';
 import { scaleBox, scaleSource } from '../shared/scale';
 import type { JobMode, MediaItem, Variant } from '../shared/types';
@@ -26,6 +26,8 @@ export interface PlanOptions {
   variantId?: string;
   /** Make a smaller quality (e.g. 360 for 360p) by shrinking the picture. */
   scale?: number;
+  /** Keep only this part of the video. */
+  clip?: Clip;
   settings: Settings;
   fetchText: (url: string) => Promise<string>;
 }
@@ -66,7 +68,7 @@ async function hlsTrack(url: string, fetchText: PlanOptions['fetchText']): Promi
   if (parsed.encrypted) throw new PlanError('protected');
   if (!parsed.endList) throw new PlanError('live');
   const track: TrackPlan = {
-    segments: parsed.segments.map(({ url, range }) => (range ? { url, range } : { url })),
+    segments: parsed.segments.map(({ url, range, duration }) => ({ url, ...(range ? { range } : {}), ...(duration > 0 ? { dur: duration } : {}) })),
     container: parsed.map ? 'fmp4' : 'ts',
     ...(parsed.map ? { init: parsed.map } : {}),
   };
@@ -176,11 +178,80 @@ async function planDash(item: MediaItem, o: PlanOptions): Promise<Plan> {
   };
 }
 
+/**
+ * The segments of a track that cover [start, end], and where `start` falls in the first of
+ * them. Without durations for every segment, the whole track is kept (cut after download).
+ */
+export function clipTrack(track: TrackPlan, clip: Clip): { track: TrackPlan; offset: number } {
+  if (!track.segments.length || track.segments.some((s) => !s.dur)) return { track, offset: clip.start };
+  let t = 0;
+  let first = -1;
+  let last = -1;
+  let firstStart = 0;
+  track.segments.forEach((s, i) => {
+    const from = t;
+    t += s.dur!;
+    if (t > clip.start && from < clip.end) {
+      if (first < 0) {
+        first = i;
+        firstStart = from;
+      }
+      last = i;
+    }
+  });
+  if (first < 0) return { track, offset: clip.start };
+  return { track: { ...track, segments: track.segments.slice(first, last + 1) }, offset: Math.max(0, clip.start - firstStart) };
+}
+
+/** A sensible part: within the video, at least a second long. */
+export function validClip(clip: Clip | undefined, duration?: number): Clip | undefined {
+  if (!clip || !Number.isFinite(clip.start) || !Number.isFinite(clip.end)) return undefined;
+  const start = Math.max(0, clip.start);
+  const end = duration ? Math.min(duration, clip.end) : clip.end;
+  if (end - start < 1) return undefined;
+  // The whole video: nothing to cut.
+  if (duration && start < 0.5 && end > duration - 0.5) return undefined;
+  return { start, end };
+}
+
+function applyClip(plan: Plan, clip: Clip, o: PlanOptions, duration?: number): Plan {
+  const out: Plan = { ...plan, clip: { duration: clip.end - clip.start } };
+  for (const key of ['video', 'audio'] as const) {
+    const t = plan[key];
+    if (!t) continue;
+    const c = clipTrack(t, clip);
+    out[key] = c.track;
+    out.clip![key] = c.offset;
+  }
+  if (plan.estimatedSize && duration) out.estimatedSize = Math.round((plan.estimatedSize * (clip.end - clip.start)) / duration);
+  // A part of a huge video can fit in memory: then it is assembled (and cut) normally.
+  // Otherwise its segments are put end to end, cut to the nearest segment.
+  if (plan.raw && (out.estimatedSize ?? Infinity) <= RAW_THRESHOLD) {
+    out.raw = false;
+    out.output = videoOut(o);
+  }
+  return out;
+}
+
 /** Turns a detected item + user choice into a concrete download plan. */
 export async function buildPlan(item: MediaItem, o: PlanOptions): Promise<Plan> {
   if (item.protection !== 'none') throw new PlanError('protected');
   if (item.live) throw new PlanError('live');
+  const clip = item.kind === 'capture' ? undefined : validClip(o.clip, item.duration);
+  if (!clip) return planFor(item, o);
+  // Cutting needs ffmpeg, which works in memory: a huge file can't be cut.
+  if (item.kind === 'file' && (item.size ?? 0) > RAW_THRESHOLD) throw new PlanError('too_large');
+  const plan = await planFor(item, o);
+  if (plan.kind === 'file') {
+    // Fetched whole by Grabby, then cut: never handed to the browser as it is.
+    delete plan.direct;
+    delete plan.fast;
+    plan.raw = false;
+  }
+  return applyClip(plan, clip, o, item.duration);
+}
 
+async function planFor(item: MediaItem, o: PlanOptions): Promise<Plan> {
   switch (item.kind) {
     case 'hls':
       return planHls(item, o);

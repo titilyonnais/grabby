@@ -8,6 +8,17 @@ export interface MuxInputs {
   audio?: string;
 }
 
+/** Keep only part: how long, and where it starts in each input. */
+export interface ClipArgs {
+  duration: number;
+  video?: number;
+  audio?: number;
+}
+
+const secs = (n: number) => String(Math.round(n * 1000) / 1000);
+/** Seeking before an input is fast: ffmpeg skips what comes before (to a keyframe when copying). */
+const seek = (at?: number) => (at && at > 0 ? ['-ss', secs(at)] : []);
+
 export interface Attempt {
   args: string[];
   out: string;
@@ -75,14 +86,17 @@ export function muxAttempts(
   audioOnly: boolean,
   outBase: string,
   scale?: { w: number; h: number },
+  clip?: ClipArgs,
 ): Attempt[] {
-  const mk = (ext: string, body: string[]): Attempt => ({ ext, out: `${outBase}.${ext}`, args: ['-y', ...body, `${outBase}.${ext}`] });
+  // A part: stops after its length, its timestamps starting at zero.
+  const cut = clip ? ['-t', secs(clip.duration), '-avoid_negative_ts', 'make_zero'] : [];
+  const mk = (ext: string, body: string[]): Attempt => ({ ext, out: `${outBase}.${ext}`, args: ['-y', ...body, ...cut, `${outBase}.${ext}`] });
 
   if (audioOnly) {
     const src = inputs.audio ?? inputs.video;
     if (!src) throw new Error('no input');
     const ext = AUDIO_ENCODE[output] ? output : 'm4a';
-    const base = ['-i', src, '-vn', '-map', '0:a:0'];
+    const base = [...seek(inputs.audio ? clip?.audio : clip?.video), '-i', src, '-vn', '-map', '0:a:0'];
     // Lossless formats and MP3 are always encoded; the others first try a plain copy. Not M4A
     // from WebM/Ogg: that's Opus or Vorbis, which an MP4 file accepts but Apple players refuse.
     const opusOrVorbis = /\.(webm|ogg|opus|mka)$/i.test(src);
@@ -93,7 +107,7 @@ export function muxAttempts(
   }
 
   if (!inputs.video) throw new Error('no video input');
-  const ins = ['-i', inputs.video, ...(inputs.audio ? ['-i', inputs.audio] : [])];
+  const ins = [...seek(clip?.video), '-i', inputs.video, ...(inputs.audio ? [...seek(clip?.audio), '-i', inputs.audio] : [])];
   const maps = inputs.audio ? ['-map', '0:v:0', '-map', '1:a:0'] : ['-map', '0:v:0?', '-map', '0:a:0?'];
   // H.264 doesn't go in WebM: a shrunk picture is saved as MP4 instead.
   const container = scale && output === 'webm' ? 'mp4' : ['mkv', 'webm', 'mov', 'avi', 'ts'].includes(output) ? output : 'mp4';

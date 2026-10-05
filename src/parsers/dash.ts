@@ -90,7 +90,7 @@ function templateSegments(
       let r = Number(s.attrs.r ?? 0);
       if (r < 0) r = end > 0 ? Math.max(0, Math.ceil((end - time) / d) - 1) : 0;
       for (let k = 0; k <= r; k++) {
-        segments.push({ url: resolveUrl(fillTemplate(media, { ...vars, number, time }), base) });
+        segments.push({ url: resolveUrl(fillTemplate(media, { ...vars, number, time }), base), dur: d / timescale });
         time += d;
         number++;
       }
@@ -100,7 +100,11 @@ function templateSegments(
     const count = segDur > 0 && periodDuration > 0 ? Math.ceil(periodDuration / segDur - 1e-9) : 0;
     for (let k = 0; k < count; k++) {
       const number = startNumber + k;
-      segments.push({ url: resolveUrl(fillTemplate(media, { ...vars, number, time: Math.round(k * segDur * timescale) }), base) });
+      segments.push({
+        url: resolveUrl(fillTemplate(media, { ...vars, number, time: Math.round(k * segDur * timescale) }), base),
+        // The last one stops with the period.
+        dur: Math.min(segDur, periodDuration - k * segDur),
+      });
     }
   }
   return { ...(init ? { init } : {}), segments };
@@ -114,8 +118,9 @@ function listSegments(list: XmlNode, base: string): { init?: SegRef; segments: S
     const r = parseRange(initNode.attrs.range);
     if (r) init.range = r;
   }
+  const segDur = Number(list.attrs.duration ?? 0) / (Number(list.attrs.timescale ?? 1) || 1);
   const segments = children(list, 'SegmentURL').map((s) => {
-    const seg: SegRef = { url: resolveUrl(s.attrs.media ?? '', base) };
+    const seg: SegRef = { url: resolveUrl(s.attrs.media ?? '', base), ...(segDur > 0 ? { dur: segDur } : {}) };
     const r = parseRange(s.attrs.mediaRange);
     if (r) seg.range = r;
     return seg;

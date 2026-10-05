@@ -771,6 +771,193 @@ p {
   font-size: 10.5px;
 }
 
+/* ------------------------------------------------------------- cut a clip */
+.trim-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  height: 36px;
+  padding: 0 14px 0 12px;
+  border-radius: var(--r-pill);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  transition:
+    color 140ms var(--ease),
+    background-color 140ms var(--ease),
+    transform var(--t-bouncy) var(--spring-bouncy);
+}
+
+.trim-toggle:hover,
+.trim-toggle[aria-expanded='true'] {
+  color: var(--text);
+  background: var(--bg);
+}
+
+.trim-toggle:active {
+  transform: scale(0.95);
+  transition-duration: 140ms, 140ms, 90ms;
+}
+
+.trim {
+  --knob: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 14px 12px;
+  border-radius: var(--r-inner);
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--line);
+  animation: drawer-in var(--t-gentle) var(--ease-out);
+}
+
+.trim__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.trim__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.trim__len {
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Two range inputs over one rail: each handle is its own native slider (keys, screen readers). */
+.trim__rail {
+  position: relative;
+  height: var(--knob);
+}
+
+.trim__rail::before,
+.trim__sel {
+  content: '';
+  position: absolute;
+  top: 50%;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: var(--r-pill);
+}
+
+/* The rail runs between the centres of the handles at both ends. */
+.trim__rail::before {
+  left: calc(var(--knob) / 2);
+  right: calc(var(--knob) / 2);
+  background: var(--track);
+}
+
+.trim__sel {
+  left: calc(var(--knob) / 2 + (100% - var(--knob)) * var(--a));
+  width: calc((100% - var(--knob)) * (var(--b) - var(--a)));
+  background: var(--accent);
+}
+
+.trim__handle {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: none;
+  appearance: none;
+  -webkit-appearance: none;
+  pointer-events: none;
+  outline: none;
+}
+
+/* The start handle goes on top once it is past the middle (both at the end: still reachable). */
+.trim__handle--top {
+  z-index: 1;
+}
+
+.trim__handle::-webkit-slider-runnable-track {
+  height: 100%;
+  background: none;
+}
+
+.trim__handle::-webkit-slider-thumb {
+  width: var(--knob);
+  height: var(--knob);
+  border-radius: 50%;
+  background: var(--pill);
+  box-shadow:
+    0 0 0 3px var(--bg),
+    0 2px 6px rgba(0, 0, 0, 0.25);
+  cursor: grab;
+  pointer-events: auto;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: transform var(--t-bouncy) var(--spring-bouncy);
+}
+
+.trim__handle:active::-webkit-slider-thumb {
+  cursor: grabbing;
+  transform: scale(1.15);
+  transition-duration: 120ms;
+}
+
+.trim__handle:focus-visible::-webkit-slider-thumb {
+  box-shadow:
+    0 0 0 3px var(--bg),
+    0 0 0 5px var(--focus);
+}
+
+.trim__times {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.trim__field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 40px;
+  padding: 0 6px 0 16px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+}
+
+.trim__label {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.trim__time {
+  width: 76px;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  font-size: 13.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  outline: none;
+  transition: box-shadow 140ms var(--ease);
+}
+
+.trim__time:focus {
+  box-shadow: inset 0 0 0 2px var(--focus);
+}
+
 /* ---------------------------------------------------------------- pickers */
 .pickers {
   display: grid;

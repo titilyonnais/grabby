@@ -48,6 +48,13 @@
   "bulkEvery": { "message": "Tout cocher" },
   "bulkNone": { "message": "Tout décocher" },
   "bulkHint": { "message": "Meilleure qualité, deux à la fois" },
+  "trimOpen": { "message": "Couper un extrait" },
+  "trimWhole": { "message": "Garder toute la vidéo" },
+  "trimTitle": { "message": "Extrait" },
+  "trimStart": { "message": "Début" },
+  "trimEnd": { "message": "Fin" },
+  "downloadClip": { "message": "Télécharger l'extrait" },
+  "trimHint": { "message": "Coupé sur l'image clé la plus proche : l'extrait peut commencer quelques secondes plus tôt." },
   "st_done": { "message": "Enregistré" },
   "st_canceled": { "message": "Annulé" },
 

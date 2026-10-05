@@ -688,3 +688,40 @@ test('download all: every video of the page ticked, one format, all saved', asyn
   const files = await sw.evaluate(async () => (await chrome.downloads.search({ state: 'complete' })).map((d) => d.filename));
   for (const f of files.slice(-2)) expect(probeFormat(f)?.format ?? 'matroska,webm').toContain('matroska');
 });
+
+/** Opens "Cut a clip" and types the two times of the part. */
+async function cutClip(popup: Page, start: string, end: string) {
+  await popup.getByRole('button', { name: 'Cut a clip' }).click();
+  for (const [name, value] of [['End', end], ['Start', start]] as const) {
+    const field = popup.getByRole('textbox', { name });
+    await field.fill(value);
+    await field.press('Enter');
+  }
+  await expect(popup.getByRole('slider', { name: 'Start' })).toHaveAttribute('aria-valuetext', start);
+  await expect(popup.getByRole('slider', { name: 'End' })).toHaveAttribute('aria-valuetext', end);
+}
+
+for (const [page, label] of [
+  ['hls.html', 'HLS'],
+  ['dash.html', 'DASH'],
+  ['direct.html', 'a file'],
+] as const) {
+  test(`a clip of ${label}: only that part is saved, named after it`, async ({ context, sw, extId }) => {
+    const { tabId } = await openFixture(context, sw, page);
+    await expect.poll(() => badge(sw, tabId)).toBe('1');
+    const asked = await recordDownloads(sw);
+    const popup = await openPopup(context, extId, tabId);
+    await cutClip(popup, '0:03', '0:05');
+    await popup.getByRole('button', { name: 'Download clip' }).click();
+    await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
+    const { bytes, filename } = await lastDownload(sw);
+    expect(isMp4(bytes)).toBe(true);
+    expect((await asked()).at(-1)?.filename).toContain('(0m03-0m05).mp4');
+    const info = probe(filename);
+    // Two seconds asked, cut at a keyframe: a little more at most, never the whole 6 s.
+    if (info) {
+      expect(info.duration).toBeGreaterThan(1.5);
+      expect(info.duration).toBeLessThan(4.5);
+    }
+  });
+}

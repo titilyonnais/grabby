@@ -2,6 +2,14 @@
 export interface SegRef {
   url: string;
   range?: [number, number];
+  /** How long it plays, in seconds, when the manifest tells (to fetch only part of a video). */
+  dur?: number;
+}
+
+/** A part of the video to keep, in seconds from its start. */
+export interface Clip {
+  start: number;
+  end: number;
 }
 
 export type Container = 'ts' | 'fmp4' | 'file' | 'webm';
@@ -40,6 +48,11 @@ export interface Plan {
   scale?: { w: number; h: number };
   /** Capture: recorded tracks that belong to the video (others are ads or abandoned players). */
   keepTracks?: number[];
+  /**
+   * Keep only part of the video: how long, and where it starts in what each track fetched
+   * (only the segments it covers are fetched, so each track starts a little before it).
+   */
+  clip?: { duration: number; video?: number; audio?: number };
 }
 
 export const RAW_THRESHOLD = 1.5e9;

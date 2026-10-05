@@ -1,4 +1,4 @@
-import type { OutputFormat, Plan, VideoFormat } from './plan';
+import type { Clip, OutputFormat, Plan, VideoFormat } from './plan';
 
 export type MediaKind = 'file' | 'hls' | 'dash' | 'capture';
 export type Protection = 'none' | 'drm' | 'encrypted';
@@ -114,6 +114,8 @@ export interface Job {
   format?: OutputFormat;
   /** A smaller quality made by shrinking the picture (e.g. 360 for 360p). */
   scale?: number;
+  /** Only this part of the video is kept. */
+  clip?: Clip;
   /** Recorded by a hidden player (YouTube), not the one the user watches. */
   hidden?: boolean;
   /** Capture jobs: the assembly plan, kept (and persisted) until the recording ends. */

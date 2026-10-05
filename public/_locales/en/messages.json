@@ -48,6 +48,13 @@
   "bulkEvery": { "message": "Tick all" },
   "bulkNone": { "message": "Untick all" },
   "bulkHint": { "message": "Best quality, two at a time" },
+  "trimOpen": { "message": "Cut a clip" },
+  "trimWhole": { "message": "Keep the whole video" },
+  "trimTitle": { "message": "Clip" },
+  "trimStart": { "message": "Start" },
+  "trimEnd": { "message": "End" },
+  "downloadClip": { "message": "Download clip" },
+  "trimHint": { "message": "Cut at the nearest keyframe: the clip may start a few seconds early." },
   "st_done": { "message": "Saved" },
   "st_canceled": { "message": "Canceled" },
 

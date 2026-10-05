@@ -1,5 +1,5 @@
 import type { HistoryEntry, Job, JobMode, JobStatus, MediaItem } from './types';
-import type { ErrorCode, OutputFormat, Plan, VideoFormat } from './plan';
+import type { Clip, ErrorCode, OutputFormat, Plan, VideoFormat } from './plan';
 import type { Settings } from './settings';
 
 /** A <video> element found in a frame by the scanner. */
@@ -79,7 +79,7 @@ export interface PopupState {
 
 export type PopupToBg =
   | { type: 'subscribe'; tabId: number }
-  | { type: 'download'; mediaId: string; variantId?: string; mode: JobMode; format?: OutputFormat; scale?: number }
+  | { type: 'download'; mediaId: string; variantId?: string; mode: JobMode; format?: OutputFormat; scale?: number; clip?: Clip }
   | { type: 'cancel'; jobId: string }
   | { type: 'pause'; jobId: string }
   | { type: 'resume'; jobId: string }
