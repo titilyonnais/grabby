@@ -27,6 +27,11 @@ export interface Plan {
   raw: boolean;
   /** A file already in the requested format: the browser downloads it as is. */
   direct?: boolean;
+  /**
+   * A big file saved as is, fetched by Grabby in several ranges at once (much faster than one
+   * connection) and resumable; falls back to the browser's download if the server can't.
+   */
+  fast?: boolean;
   /** Extract audio only. */
   audioOnly: boolean;
   estimatedSize?: number;
@@ -51,4 +56,8 @@ export type ErrorCode =
   | 'capture_failed'
   | 'capture_unavailable'
   | 'canceled'
+  /** A paused download's links no longer work and the page isn't open to find new ones. */
+  | 'expired'
+  /** Internal: the server can't send ranges (a fast download goes back to the browser's). */
+  | 'no_ranges'
   | 'unknown';

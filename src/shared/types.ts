@@ -69,6 +69,8 @@ export type JobStatus =
   | 'capturing'
   | 'processing'
   | 'saving'
+  /** Stopped with what it has kept: by the user, or waiting for the network to come back. */
+  | 'paused'
   | 'done'
   | 'error'
   | 'canceled';
@@ -118,6 +120,16 @@ export interface Job {
   capturePlan?: Plan;
   /** The final file is an offscreen Blob URL that must be released once saved. */
   blob?: boolean;
+  /** Why a paused job is paused: the user, a lost connection, or the browser restarting. */
+  pausedBy?: 'user' | 'network' | 'restart';
+  /** A job waiting for the network: when it tries again on its own. */
+  retryAt?: number;
+  /** Tries in a row that failed for the network (reset when data comes in). */
+  attempts?: number;
+  /** Its links were renewed once already after they stopped working. */
+  replanned?: boolean;
+  /** Taken up again after a pause: links that fail now may just have expired. */
+  resumed?: boolean;
 }
 
 export interface HistoryEntry {

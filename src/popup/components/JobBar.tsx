@@ -1,15 +1,35 @@
+import { useEffect, useState } from 'preact/hooks';
 import type { PopupToBg } from '../../shared/messages';
 import type { Job } from '../../shared/types';
 import { size, t } from '../i18n';
 import { Icon } from './Icon';
 
-const ACTIVE = ['queued', 'downloading', 'capturing', 'processing', 'saving'];
+const ACTIVE = ['queued', 'downloading', 'capturing', 'processing', 'saving', 'paused'];
 
 export const isActive = (j: Job | undefined): boolean => !!j && ACTIVE.includes(j.status);
 
-function label(job: Job): string {
+/** Pausing is for fetching: not while recording a playback or assembling the file. */
+export const canPause = (j: Job): boolean => (j.status === 'downloading' || j.status === 'queued') && j.kind !== 'capture';
+
+/** Re-renders every second while `on`: for a countdown. */
+export function useTick(on: boolean): void {
+  const [, set] = useState(0);
+  useEffect(() => {
+    if (!on) return;
+    const t = setInterval(() => set((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [on]);
+}
+
+export function label(job: Job): string {
   const pct = `${Math.round(job.progress * 100)} %`;
   switch (job.status) {
+    case 'paused': {
+      if (job.pausedBy === 'user') return `${t('st_paused')} · ${pct}`;
+      const wait = Math.ceil(((job.retryAt ?? 0) - Date.now()) / 1000);
+      if (job.pausedBy === 'restart') return t('st_resuming');
+      return wait > 0 ? t('st_offline', String(wait)) : t('st_retrying');
+    }
     case 'downloading':
       return job.progress > 0 ? `${t('st_downloading')} ${pct}` : t('st_downloading');
     case 'capturing':
@@ -109,14 +129,17 @@ export function JobBar({ job, send, canFinish = true }: { job: Job; send: (m: Po
     );
   }
 
-  const indeterminate = job.status === 'queued' || (job.status === 'processing' && !job.scale) || job.status === 'saving' || job.progress === 0;
+  const paused = job.status === 'paused';
+  // A countdown to the next try for the network.
+  useTick(paused && job.pausedBy === 'network');
+  const indeterminate = !paused && (job.status === 'queued' || (job.status === 'processing' && !job.scale) || job.status === 'saving' || job.progress === 0);
   const stats = jobStats(job);
   const text = label(job);
   return (
     <div class="job-wrap">
       <div class="job job--active">
         <div
-          class={`meter${indeterminate ? ' meter--busy' : ''}`}
+          class={`meter${indeterminate ? ' meter--busy' : ''}${paused ? ' meter--paused' : ''}`}
           style={{ '--p': String(indeterminate ? 1 : job.progress) }}
           role="progressbar"
           aria-label={text}
@@ -130,6 +153,17 @@ export function JobBar({ job, send, canFinish = true }: { job: Job; send: (m: Po
             <span class="meter__label">{text}</span>
           </span>
         </div>
+        {paused ? (
+          <button class="btn btn--primary btn--icon" title={t('resume')} aria-label={t('resume')} onClick={() => send({ type: 'resume', jobId: job.id })}>
+            <Icon name="play" />
+          </button>
+        ) : (
+          canPause(job) && (
+            <button class="btn btn--soft btn--icon" title={t('pause')} aria-label={t('pause')} onClick={() => send({ type: 'pause', jobId: job.id })}>
+              <Icon name="pause" />
+            </button>
+          )
+        )}
         {job.status === 'capturing' && canFinish && (
           <button class="btn btn--primary btn--icon" title={t('finishCapture')} aria-label={t('finishCapture')} onClick={() => send({ type: 'finish-capture', jobId: job.id })}>
             <Icon name="stop" />

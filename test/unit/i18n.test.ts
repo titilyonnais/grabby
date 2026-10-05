@@ -11,8 +11,8 @@ describe('locales', () => {
     for (const m of [en, fr]) for (const [k, v] of Object.entries(m)) expect(v.message.trim(), k).not.toBe('');
   });
   it('cover every error code and job status used by the popup', () => {
-    const codes = ['http_403', 'http_404', 'http_other', 'network', 'ffmpeg', 'protected', 'live', 'capture_failed', 'capture_unavailable', 'canceled', 'unknown'];
-    const statuses = ['queued', 'downloading', 'capturing', 'processing', 'saving', 'done', 'canceled'];
+    const codes = ['http_403', 'http_404', 'http_other', 'network', 'ffmpeg', 'protected', 'live', 'capture_failed', 'capture_unavailable', 'canceled', 'expired', 'too_large', 'unknown'];
+    const statuses = ['queued', 'downloading', 'capturing', 'processing', 'saving', 'paused', 'done', 'canceled'];
     for (const c of codes) expect(en).toHaveProperty(`err_${c}`);
     for (const s of statuses) expect(en).toHaveProperty(`st_${s}`);
   });

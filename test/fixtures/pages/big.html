@@ -1,0 +1,13 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Big file test</title>
+<meta property="og:title" content="Sample: big file"></head>
+<body><h1>Big</h1><script>
+  // ?mb=24&rate=1500000&name=a: which big file this page plays.
+  const q = new URLSearchParams(location.search);
+  const v = document.createElement('video');
+  v.src = `/big/${q.get('name') ?? 'movie'}.mp4?mb=${q.get('mb') ?? 24}&rate=${q.get('rate') ?? 1500000}`;
+  v.controls = true;
+  v.muted = true;
+  v.preload = 'metadata';
+  v.width = 640;
+  document.body.append(v);
+</script></body></html>

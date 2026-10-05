@@ -1002,10 +1002,27 @@ p {
   height: 48px;
   border-radius: var(--r-pill);
   overflow: hidden;
-  background: var(--pill);
   color: var(--pill-ink);
   font-weight: 600;
   animation: meter-in var(--t-bouncy) var(--spring-bouncy);
+}
+
+/*
+ * The dark part only starts under the coral's round end, never under the rest of it: where
+ * both were painted, the anti-aliased round edges let a dark line show around the coral.
+ */
+.meter::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--pill);
+  clip-path: inset(0 0 0 max(0px, calc(var(--p) * 100% - 24px)));
+  transition: clip-path 360ms var(--ease);
+}
+
+/* Busy (the fill breathes): the dark track stays whole behind it. */
+.meter--busy::before {
+  clip-path: none;
 }
 
 
@@ -1024,9 +1041,14 @@ p {
   inset: 0;
   background: var(--accent);
   color: var(--on-accent);
-  /* The coral end is round too. */
-  clip-path: inset(0 calc((1 - var(--p)) * 100%) 0 0 round var(--r-pill));
+  /* The coral end is round too; its start is rounded by the bar itself (one edge, clean). */
+  clip-path: inset(0 calc((1 - var(--p)) * 100%) 0 0 round 0 var(--r-pill) var(--r-pill) 0);
   transition: clip-path 360ms var(--ease);
+}
+
+.meter--paused .meter__fill {
+  /* Paused: the fill stays where it stopped, striped like a held bar. */
+  background: repeating-linear-gradient(-45deg, var(--accent) 0 9px, color-mix(in srgb, var(--accent) 72%, var(--bg)) 9px 18px);
 }
 
 .meter--busy .meter__fill {
@@ -1167,6 +1189,72 @@ p {
 .swap {
   display: inline-block;
   animation: value-in 420ms var(--spring-bouncy);
+}
+
+/* ------------------------------------------------- downloads from elsewhere */
+.others {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  animation: rise var(--t-gentle) var(--spring-gentle);
+}
+
+.others__title {
+  margin: 0 0 2px;
+  padding: 0 12px;
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.jrow {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 8px 8px 10px;
+  border-radius: 22px;
+  background: var(--surface);
+}
+
+.jrow__icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.jrow__icon--paused {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.jrow__text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.jrow__title {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jrow__meta {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.jrow .card__progress {
+  margin-top: 5px;
 }
 
 /* ---------------------------------------------------------- empty states */

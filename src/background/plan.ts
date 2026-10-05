@@ -7,6 +7,12 @@ import type { Settings } from '../shared/settings';
 import { scaleBox, scaleSource } from '../shared/scale';
 import type { JobMode, MediaItem, Variant } from '../shared/types';
 
+/**
+ * From this size a file saved as is is fetched by Grabby in several ranges at once (and can
+ * be paused and resumed) instead of by the browser over a single connection.
+ */
+export const FAST_MIN = 8 * 2 ** 20;
+
 export class PlanError extends Error {
   constructor(public code: ErrorCode) {
     super(code);
@@ -201,12 +207,15 @@ export async function buildPlan(item: MediaItem, o: PlanOptions): Promise<Plan> 
       // The sound of a huge video would mean loading all of it in memory first.
       if (big && o.mode === 'audio' && !item.audioOnly) throw new PlanError('too_large');
       const keep = !scale.scale && (wanted === src || big) && (o.mode === 'video' || !!item.audioOnly);
+      const fast = keep && (size ?? 0) >= FAST_MIN;
       return {
         kind: 'file',
         video: { segments: [{ url }], container: 'file' },
         output: keep ? (src ?? wanted) : wanted,
-        raw: false,
+        // Fast: the pieces are put end to end, no ffmpeg.
+        raw: fast,
         ...(keep ? { direct: true } : {}),
+        ...(fast ? { fast: true } : {}),
         ...scale,
         audioOnly: o.mode === 'audio',
         ...(size ? { estimatedSize: size } : {}),

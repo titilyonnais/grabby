@@ -27,6 +27,10 @@ chrome.runtime.onStartup.addListener(() => {
   void clearAll().catch(() => {});
 });
 chrome.runtime.onInstalled.addListener(() => void resetHeaderRules());
+// A download waiting for the network tries again, even if the worker went to sleep meanwhile.
+chrome.alarms.onAlarm.addListener((a) => a.name === 'grabby-resume' && void jobs.wake());
+// The connection is back: waiting downloads don't wait for their next try.
+self.addEventListener('online', () => void jobs.wake(true));
 
 /* ------------------------------------------------------------------ tabs */
 
@@ -84,7 +88,8 @@ async function buildState(tabId: number): Promise<PopupState> {
     pageUrl,
     ...(blocked ? { blocked } : {}),
     items: blocked ? [] : visibleItems(items),
-    jobs: jobs.list(tabId),
+    // Every tab's: a download started elsewhere (or before a restart) is shown too.
+    jobs: jobs.list(),
     history,
     settings,
     ...(asks[BROWSER_ASKS_KEY] ? { browserAsks: true } : {}),
@@ -166,6 +171,10 @@ async function onPopupMessage(port: chrome.runtime.Port, msg: PopupToBg) {
     }
     case 'cancel':
       return jobs.cancel(msg.jobId);
+    case 'pause':
+      return jobs.pause(msg.jobId);
+    case 'resume':
+      return jobs.resume(msg.jobId);
     case 'open-browser-downloads':
       // chrome://settings is Brave's, Edge's… settings too (each one redirects it).
       await chrome.tabs.create({ url: 'chrome://settings/downloads' });

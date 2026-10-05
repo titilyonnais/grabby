@@ -17,9 +17,17 @@ import { allowHiddenPlayer } from './headers';
 import { ensureOffscreen } from './offscreen-client';
 import type { Registry } from './registry';
 import { findVisible } from './visible';
+import { deleteParts, storedJobs } from '../shared/parts';
 
 const STORE_KEY = 'jobs';
+/** A job's download plan, kept apart (it can be big) for resuming. */
+const PLAN_KEY = (id: string) => `plan:${id}`;
+/** Set for the browser session: missing at startup means the browser was restarted. */
+const BOOT_KEY = 'booted';
+const WAKE_ALARM = 'grabby-resume';
 const MAX_PARALLEL = 2;
+/** Tries in a row for the network before giving up (about 40 min of waiting in all). */
+const MAX_ATTEMPTS = 24;
 const KEEP_FINISHED_MS = 30 * 60_000;
 const STALL_MS = 120_000;
 /** A recording that receives nothing for this long is wrapped up with what it has. */
@@ -37,6 +45,11 @@ const INTERRUPT_REASONS: Record<string, ErrorCode> = {
   SERVER_FAILED: 'http_other',
   USER_CANCELED: 'canceled',
 };
+
+/** Waits between tries for the network: 3 s, 6 s, 12 s… up to 2 min. */
+export function retryDelay(attempt: number): number {
+  return Math.min(120_000, 3000 * 2 ** Math.max(0, attempt - 1));
+}
 
 function interruptCode(reason: string | undefined): ErrorCode {
   if (!reason) return 'unknown';
@@ -70,6 +83,8 @@ export class JobManager {
   private stopAsked = new Set<string>();
   /** Last byte count of each job and when it was seen, to measure the speed. */
   private rate = new Map<string, { at: number; bytes: number }>();
+  /** Plans of jobs that may be resumed (also in storage, for after a restart). */
+  private plans = new Map<string, Plan>();
   private listeners: (() => void)[] = [];
   private pollTimer: ReturnType<typeof setInterval> | undefined;
   private persistTimer: ReturnType<typeof setTimeout> | undefined;
@@ -97,6 +112,16 @@ export class JobManager {
 
   isBusy(): boolean {
     return [...this.jobs.values()].some((j) => ACTIVE.includes(j.status) || j.status === 'queued');
+  }
+
+  /** Jobs waiting to try again on their own (network, browser restart). */
+  private waiting(): Job[] {
+    return [...this.jobs.values()].filter((j) => j.status === 'paused' && j.pausedBy !== 'user' && j.retryAt !== undefined);
+  }
+
+  /** A download can be paused while it fetches (not while it records or assembles). */
+  static canPause(j: Job): boolean {
+    return (j.status === 'downloading' || j.status === 'queued') && j.kind !== 'capture';
   }
 
   /** True once the job was canceled or dropped: long-running steps check it after each await. */
@@ -143,24 +168,76 @@ export class JobManager {
     for (const [id, j] of this.jobs) {
       if (FINISHED.includes(j.status) && now - (this.lastUpdate.get(id) ?? j.startedAt) > KEEP_FINISHED_MS) this.jobs.delete(id);
     }
-    clearTimeout(this.persistTimer);
-    this.persistTimer = setTimeout(() => {
-      void chrome.storage.session.set({ [STORE_KEY]: [...this.jobs.values()] }).catch(() => {});
+    // Kept across browser restarts, so an interrupted download can carry on. Written at most
+    // every 300 ms but never put off: progress comes several times a second, and pushing the
+    // write back each time meant it never happened while a download ran.
+    this.persistTimer ??= setTimeout(() => {
+      this.persistTimer = undefined;
+      void chrome.storage.local.set({ [STORE_KEY]: [...this.jobs.values()] }).catch(() => {});
     }, 300);
     for (const l of this.listeners) l();
-    if (this.isBusy()) this.startPolling();
-    else scheduleOffscreenClose(() => this.isBusy());
+    if (this.isBusy() || this.waiting().length) this.startPolling();
+    if (!this.isBusy()) scheduleOffscreenClose(() => this.isBusy());
   }
 
   private async restore() {
-    const saved = ((await chrome.storage.session.get(STORE_KEY))[STORE_KEY] as Job[] | undefined) ?? [];
+    const saved = ((await chrome.storage.local.get(STORE_KEY))[STORE_KEY] as Job[] | undefined) ?? [];
+    // No mark for this browser session yet: the browser (or the computer) restarted.
+    const restarted = !(await chrome.storage.session.get(BOOT_KEY))[BOOT_KEY];
+    await chrome.storage.session.set({ [BOOT_KEY]: true });
     const now = Date.now();
     for (const j of saved) {
+      if (restarted) {
+        // Results of the previous session are in the history; only unfinished work stays.
+        if (FINISHED.includes(j.status)) continue;
+        if (j.kind === 'capture') {
+          // A recording can't go on without its page.
+          Object.assign(j, { status: 'error', error: 'capture_failed', speed: 0 });
+        } else if (!(j.status === 'paused' && j.pausedBy === 'user')) {
+          // Its file was being written from memory that is gone: fetch what's missing again.
+          if (j.blob) delete j.downloadId;
+          Object.assign(j, { status: 'paused', pausedBy: 'restart', retryAt: now + 2000, speed: 0 });
+        }
+      }
       this.jobs.set(j.id, j);
       this.lastUpdate.set(j.id, now);
     }
-    if (saved.some((j) => ACTIVE.includes(j.status))) this.startPolling();
+    // Pieces no job owns any more (a job dropped while its pieces were being written).
+    void storedJobs()
+      .then((ids) => Promise.all(ids.filter((id) => !this.jobs.has(id)).map((id) => deleteParts(id))))
+      .catch(() => {});
+    if (restarted || saved.length) this.changed();
     this.pump();
+  }
+
+  /**
+   * A job waiting for the network may try again: its alarm rang (the worker may have slept),
+   * or the connection just came back (`now`: no need to wait for its turn).
+   */
+  async wake(now = false): Promise<void> {
+    await this.ready;
+    this.retryDue(now);
+  }
+
+  private retryDue(all = false) {
+    const t = Date.now();
+    // Offline: wait for the connection (the next check comes with the poll or the alarm).
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    for (const j of this.waiting()) if (all || j.retryAt! <= t) void this.resume(j.id, true);
+  }
+
+  private async savePlan(id: string, plan: Plan) {
+    this.plans.set(id, plan);
+    await chrome.storage.local.set({ [PLAN_KEY(id)]: plan }).catch(() => {});
+  }
+
+  private async planOf(id: string): Promise<Plan | undefined> {
+    return this.plans.get(id) ?? ((await chrome.storage.local.get(PLAN_KEY(id)))[PLAN_KEY(id)] as Plan | undefined);
+  }
+
+  private forgetPlan(id: string) {
+    this.plans.delete(id);
+    void chrome.storage.local.remove(PLAN_KEY(id)).catch(() => {});
   }
 
   /* -------------------------------------------------------------- commands */
@@ -254,6 +331,61 @@ export class JobManager {
     this.pump();
   }
 
+  async pause(jobId: string): Promise<void> {
+    await this.ready;
+    const job = this.jobs.get(jobId);
+    if (!job || !JobManager.canPause(job)) return;
+    const browser = job.downloadId !== undefined && !job.blob;
+    const prev = job.status;
+    this.update(jobId, { status: 'paused', pausedBy: 'user', speed: 0, retryAt: undefined });
+    if (browser) await chrome.downloads.pause(job.downloadId!).catch(() => {});
+    else if (prev === 'downloading') await sendOffscreen({ target: 'offscreen', type: 'pause', jobId }).catch(() => {});
+    await this.releaseRules(jobId);
+    this.pump();
+  }
+
+  /** Carries on with a paused job: from where it stopped, with what was already stored. */
+  async resume(jobId: string, auto = false): Promise<void> {
+    await this.ready;
+    const job = this.jobs.get(jobId);
+    if (job?.status !== 'paused') return;
+    // A try for the network that fails again waits longer next time.
+    const attempts = auto && job.pausedBy === 'network' ? job.attempts ?? 0 : 0;
+    if (job.downloadId !== undefined && !job.blob) {
+      const [d] = await chrome.downloads.search({ id: job.downloadId }).catch(() => []);
+      if (d && (d.state === 'in_progress' || d.canResume)) {
+        try {
+          this.releases.set(jobId, await withPageHeaders(job.pageUrl, [job.sourceUrl ?? d.url]));
+          await chrome.downloads.resume(job.downloadId);
+          this.update(jobId, { status: 'downloading', pausedBy: undefined, retryAt: undefined, attempts });
+          this.startPolling();
+          return;
+        } catch {
+          await this.releaseRules(jobId);
+        }
+      }
+      // The browser can't take it up again: start it over.
+      if (d) await chrome.downloads.erase({ id: job.downloadId }).catch(() => {});
+      delete job.downloadId;
+    }
+    this.update(jobId, { status: 'queued', pausedBy: undefined, retryAt: undefined, attempts, resumed: true });
+    this.pump();
+  }
+
+  /** Lost the network (or the page's server went quiet): try again a bit later, on its own. */
+  private retryLater(jobId: string) {
+    const job = this.jobs.get(jobId);
+    if (!job || FINISHED.includes(job.status)) return;
+    const attempts = (job.attempts ?? 0) + 1;
+    if (attempts > MAX_ATTEMPTS) return this.fail(jobId, 'network');
+    const retryAt = Date.now() + retryDelay(attempts);
+    this.update(jobId, { status: 'paused', pausedBy: 'network', retryAt, attempts, speed: 0 });
+    void this.releaseRules(jobId);
+    // The worker may sleep meanwhile: the alarm brings it back.
+    void chrome.alarms?.create(WAKE_ALARM, { when: retryAt + 500 })?.catch?.(() => {});
+    this.pump();
+  }
+
   async finishCapture(jobId: string): Promise<void> {
     await this.ready;
     const job = this.jobs.get(jobId);
@@ -291,20 +423,14 @@ export class JobManager {
   }
 
   private async run(job: Job) {
-    this.update(job.id, { status: 'downloading', progress: 0 });
+    this.update(job.id, { status: 'downloading', speed: 0 });
     try {
       // Queued while the page moved on (a new page in the same tab): what was asked still stands.
-      const item = findVisible(await this.registry.get(job.tabId), job.mediaId) ?? this.items.get(`${job.tabId}:${job.mediaId}`);
-      if (!item) return this.fail(job.id, 'unknown');
+      const item = (await this.itemOf(job)) ?? null;
+      if (!item && !(await this.planOf(job.id))) return this.fail(job.id, 'expired');
       const settings = await getSettings();
-      const plan = await buildPlan(item, {
-        mode: job.mode,
-        ...(job.format ? { format: job.format } : {}),
-        settings,
-        fetchText: (u) => fetchTextAs(u, item.pageUrl),
-        ...(job.variantId ? { variantId: job.variantId } : {}),
-        ...(job.scale ? { scale: job.scale } : {}),
-      });
+      // Resumed: the same plan, so the pieces already stored still fit.
+      const plan = (await this.planOf(job.id)) ?? (await this.planFor(job, item, settings));
       if (this.gone(job.id)) return;
       this.update(job.id, {
         raw: plan.raw,
@@ -312,10 +438,13 @@ export class JobManager {
         ...(plan.estimatedSize ? { bytes: 0, total: plan.estimatedSize, totalApprox: plan.kind !== 'file' } : {}),
       });
 
-      if (plan.kind === 'file' && plan.direct) return await this.direct(job, plan.video?.segments[0]?.url ?? item.url, plan.output, settings);
       if (plan.kind === 'capture') {
+        if (!item) return this.fail(job.id, 'capture_failed');
         return item.ytId ? await this.startHidden(job, plan, item) : await this.startCapture(job, plan);
       }
+      // Kept for a resume, even after a restart when the page is long gone.
+      await this.savePlan(job.id, plan);
+      if (plan.kind === 'file' && plan.direct && !plan.fast) return await this.direct(job, plan.video?.segments[0]?.url ?? item!.url, plan.output, settings);
 
       const urls = [plan.video, plan.audio].flatMap((t) => (t ? [...(t.init ? [t.init.url] : []), ...t.segments.map((s) => s.url)] : []));
       const perHost = [...new Map(urls.map((u) => [hostOf(u), u])).values()];
@@ -324,8 +453,48 @@ export class JobManager {
       this.update(job.id, { blob: true });
       await sendOffscreen({ target: 'offscreen', type: 'run', jobId: job.id, plan });
     } catch (e) {
-      if (!this.gone(job.id)) this.fail(job.id, e instanceof PlanError ? e.code : 'network');
+      if (this.gone(job.id)) return;
+      if (e instanceof PlanError) this.fail(job.id, e.code);
+      else this.retryLater(job.id);
     }
+  }
+
+  private async itemOf(job: Job): Promise<MediaItem | undefined> {
+    return findVisible(await this.registry.get(job.tabId), job.mediaId) ?? this.items.get(`${job.tabId}:${job.mediaId}`);
+  }
+
+  private planFor(job: Job, item: MediaItem | null, settings: Settings): Promise<Plan> {
+    if (!item) throw new PlanError('expired');
+    return buildPlan(item, {
+      mode: job.mode,
+      ...(job.format ? { format: job.format } : {}),
+      settings,
+      fetchText: (u) => fetchTextAs(u, item.pageUrl),
+      ...(job.variantId ? { variantId: job.variantId } : {}),
+      ...(job.scale ? { scale: job.scale } : {}),
+    });
+  }
+
+  /**
+   * A resumed download whose links stopped working (signed links expire): ask the page's
+   * manifest again for fresh ones. The stored pieces are kept when the video is cut the same way.
+   */
+  private async replan(job: Job): Promise<boolean> {
+    const item = await this.itemOf(job);
+    if (!item || job.replanned) return false;
+    try {
+      const old = await this.planOf(job.id);
+      const plan = await this.planFor(job, item, await getSettings());
+      const shape = (p?: Plan) => [p?.video?.segments.length, p?.audio?.segments.length, !!p?.video?.init, !!p?.audio?.init].join();
+      if (shape(old) !== shape(plan)) await sendOffscreen({ target: 'offscreen', type: 'release', jobId: job.id }).catch(() => {});
+      await this.savePlan(job.id, plan);
+    } catch {
+      return false;
+    }
+    await this.releaseRules(job.id);
+    this.update(job.id, { status: 'queued', replanned: true, speed: 0 });
+    this.pump();
+    return true;
   }
 
   private filename(job: Job, ext: string, s: Settings): string {
@@ -367,6 +536,7 @@ export class JobManager {
       audioOnly: false,
       pageUrl: job.pageUrl,
     };
+    await this.savePlan(job.id, plan);
     await sendOffscreen({ target: 'offscreen', type: 'run', jobId: job.id, plan }).catch(() => this.fail(job.id, 'unknown'));
   }
 
@@ -432,10 +602,16 @@ export class JobManager {
     }
   }
 
-  private async cleanup(jobId: string) {
+  /** Gives back the header rules a job holds (paused: it takes new ones when it resumes). */
+  private async releaseRules(jobId: string) {
     const release = this.releases.get(jobId);
     this.releases.delete(jobId);
     await release?.();
+  }
+
+  private async cleanup(jobId: string) {
+    await this.releaseRules(jobId);
+    this.forgetPlan(jobId);
     const job = this.jobs.get(jobId);
     if (job?.hidden) await sendOffscreen({ target: 'offscreen', type: 'yt-stop', jobId }).catch(() => {});
     if (job?.blob || job?.kind === 'capture') {
@@ -466,10 +642,16 @@ export class JobManager {
     await this.ready;
     const job = this.jobs.get(msg.jobId);
     if (!job || FINISHED.includes(job.status)) return;
+    // Paused: what the offscreen document still says about it is late news.
+    if (job.status === 'paused' && msg.type !== 'job-ready') return;
     if (msg.type === 'job-progress') {
-      this.update(job.id, { status: msg.status, progress: msg.progress, bytes: msg.bytes, speed: msg.speed });
+      // Data is coming in again: the network tries start over from the shortest wait.
+      const fresh = job.attempts && msg.bytes > job.bytes ? { attempts: 0 } : {};
+      this.update(job.id, { status: msg.status, progress: msg.progress, bytes: msg.bytes, speed: msg.speed, ...fresh });
+    } else if (msg.type === 'job-paused') {
+      this.update(job.id, { status: 'paused', pausedBy: 'user', speed: 0 });
     } else if (msg.type === 'job-error') {
-      this.fail(job.id, msg.error);
+      await this.onJobError(job, msg.error);
     } else if (msg.type === 'job-ready') {
       const settings = await getSettings();
       const filename = this.filename(job, msg.ext as OutputFormat, settings);
@@ -487,12 +669,38 @@ export class JobManager {
     }
   }
 
+  private async onJobError(job: Job, error: ErrorCode) {
+    if (error === 'network') return this.retryLater(job.id);
+    // The server can't send ranges: the browser downloads the file itself, as before.
+    if (error === 'no_ranges') {
+      const plan = await this.planOf(job.id);
+      const url = plan?.video?.segments[0]?.url;
+      if (!plan || !url) return this.fail(job.id, 'unknown');
+      this.forgetPlan(job.id);
+      await this.releaseRules(job.id);
+      this.update(job.id, { blob: false });
+      return this.direct(job, url, plan.output, await getSettings()).catch(() => this.fail(job.id, 'unknown'));
+    }
+    // Links that worked before and no longer do: they expired while the download waited.
+    if ((error === 'http_403' || error === 'http_404') && job.resumed) {
+      if (await this.replan(job)) return;
+      return this.fail(job.id, 'expired');
+    }
+    this.fail(job.id, error);
+  }
+
   private async onDownloadChanged(d: chrome.downloads.DownloadDelta) {
     await this.ready;
     const job = [...this.jobs.values()].find((j) => j.downloadId === d.id);
     if (!job || FINISHED.includes(job.status)) return;
     if (d.filename?.current) {
       this.update(job.id, { filename: d.filename.current.split(/[\\/]/).pop() ?? job.filename });
+    }
+    // Paused or resumed from the browser's own downloads page.
+    if (d.paused?.current === true && job.status === 'downloading') this.update(job.id, { status: 'paused', pausedBy: 'user', speed: 0 });
+    if (d.paused?.current === false && job.status === 'paused' && d.state?.current !== 'interrupted') {
+      this.update(job.id, { status: 'downloading', pausedBy: undefined, retryAt: undefined });
+      this.startPolling();
     }
     if (d.state?.current === 'complete') {
       const [info] = await chrome.downloads.search({ id: d.id });
@@ -515,6 +723,8 @@ export class JobManager {
       this.pump();
     } else if (d.state?.current === 'interrupted') {
       const code = interruptCode(d.error?.current);
+      // Network lost, computer asleep: the browser can usually take it up where it stopped.
+      if (code === 'network') return this.retryLater(job.id);
       // The download manager bypasses our Referer/Origin rules: retry through an extension fetch.
       if (job.sourceUrl && !job.viaFetch && !job.blob && ['http_403', 'http_404', 'http_other'].includes(code)) {
         await chrome.downloads.erase({ id: d.id }).catch(() => {});
@@ -529,6 +739,7 @@ export class JobManager {
     if (this.pollTimer) return;
     this.pollTimer = setInterval(async () => {
       const now = Date.now();
+      this.retryDue();
       const direct = [...this.jobs.values()].filter((j) => j.downloadId !== undefined && j.status === 'downloading');
       for (const j of direct) {
         const [info] = await chrome.downloads.search({ id: j.downloadId! });
@@ -543,7 +754,9 @@ export class JobManager {
         const idle = now - (this.lastUpdate.get(j.id) ?? now);
         // Offscreen jobs send a heartbeat even while queued behind ffmpeg: silence means it died.
         if (['downloading', 'processing'].includes(j.status) && j.downloadId === undefined && idle > STALL_MS) {
-          this.fail(j.id, 'network');
+          // Nothing heard for long: the offscreen document died or the server went quiet.
+          void sendOffscreen({ target: 'offscreen', type: 'pause', jobId: j.id }).catch(() => {});
+          this.retryLater(j.id);
         } else if (j.status === 'capturing' && idle > CAPTURE_STALL_MS) {
           if (!this.stopAsked.has(j.id)) {
             // Ask the page to stop and hand over what it has; give it 10 s before assembling anyway.
@@ -553,7 +766,7 @@ export class JobManager {
           } else void this.assembleCapture(j);
         }
       }
-      if (!this.isBusy()) {
+      if (!this.isBusy() && !this.waiting().length) {
         clearInterval(this.pollTimer);
         this.pollTimer = undefined;
       }

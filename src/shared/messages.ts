@@ -81,6 +81,8 @@ export type PopupToBg =
   | { type: 'subscribe'; tabId: number }
   | { type: 'download'; mediaId: string; variantId?: string; mode: JobMode; format?: OutputFormat; scale?: number }
   | { type: 'cancel'; jobId: string }
+  | { type: 'pause'; jobId: string }
+  | { type: 'resume'; jobId: string }
   /** Opens the browser's download settings ("ask where to save"). */
   | { type: 'open-browser-downloads' }
   | { type: 'finish-capture'; jobId: string }
@@ -97,6 +99,8 @@ export type BgToPopup = { type: 'state'; state: PopupState };
 export type BgToOffscreen =
   | { target: 'offscreen'; type: 'run'; jobId: string; plan: Plan }
   | { target: 'offscreen'; type: 'cancel'; jobId: string }
+  /** Stops fetching, keeping what is stored. */
+  | { target: 'offscreen'; type: 'pause'; jobId: string }
   | { target: 'offscreen'; type: 'release'; jobId: string }
   /** Plays a YouTube video in a hidden player, recorded by the page hook. */
   | { target: 'offscreen'; type: 'yt-start'; jobId: string; src: string }
@@ -115,5 +119,6 @@ export type OffscreenToBg =
     }
   | { target: 'bg'; type: 'job-ready'; jobId: string; blobUrl: string; ext: OutputFormat; size: number }
   | { target: 'bg'; type: 'job-error'; jobId: string; error: ErrorCode }
+  | { target: 'bg'; type: 'job-paused'; jobId: string }
   /** capture-sink → SW: may this job write capture chunks? */
   | { target: 'bg'; type: 'sink-check'; jobId: string };

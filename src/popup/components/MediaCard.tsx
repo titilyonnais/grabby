@@ -8,7 +8,7 @@ import type { Job, MediaItem, Variant } from '../../shared/types';
 import { size, t } from '../i18n';
 import { useUnfold } from '../unfold';
 import { Icon } from './Icon';
-import { isActive, JobBar } from './JobBar';
+import { canPause, isActive, JobBar } from './JobBar';
 import { Select, type SelectOption } from './Select';
 
 interface Props {
@@ -132,7 +132,10 @@ export function MediaCard({ item, job, open, onToggle, index, preferred, send }:
             <span class="tag">{kind}</span>
             {single && <span>{single}</span>}
             {running && !open ? (
-              <span class="card__pct">{Math.round(job!.progress * 100)} %</span>
+              <span class="card__pct">
+                {job!.status === 'paused' ? `${t('st_paused')} · ` : ''}
+                {Math.round(job!.progress * 100)} %
+              </span>
             ) : shownSize ? (
               // Keyed: another quality's size rises into place.
               <span key={shownSize} class="swap">
@@ -145,6 +148,19 @@ export function MediaCard({ item, job, open, onToggle, index, preferred, send }:
           {running && !open && <span class="card__progress" style={{ '--p': String(job!.progress) }} aria-hidden="true" />}
         </div>
         <span class="card__tools">
+          {running && !open && (job!.status === 'paused' || canPause(job!)) && (
+            <button
+              class="card__cancel"
+              aria-label={job!.status === 'paused' ? t('resume') : t('pause')}
+              title={job!.status === 'paused' ? t('resume') : t('pause')}
+              onClick={(e) => {
+                e.stopPropagation();
+                send({ type: job!.status === 'paused' ? 'resume' : 'pause', jobId: job!.id });
+              }}
+            >
+              <Icon name={job!.status === 'paused' ? 'play' : 'pause'} size={16} />
+            </button>
+          )}
           {running && !open && (
             <button
               class="card__cancel"

@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { Settings as S } from '../shared/settings';
 import type { Job } from '../shared/types';
 import { Icon } from './components/Icon';
+import { isActive } from './components/JobBar';
 import { MediaCard } from './components/MediaCard';
+import { OtherJobs } from './components/OtherJobs';
 import { FirstRun, HistoryList, StateCard } from './components/Panels';
 import { Settings } from './components/Settings';
 import { t } from './i18n';
@@ -87,6 +89,9 @@ export function App() {
   }, [dark, theme]);
 
   const items = useMemo(() => rank(state?.items ?? []), [state?.items]);
+  // Jobs of this tab go on their cards; the others (another tab, before a restart) get a list.
+  const here = (state?.jobs ?? []).filter((j) => j.tabId === state?.tabId);
+  const elsewhere = (state?.jobs ?? []).filter((j) => isActive(j) && !(j.tabId === state?.tabId && items.some((i) => i.id === j.mediaId)));
   const prefs = { video: settings?.videoFormat ?? 'mp4', audio: settings?.audioFormat ?? 'm4a' } as const;
   const openCard = openId ?? items[0]?.id;
 
@@ -189,6 +194,7 @@ export function App() {
               ) : (
                 <>
                   {!settings!.firstRunAck && <FirstRun onOk={() => send({ type: 'settings', patch: { firstRunAck: true } })} />}
+                  <OtherJobs jobs={elsewhere} send={send} />
                   {state.blocked === 'restricted' ? (
                     <StateCard icon="lock" title={t('restrictedTitle')} body={t('restrictedBody')} />
                   ) : !items.length ? (
@@ -200,7 +206,7 @@ export function App() {
                           key={i.id}
                           item={i}
                           index={n}
-                          job={latestJob(state.jobs, i.id)}
+                          job={latestJob(here, i.id)}
                           open={i.id === openCard}
                           onToggle={() => setOpenId(i.id === openCard ? '' : i.id)}
                           preferred={prefs}

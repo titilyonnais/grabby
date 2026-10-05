@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { Server } from 'node:http';
-import { startServer } from './server';
+import { bigFile, bigStats, cutNetwork, startServer } from './server';
 
 const EXT = resolve(process.env.GRABBY_EXT ?? 'dist');
 
@@ -566,4 +566,107 @@ test('restricted pages show an explanation instead of an empty list', async ({ c
   const tabId = await sw.evaluate(async () => (await chrome.tabs.query({ url: 'about:blank' }))[0]?.id ?? -1);
   const popup = await openPopup(context, extId, tabId);
   await expect(popup.getByText('Nothing to see here')).toBeVisible();
+});
+
+/* ------------------------------------------------------- speed, pause, resume */
+
+/** Opens the big-file page and its popup, with the file listed. */
+async function openBig(context: BrowserContext, sw: Worker, extId: string, q: string) {
+  const { tabId } = await openFixture(context, sw, `big.html?${q}`);
+  await expect.poll(() => badge(sw, tabId), { timeout: 20_000 }).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  await expect(popup.getByRole('heading', { name: 'Sample: big file' })).toBeVisible();
+  return popup;
+}
+
+const meterValue = (popup: Page) =>
+  popup.getByRole('progressbar').getAttribute('aria-valuenow').then((v) => Number(v ?? 0)).catch(() => 0);
+
+test('a big file comes in several ranges at once: faster than one connection, byte for byte', async ({ context, sw, extId }) => {
+  // 24 MB at 1.5 MB/s per connection: 16 s over one, a few seconds over several.
+  const popup = await openBig(context, sw, extId, 'name=fast&mb=24&rate=1500000');
+  const before = await completed(sw);
+  const t0 = Date.now();
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
+  const { bytes } = await nextDownload(sw, before);
+  const took = Date.now() - t0;
+  expect(bytes.equals(await bigFile(24))).toBe(true);
+  expect(took).toBeLessThan(11_000);
+  expect(bigStats.requests.get('/big/fast.mp4') ?? 0).toBeGreaterThan(4);
+});
+
+test('pause keeps what came in; resume carries on from there to the same file', async ({ context, sw, extId }) => {
+  const popup = await openBig(context, sw, extId, 'name=pause&mb=32&rate=400000');
+  const before = await completed(sw);
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
+  await expect.poll(() => meterValue(popup), { timeout: 30_000 }).toBeGreaterThan(40);
+  await popup.getByRole('button', { name: 'Pause' }).click();
+  await expect(popup.getByText(/^Paused · \d+ %/).first()).toBeVisible();
+  // Nothing more is fetched while paused.
+  await popup.waitForTimeout(800);
+  const sentAtPause = bigStats.sent.get('/big/pause.mp4') ?? 0;
+  await popup.waitForTimeout(1500);
+  expect((bigStats.sent.get('/big/pause.mp4') ?? 0) - sentAtPause).toBeLessThan(200_000);
+  await popup.getByRole('button', { name: 'Resume' }).click();
+  const { bytes } = await nextDownload(sw, before);
+  const file = await bigFile(32);
+  expect(bytes.equals(file)).toBe(true);
+  // Taken up where it stopped: after the pause, much less than the whole file went over the wire.
+  expect(bigStats.sent.get('/big/pause.mp4')! - sentAtPause).toBeLessThan(file.length * 0.9);
+  await expect(popup.getByText('Saved')).toBeVisible();
+});
+
+test('a lost connection is waited out, then the download carries on by itself', async ({ context, sw, extId }) => {
+  const popup = await openBig(context, sw, extId, 'name=cut&mb=12&rate=150000');
+  const before = await completed(sw);
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
+  await expect.poll(() => meterValue(popup), { timeout: 20_000 }).toBeGreaterThan(15);
+  // Longer than the quick retries of each piece: the job itself has to wait and come back.
+  cutNetwork(9_000);
+  await expect(popup.getByText(/Connection lost/).first()).toBeVisible({ timeout: 15_000 });
+  const { bytes } = await nextDownload(sw, before);
+  expect(bytes.equals(await bigFile(12))).toBe(true);
+});
+
+test('a download cut by closing the browser carries on when it opens again', async () => {
+  test.setTimeout(120_000);
+  const userData = mkdtempSync(join(tmpdir(), 'grabby-restart-'));
+  const launch = () =>
+    chromium.launchPersistentContext(userData, {
+      channel: 'chromium',
+      headless: true,
+      acceptDownloads: true,
+      locale: 'en-US',
+      args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, '--lang=en-US'],
+    });
+  const worker = async (c: BrowserContext) => c.serviceWorkers()[0] ?? (await c.waitForEvent('serviceworker'));
+  let ctx: BrowserContext | undefined;
+  try {
+    ctx = await launch();
+    let sw = await worker(ctx);
+    const popup = await openBig(ctx, sw, new URL(sw.url()).host, 'name=restart&mb=16&rate=500000');
+    await popup.getByRole('button', { name: 'Download', exact: true }).click();
+    await expect.poll(() => meterValue(popup), { timeout: 30_000 }).toBeGreaterThan(25);
+    const sentBefore = bigStats.sent.get('/big/restart.mp4') ?? 0;
+    await ctx.close();
+
+    ctx = await launch();
+    sw = await worker(ctx);
+    // No page, no popup: the job resumes on its own from what it had stored.
+    await expect
+      .poll(async () => sw.evaluate(async () => (await chrome.downloads.search({ state: 'complete' })).length), { timeout: 60_000 })
+      .toBeGreaterThan(0);
+    const { bytes } = await lastDownload(sw);
+    const file = await bigFile(16);
+    expect(bytes.equals(file)).toBe(true);
+    expect(sentBefore).toBeGreaterThan(file.length * 0.2);
+    expect(bigStats.sent.get('/big/restart.mp4')!).toBeLessThan(file.length * 1.4);
+  } finally {
+    await ctx?.close().catch(() => {});
+    try {
+      rmSync(userData, { recursive: true, force: true });
+    } catch {
+      /* Windows may hold the profile a moment longer */
+    }
+  }
 });

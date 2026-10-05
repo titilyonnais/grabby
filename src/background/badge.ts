@@ -5,7 +5,7 @@ const ACCENT = '#FF5B4F';
 const PROGRESS = '#2F6BFF';
 const DONE = '#1F9D55';
 const FAILED = '#D93025';
-const RUNNING: Job['status'][] = ['queued', 'downloading', 'capturing', 'processing', 'saving'];
+const RUNNING: Job['status'][] = ['queued', 'downloading', 'capturing', 'processing', 'saving', 'paused'];
 /** How long ✓ / ! stays on the icon after a download ends. */
 const FLASH_MS = 6000;
 

@@ -27,6 +27,7 @@ export function buildManifest(version) {
       'webRequest',
       'offscreen',
       'declarativeNetRequestWithHostAccess',
+      'alarms',
     ],
     host_permissions: ['<all_urls>'],
     content_scripts: [

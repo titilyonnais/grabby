@@ -5,6 +5,65 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '../fixtures');
 
+/**
+ * A big video for speed and resume tests: the sample clip followed by `mb` megabytes of
+ * bytes that differ everywhere (a piece put in the wrong place would show).
+ */
+const bigCache = new Map<number, Buffer>();
+export async function bigFile(mb: number): Promise<Buffer> {
+  const hit = bigCache.get(mb);
+  if (hit) return hit;
+  const head = await readFile(join(ROOT, 'media/sample.mp4'));
+  const tail = Buffer.alloc(Math.round(mb * 2 ** 20));
+  let x = 2463534242;
+  for (let i = 0; i < tail.length; i += 4) {
+    x ^= x << 13;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    tail.writeUInt32LE(x >>> 0, i);
+  }
+  const out = Buffer.concat([head, tail]);
+  bigCache.set(mb, out);
+  return out;
+}
+
+/** Bytes sent per big file (to tell a resume from a restart), and the simulated outage. */
+export const bigStats = { sent: new Map<string, number>(), requests: new Map<string, number>(), open: new Map<string, number>(), peak: new Map<string, number>() };
+let outageUntil = 0;
+/** Every connection to a big file is cut, and new ones refused, for `ms`. */
+export function cutNetwork(ms: number): void {
+  outageUntil = Date.now() + ms;
+}
+const live = new Set<import('node:http').ServerResponse>();
+
+/** Sends `body` (a slice of a big file) at `rate` bytes per second, in small chunks. */
+function trickle(res: import('node:http').ServerResponse, body: Buffer, rate: number, key: string) {
+  live.add(res);
+  const open = (bigStats.open.get(key) ?? 0) + 1;
+  bigStats.open.set(key, open);
+  bigStats.peak.set(key, Math.max(bigStats.peak.get(key) ?? 0, open));
+  res.on('close', () => bigStats.open.set(key, (bigStats.open.get(key) ?? 1) - 1));
+  let at = 0;
+  const step = Math.max(16 * 1024, Math.round(rate / 20));
+  const tick = () => {
+    if (res.destroyed) return void live.delete(res);
+    if (Date.now() < outageUntil) {
+      live.delete(res);
+      return void res.destroy();
+    }
+    const chunk = body.subarray(at, at + step);
+    at += chunk.length;
+    bigStats.sent.set(key, (bigStats.sent.get(key) ?? 0) + chunk.length);
+    if (at >= body.length) {
+      live.delete(res);
+      return void res.end(chunk);
+    }
+    res.write(chunk);
+    setTimeout(tick, (chunk.length / rate) * 1000);
+  };
+  tick();
+}
+
 const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.mp4': 'video/mp4',
@@ -34,6 +93,26 @@ export function startServer(port = 0): Promise<{ server: Server; origin: string 
         return;
       }
       const origin = `http://${req.headers.host}`;
+      // /big/<name>.mp4?mb=24&rate=1500000: a big file sent slowly, per connection.
+      if (url.pathname.startsWith('/big/')) {
+        if (Date.now() < outageUntil) return void req.socket.destroy();
+        const full = await bigFile(Number(url.searchParams.get('mb') ?? 24));
+        // The page's own player is served at once: only Grabby's downloads are slowed (and
+        // counted), or the player would hold the few connections a host gets.
+        const player = req.headers['sec-fetch-dest'] === 'video';
+        const rate = player ? 200 * 2 ** 20 : Number(url.searchParams.get('rate') ?? 1_500_000);
+        const key = player ? `player:${url.pathname}` : url.pathname;
+        bigStats.requests.set(key, (bigStats.requests.get(key) ?? 0) + 1);
+        const m = /bytes=(\d+)-(\d*)/.exec(req.headers.range ?? '');
+        if (m) {
+          const start = Number(m[1]);
+          const end = Math.min(m[2] ? Number(m[2]) : full.length - 1, full.length - 1);
+          res.writeHead(206, { 'Content-Type': 'video/mp4', 'Content-Length': end - start + 1, 'Content-Range': `bytes ${start}-${end}/${full.length}`, 'Accept-Ranges': 'bytes' });
+          return trickle(res, full.subarray(start, end + 1), rate, key);
+        }
+        res.writeHead(200, { 'Content-Type': 'video/mp4', 'Content-Length': full.length, 'Accept-Ranges': 'bytes' });
+        return trickle(res, full, rate, key);
+      }
       if (url.pathname.startsWith('/media/protected-referer/') && !(req.headers.referer ?? '').startsWith(origin)) {
         res.writeHead(403).end('referer required');
         return;

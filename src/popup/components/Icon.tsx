@@ -21,6 +21,8 @@ const PATHS = {
   alert: 'M12 4 2.8 19.5h18.4L12 4Zm0 6v4.5m0 2.5v.5',
   file: 'M7 3h7l4 4v14H7zM14 3v4h4',
   external: 'M14 5h5v5M19 5l-8 8M17 14v5H5V7h5',
+  pause: 'M9 6.5v11M15 6.5v11',
+  play: 'M8.5 6.2v11.6a.6.6 0 0 0 .9.5l9.3-5.8a.6.6 0 0 0 0-1L9.4 5.7a.6.6 0 0 0-.9.5Z',
 } as const;
 
 export type IconName = keyof typeof PATHS;
