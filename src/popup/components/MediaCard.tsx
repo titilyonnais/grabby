@@ -25,6 +25,8 @@ interface Props {
   /** The user's preferred outputs (settings). */
   preferred: { video: VideoFormat; audio: AudioFormat };
   send: (m: PopupToBg) => void;
+  /** "Download all": the card is a row with a round tick instead of its choices. */
+  select?: { on: boolean; toggle: () => void } | undefined;
 }
 
 /** Expected size of a quality: told by the source, else estimated from its bitrate. */
@@ -52,7 +54,9 @@ function Thumb({ item }: { item: MediaItem }) {
   );
 }
 
-export function MediaCard({ item, job, open, onToggle, index, preferred, send }: Props) {
+export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, index, preferred, send, select }: Props) {
+  const open = wantOpen && !select;
+  const onToggle = select ? select.toggle : toggleOpen;
   const card = useUnfold<HTMLElement>(open);
   // A quality the source offers (its id), or a smaller one Grabby makes ("scale:360").
   const [quality, setQuality] = useState<string | undefined>(item.variants[0]?.id);
@@ -118,7 +122,7 @@ export function MediaCard({ item, job, open, onToggle, index, preferred, send }:
   return (
     <article
       ref={card}
-      class={`card${open ? ' card--open' : ''}${blocked ? ' card--blocked' : ''}`}
+      class={`card${open ? ' card--open' : ''}${blocked ? ' card--blocked' : ''}${select?.on ? ' card--picked' : ''}`}
       style={{ '--i': String(Math.min(index, 8)) }}
     >
       {/* The whole head opens or closes the card; the chevron is its keyboard handle. */}
@@ -148,7 +152,21 @@ export function MediaCard({ item, job, open, onToggle, index, preferred, send }:
           {running && !open && <span class="card__progress" style={{ '--p': String(job!.progress) }} aria-hidden="true" />}
         </div>
         <span class="card__tools">
-          {running && !open && (job!.status === 'paused' || canPause(job!)) && (
+          {select && (
+            <button
+              class="pick"
+              role="checkbox"
+              aria-checked={select.on}
+              aria-label={item.title}
+              onClick={(e) => {
+                e.stopPropagation();
+                select.toggle();
+              }}
+            >
+              <Icon name="check" size={14} />
+            </button>
+          )}
+          {!select && running && !open && (job!.status === 'paused' || canPause(job!)) && (
             <button
               class="card__cancel"
               aria-label={job!.status === 'paused' ? t('resume') : t('pause')}
@@ -161,7 +179,7 @@ export function MediaCard({ item, job, open, onToggle, index, preferred, send }:
               <Icon name={job!.status === 'paused' ? 'play' : 'pause'} size={16} />
             </button>
           )}
-          {running && !open && (
+          {!select && running && !open && (
             <button
               class="card__cancel"
               aria-label={t('cancel')}
@@ -174,18 +192,20 @@ export function MediaCard({ item, job, open, onToggle, index, preferred, send }:
               <Icon name="close" size={16} />
             </button>
           )}
-          <button
-            class="card__toggle"
-            aria-expanded={open}
-            aria-label={open ? t('hideOptions') : t('showOptions')}
-            title={open ? t('hideOptions') : t('showOptions')}
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggle();
-            }}
-          >
-            <Icon name="chevron" size={18} />
-          </button>
+          {!select && (
+            <button
+              class="card__toggle"
+              aria-expanded={open}
+              aria-label={open ? t('hideOptions') : t('showOptions')}
+              title={open ? t('hideOptions') : t('showOptions')}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggle();
+              }}
+            >
+              <Icon name="chevron" size={18} />
+            </button>
+          )}
         </span>
       </div>
 

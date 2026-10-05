@@ -670,3 +670,21 @@ test('a download cut by closing the browser carries on when it opens again', asy
     }
   }
 });
+
+test('download all: every video of the page ticked, one format, all saved', async ({ context, sw, extId }) => {
+  const { tabId } = await openFixture(context, sw, 'two.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('2');
+  const popup = await openPopup(context, extId, tabId);
+  const before = await completed(sw);
+  await popup.getByRole('button', { name: 'Download all' }).click();
+  await expect(popup.getByRole('checkbox', { checked: true })).toHaveCount(2);
+  // Untick one, tick it back: both go.
+  await popup.getByRole('checkbox').first().click();
+  await expect(popup.getByRole('button', { name: 'Download (1)' })).toBeVisible();
+  await popup.getByRole('checkbox').first().click();
+  await pick(popup, 'Format', 'MKV');
+  await popup.getByRole('button', { name: 'Download (2)' }).click();
+  await expect.poll(() => completed(sw), { timeout: 60_000 }).toBe(before + 2);
+  const files = await sw.evaluate(async () => (await chrome.downloads.search({ state: 'complete' })).map((d) => d.filename));
+  for (const f of files.slice(-2)) expect(probeFormat(f)?.format ?? 'matroska,webm').toContain('matroska');
+});

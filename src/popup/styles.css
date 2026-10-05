@@ -1214,6 +1214,95 @@ p {
   animation: value-in 420ms var(--spring-bouncy);
 }
 
+/* ------------------------------------------------------------ download all */
+.bulkbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 0 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* The round tick of a row being chosen. */
+.pick {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 4px;
+  border-radius: 999px;
+  color: transparent;
+  box-shadow: inset 0 0 0 2px var(--line-strong);
+  transition:
+    background-color 160ms var(--ease),
+    color 160ms var(--ease),
+    box-shadow 160ms var(--ease),
+    transform var(--t-bouncy) var(--spring-bouncy);
+}
+
+.pick[aria-checked='true'] {
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: none;
+}
+
+.pick[aria-checked='true'] .icon {
+  animation: pop-in var(--t-bouncy) var(--spring-bouncy);
+}
+
+.pick:active {
+  transform: scale(0.85);
+  transition-duration: 160ms, 160ms, 160ms, 90ms;
+}
+
+/* Not ticked: the row steps back a little. */
+.list:has(.pick) .card:not(.card--picked) {
+  opacity: 0.6;
+}
+
+/* Stays at the bottom of the list while it scrolls. */
+.bulk {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 10px 8px 8px;
+  border-radius: var(--r-card);
+  background: var(--surface);
+  box-shadow: 0 -10px 24px var(--bg);
+  animation: rise var(--t-gentle) var(--spring-gentle);
+}
+
+.bulk__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bulk__row .select {
+  flex: 1;
+}
+
+.bulk__hint {
+  margin-left: auto;
+  padding-right: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.link-btn {
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 /* ------------------------------------------------- downloads from elsewhere */
 .others {
   display: flex;

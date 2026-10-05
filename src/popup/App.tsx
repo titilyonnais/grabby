@@ -5,6 +5,8 @@ import { Icon } from './components/Icon';
 import { isActive } from './components/JobBar';
 import { MediaCard } from './components/MediaCard';
 import { OtherJobs } from './components/OtherJobs';
+import { BulkBar, bulkable, BulkStart } from './components/Bulk';
+import type { OutputFormat } from '../shared/plan';
 import { FirstRun, HistoryList, StateCard } from './components/Panels';
 import { Settings } from './components/Settings';
 import { t } from './i18n';
@@ -71,6 +73,9 @@ export function App() {
   // The big card: the first one until the user opens another ('' = none).
   const [openId, setOpenId] = useState<string | undefined>();
   const [systemDark, setSystemDark] = useState(prefersDark());
+  // "Download all": which videos are ticked (all of them at first), and in which format.
+  const [picking, setPicking] = useState<string[] | null>(null);
+  const [bulkFormat, setBulkFormat] = useState<OutputFormat | null>(null);
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
@@ -94,6 +99,9 @@ export function App() {
   const elsewhere = (state?.jobs ?? []).filter((j) => isActive(j) && !(j.tabId === state?.tabId && items.some((i) => i.id === j.mediaId)));
   const prefs = { video: settings?.videoFormat ?? 'mp4', audio: settings?.audioFormat ?? 'm4a' } as const;
   const openCard = openId ?? items[0]?.id;
+  const many = items.filter(bulkable);
+  // Videos that left the page while being chosen are no longer offered.
+  const picked = picking?.filter((id) => many.some((i) => i.id === id)) ?? null;
 
   const go = (next: Tab) => {
     prevTab.current = tab;
@@ -201,7 +209,8 @@ export function App() {
                     <StateCard icon="film" title={t('emptyTitle')} body={t('emptyBody')} />
                   ) : (
                     <section class="list" aria-label={t('tabPage')}>
-                      {items.map((i, n) => (
+                      {many.length > 1 && !picked && <BulkStart count={many.length} onStart={() => setPicking(many.map((i) => i.id))} />}
+                      {(picked ? many : items).map((i, n) => (
                         <MediaCard
                           key={i.id}
                           item={i}
@@ -211,8 +220,27 @@ export function App() {
                           onToggle={() => setOpenId(i.id === openCard ? '' : i.id)}
                           preferred={prefs}
                           send={send}
+                          select={
+                            picked
+                              ? {
+                                  on: picked.includes(i.id),
+                                  toggle: () => setPicking((p) => (p?.includes(i.id) ? p.filter((x) => x !== i.id) : [...(p ?? []), i.id])),
+                                }
+                              : undefined
+                          }
                         />
                       ))}
+                      {picked && (
+                        <BulkBar
+                          items={many}
+                          picked={picked}
+                          format={bulkFormat ?? prefs.video}
+                          onFormat={setBulkFormat}
+                          onAll={() => setPicking(picked.length === many.length ? [] : many.map((i) => i.id))}
+                          onCancel={() => setPicking(null)}
+                          send={send}
+                        />
+                      )}
                     </section>
                   )}
                 </>

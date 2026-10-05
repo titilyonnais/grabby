@@ -42,6 +42,12 @@
   "quickNone": { "message": "Aucune vidéo à télécharger" },
   "quickNoneBody": { "message": "Lance la vidéo, puis réessaie." },
   "quickProtected": { "message": "La vidéo de cette page est protégée." },
+  "bulkCount": { "message": "$N$ vidéos sur la page", "placeholders": { "n": { "content": "$1" } } },
+  "bulkAll": { "message": "Tout télécharger" },
+  "bulkGo": { "message": "Télécharger ($N$)", "placeholders": { "n": { "content": "$1" } } },
+  "bulkEvery": { "message": "Tout cocher" },
+  "bulkNone": { "message": "Tout décocher" },
+  "bulkHint": { "message": "Meilleure qualité, deux à la fois" },
   "st_done": { "message": "Enregistré" },
   "st_canceled": { "message": "Annulé" },
 

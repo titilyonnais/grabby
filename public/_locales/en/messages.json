@@ -42,6 +42,12 @@
   "quickNone": { "message": "No video to download" },
   "quickNoneBody": { "message": "Play the video, then try again." },
   "quickProtected": { "message": "This page's video is protected." },
+  "bulkCount": { "message": "$N$ videos on this page", "placeholders": { "n": { "content": "$1" } } },
+  "bulkAll": { "message": "Download all" },
+  "bulkGo": { "message": "Download ($N$)", "placeholders": { "n": { "content": "$1" } } },
+  "bulkEvery": { "message": "Tick all" },
+  "bulkNone": { "message": "Untick all" },
+  "bulkHint": { "message": "Best quality, two at a time" },
   "st_done": { "message": "Saved" },
   "st_canceled": { "message": "Canceled" },
 
