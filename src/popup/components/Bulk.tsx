@@ -6,8 +6,8 @@ import { t } from '../i18n';
 import { Icon } from './Icon';
 import { Select } from './Select';
 
-/** What "download all" can take: free videos that don't need to be played to be recorded. */
-export const bulkable = (i: MediaItem): boolean => i.protection === 'none' && !i.live && (i.kind !== 'capture' || !!i.ytId);
+/** What "download all" can take: every free video (recordings of the same page go one after the other). */
+export const bulkable = (i: MediaItem): boolean => i.protection === 'none' && !i.live;
 
 /** Above the list: how many videos there are, and the way into "download all". */
 export function BulkStart({ count, onStart }: { count: number; onStart: () => void }) {

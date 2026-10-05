@@ -146,4 +146,122 @@ async function subtitles() {
     '',
   ].join('\n');
   await writeFile(mpd, text.replace('\t</Period>', `${set}\t</Period>`));
+  await packedSubtitles(cues);
+}
+
+/**
+ * 12. Subtitles in every other form a page or a stream may use: whole WebVTT and TTML files
+ * (a <track>, a DASH TTML file) and subtitles packed in MP4 segments, `wvtt` and `stpp`, in a
+ * second DASH manifest. The MP4 boxes are written by hand: ffmpeg can't make `wvtt`.
+ */
+async function packedSubtitles(cues) {
+  const sec = (t) => {
+    const [m, s] = t.split(':');
+    return Number(m) * 60 + Number(s);
+  };
+  const list = cues.map(([t, text]) => {
+    const [a, b] = t.split(' --> ');
+    return { start: sec(a), end: sec(b), text };
+  });
+  await mkdir(join(out, 'subs'), { recursive: true });
+  await writeFile(join(out, 'subs/fr.vtt'), ['WEBVTT', '', ...cues.flatMap(([t, x]) => [t, x, ''])].join('\n'));
+  const clockOf = (s) => {
+    const h = String(Math.floor(s / 3600)).padStart(2, '0');
+    const m = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+    return `${h}:${m}:${(s % 60).toFixed(3).padStart(6, '0')}`;
+  };
+  const ttml = (items) =>
+    [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling" xml:lang="es">',
+      '<head><styling><style xml:id="i" tts:fontStyle="italic"/></styling></head>',
+      '<body><div>',
+      ...items.map((c) => {
+        const it = /^<i>(.*)<\/i>$/.exec(c.text);
+        const body = it ? `<span style="i">${it[1]}</span>` : c.text;
+        return `<p begin="${clockOf(c.start)}" end="${clockOf(c.end)}">${body}</p>`;
+      }),
+      '</div></body></tt>',
+      '',
+    ].join('\n');
+  await writeFile(join(out, 'dash/subs-it.ttml'), ttml(list));
+
+  // A minimal MP4 writer.
+  const enc = new TextEncoder();
+  const u32 = (n) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
+  const cat = (...parts) => Buffer.concat(parts.map((p) => Buffer.from(p)));
+  const box = (type, ...body) => {
+    const inner = cat(...body);
+    return cat(u32(inner.length + 8), enc.encode(type), inner);
+  };
+  const full = (type, version, flags, ...body) => box(type, [version, (flags >> 16) & 255, (flags >> 8) & 255, flags & 255], ...body);
+  const SCALE = 1000;
+  const init = (format, entryBody) => {
+    const mdhd = full('mdhd', 0, 0, u32(0), u32(0), u32(SCALE), u32(6 * SCALE), [0x55, 0xc4, 0, 0]);
+    const hdlr = full('hdlr', 0, 0, u32(0), enc.encode(format === 'wvtt' ? 'text' : 'subt'), u32(0), u32(0), u32(0), [0]);
+    const stsd = full('stsd', 0, 0, u32(1), box(format, [0, 0, 0, 0, 0, 0, 0, 1], ...entryBody));
+    const stbl = box('stbl', stsd, full('stts', 0, 0, u32(0)), full('stsc', 0, 0, u32(0)), full('stsz', 0, 0, u32(0), u32(0)), full('stco', 0, 0, u32(0)));
+    const minf = box('minf', full('sthd', 0, 0), box('dinf', full('dref', 0, 0, u32(1), full('url ', 0, 1))), stbl);
+    const tkhd = full('tkhd', 0, 3, u32(0), u32(0), u32(1), u32(0), u32(0), new Array(52).fill(0), u32(0), u32(0));
+    const trak = box('trak', tkhd, box('mdia', mdhd, hdlr, minf));
+    const mvhd = full('mvhd', 0, 0, u32(0), u32(0), u32(SCALE), u32(0), u32(0x10000), [1, 0], new Array(10).fill(0), new Array(36).fill(0), new Array(24).fill(0), u32(2));
+    const mvex = box('mvex', full('trex', 0, 0, u32(1), u32(1), u32(0), u32(0), u32(0)));
+    return cat(box('ftyp', enc.encode('iso6'), u32(0), enc.encode('iso6'), enc.encode('dash')), box('moov', mvhd, trak, mvex));
+  };
+  const fragment = (seq, decodeTime, samples) => {
+    const build = (offset) => {
+      const trun = full('trun', 0, 0x1 | 0x100 | 0x200, u32(samples.length), u32(offset), ...samples.flatMap(([d, p]) => [u32(d), u32(p.length)]));
+      const traf = box('traf', full('tfhd', 0, 0x20000, u32(1)), full('tfdt', 1, 0, u32(0), u32(decodeTime)), trun);
+      return box('moof', full('mfhd', 0, 0, u32(seq)), traf);
+    };
+    const moof = build(build(0).length + 8);
+    return cat(moof, box('mdat', ...samples.map(([, p]) => p)));
+  };
+  // Samples of a 2-second segment: what is shown when (wvtt: an empty `vtte` in the gaps).
+  const wvttSegment = (from, to) => {
+    const marks = [...new Set([from, to, ...list.flatMap((c) => [c.start, c.end]).filter((t) => t > from && t < to)])].sort((a, b) => a - b);
+    const samples = [];
+    for (let k = 0; k + 1 < marks.length; k++) {
+      const shown = list.filter((c) => c.start <= marks[k] && c.end >= marks[k + 1]);
+      const payload = shown.length ? cat(...shown.map((c) => box('vttc', box('payl', enc.encode(c.text))))) : box('vtte');
+      samples.push([Math.round((marks[k + 1] - marks[k]) * SCALE), payload]);
+    }
+    return samples;
+  };
+  for (const [dir, format, entry] of [
+    ['subs-wvtt', 'wvtt', [box('vttC', enc.encode('WEBVTT'))]],
+    ['subs-stpp', 'stpp', [enc.encode('http://www.w3.org/ns/ttml\0\0\0')]],
+  ]) {
+    await mkdir(join(out, `dash/${dir}`), { recursive: true });
+    await writeFile(join(out, `dash/${dir}/init.mp4`), init(format, entry));
+    for (let n = 0; n < 3; n++) {
+      const from = n * 2;
+      const samples =
+        format === 'wvtt' ? wvttSegment(from, from + 2) : [[2 * SCALE, enc.encode(ttml(list.filter((c) => c.end > from && c.start < from + 2)))]];
+      await writeFile(join(out, `dash/${dir}/seg${n + 1}.m4s`), fragment(n + 1, from * SCALE, samples));
+    }
+  }
+  const base = (await readFile(join(out, 'dash/manifest.mpd'), 'utf8')).replace(/\s*<AdaptationSet id="2"[\s\S]*?<\/AdaptationSet>/, '');
+  const sets = [
+    ['3', 'de', 'subs-wvtt', 'wvtt'],
+    ['4', 'es', 'subs-stpp', 'stpp.ttml.im1t'],
+  ].map(([id, lang, dir, codecs]) =>
+    [
+      `\t\t<AdaptationSet id="${id}" contentType="text" mimeType="application/mp4" lang="${lang}">`,
+      `\t\t\t<Representation id="sub-${lang}" bandwidth="256" codecs="${codecs}">`,
+      `\t\t\t\t<SegmentTemplate timescale="${SCALE}" duration="${2 * SCALE}" initialization="${dir}/init.mp4" media="${dir}/seg$Number$.m4s" startNumber="1"/>`,
+      '\t\t\t</Representation>',
+      '\t\t</AdaptationSet>',
+    ].join('\n'),
+  );
+  sets.push(
+    [
+      '\t\t<AdaptationSet id="5" contentType="text" mimeType="application/ttml+xml" lang="it">',
+      '\t\t\t<Representation id="sub-it" bandwidth="256">',
+      '\t\t\t\t<BaseURL>subs-it.ttml</BaseURL>',
+      '\t\t\t</Representation>',
+      '\t\t</AdaptationSet>',
+    ].join('\n'),
+  );
+  await writeFile(join(out, 'dash/manifest-packed.mpd'), base.replace('\t</Period>', `${sets.join('\n')}\n\t</Period>`));
 }

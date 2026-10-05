@@ -1,4 +1,6 @@
-import type { MediaItem } from '../shared/types';
+import type { MediaItem, SubtitleTrack } from '../shared/types';
+import { describeSubtitleUrl, segmentPattern } from '../shared/subtitles';
+import { hashId } from '../shared/ids';
 import { hostOf, normalizeMediaUrl } from '../parsers/url';
 import { looksLikeId } from '../shared/title';
 
@@ -21,6 +23,22 @@ interface TabState {
   thumbnail?: string;
   /** Biggest picture of the page: used only when nothing better exists. */
   image?: string;
+  /** Subtitles a <video src> declares (<track>), by the video's address. */
+  videoSubs?: Record<string, SubtitleTrack[]>;
+  /** Subtitle files each frame loaded (its player fetching them), by frame. */
+  frameSubs?: Record<string, string[]>;
+}
+
+const MAX_FRAME_SUBS = 12;
+
+/** Subtitle files a frame loaded, without the segments of a stream's subtitles. */
+function frameSubtitles(urls: string[] | undefined): SubtitleTrack[] {
+  if (!urls?.length) return [];
+  const count = new Map<string, number>();
+  for (const u of urls) count.set(segmentPattern(u), (count.get(segmentPattern(u)) ?? 0) + 1);
+  return urls
+    .filter((u) => (count.get(segmentPattern(u)) ?? 0) < 3)
+    .map((url) => ({ id: hashId(url), url, ...describeSubtitleUrl(url) }));
 }
 
 export interface Preview {
@@ -119,14 +137,60 @@ export class Registry {
     await (this.locks.get(tabId) ?? Promise.resolve());
     const s = await this.load(tabId);
     const anyFrameThumb = Object.values(s.frameThumbs ?? {})[0];
+    // Players of a frame: subtitles it loaded go with its only player.
+    const players = new Map<string, number>();
+    for (const i of s.items) if (i.kind === 'file' || i.kind === 'capture') players.set(i.frameUrl, (players.get(i.frameUrl) ?? 0) + 1);
     return s.items.map((i) => {
       const thumbnail = i.thumbnail ?? s.thumbnail ?? s.frameThumbs?.[i.frameUrl] ?? anyFrameThumb ?? s.image;
+      const subtitles = i.subtitles?.length ? i.subtitles : this.subtitlesFor(s, i, players.get(i.frameUrl) === 1);
       return {
         ...i,
+        ...(subtitles.length ? { subtitles } : {}),
         title: i.title || s.pageTitle || fallbackTitle || titleFromUrl(i.url) || hostOf(i.pageUrl) || 'video',
         ...(thumbnail ? { thumbnail } : {}),
       };
     });
+  }
+
+  /** Subtitles of a file (its <track>s) or of the only player of a frame (files it loaded). */
+  private subtitlesFor(s: TabState, i: MediaItem, alone: boolean): SubtitleTrack[] {
+    if (i.kind !== 'file' && i.kind !== 'capture') return [];
+    if (i.kind === 'file') {
+      for (const u of [i.url, ...i.variants.map((v) => v.url)]) {
+        const own = u ? s.videoSubs?.[normalizeMediaUrl(u)] : undefined;
+        if (own?.length) return own;
+      }
+    }
+    return alone && !i.audioOnly ? frameSubtitles(s.frameSubs?.[i.frameUrl]) : [];
+  }
+
+  /** The <track>s of a <video src>, for its file once it is listed. */
+  setVideoSubs(tabId: number, videoUrl: string, subs: SubtitleTrack[]): Promise<boolean> {
+    return this.mutate(
+      tabId,
+      (s) => {
+        const key = normalizeMediaUrl(videoUrl);
+        if (JSON.stringify(s.videoSubs?.[key] ?? []) === JSON.stringify(subs)) return false;
+        const entries = Object.entries(s.videoSubs ?? {}).filter(([k]) => k !== key).slice(-20);
+        s.videoSubs = Object.fromEntries([...entries, [key, subs]]);
+        return s.items.some((i) => i.kind === 'file');
+      },
+      (r) => r,
+    );
+  }
+
+  /** A subtitle file a frame loaded. */
+  addFrameSub(tabId: number, frameUrl: string, url: string): Promise<boolean> {
+    return this.mutate(
+      tabId,
+      (s) => {
+        const list = s.frameSubs?.[frameUrl] ?? [];
+        if (list.includes(url)) return false;
+        s.frameSubs = { ...(s.frameSubs ?? {}), [frameUrl]: [...list, url].slice(-MAX_FRAME_SUBS * 4) };
+        return s.items.some((i) => i.frameUrl === frameUrl && (i.kind === 'file' || i.kind === 'capture'));
+      },
+      (r) => r,
+    );
   }
 
   async find(tabId: number, id: string): Promise<MediaItem | undefined> {
@@ -304,6 +368,8 @@ export class Registry {
         s.blockedFrames = [];
         s.previews = [];
         s.frameThumbs = {};
+        s.videoSubs = {};
+        s.frameSubs = {};
         delete s.pageTitle;
         delete s.image;
         delete s.thumbnail;

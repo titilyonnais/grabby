@@ -12,7 +12,7 @@ import { handlePageInfo } from './pageinfo';
 import { Registry, sessionKV } from './registry';
 import { forgetTab, rememberTabUrl, samePage, tabUrl } from './tabs';
 import { visibleItems } from './visible';
-import { clearAll, putChunk } from '../shared/idb';
+import { putChunk } from '../shared/idb';
 import { quickDownload } from './quick';
 
 const registry = new Registry(sessionKV);
@@ -24,8 +24,6 @@ listenNotificationClicks();
 
 chrome.runtime.onStartup.addListener(() => {
   void resetHeaderRules();
-  // Captures never survive a browser restart: drop leftovers.
-  void clearAll().catch(() => {});
 });
 chrome.runtime.onInstalled.addListener(() => {
   void resetHeaderRules();

@@ -60,6 +60,8 @@
   "subsForced": { "message": "forced" },
   "subsApart": { "message": "In a separate .srt file" },
   "subsApartHint": { "message": "This format can't hold subtitles: they'll be saved next to the video, as .srt." },
+  "st_pageClosed": { "message": "Paused · page closed" },
+  "captureClip": { "message": "Record the clip" },
   "st_done": { "message": "Saved" },
   "st_canceled": { "message": "Canceled" },
 

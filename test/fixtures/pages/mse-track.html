@@ -1,0 +1,24 @@
+<!doctype html><html><head><meta charset="utf-8"><title>MSE player with subtitles test</title></head>
+<body><h1>MSE</h1><video id="v" controls muted width="640"><track kind="subtitles" src="/media/subs/fr.vtt" srclang="fr" label="Français"></video>
+<script>
+// Adaptive-player simulation: separate video/audio SourceBuffers fed by range-param requests.
+const CHUNK = 64 * 1024;
+async function feed(sb, url, size) {
+  for (let off = 0; off < size; off += CHUNK) {
+    const end = Math.min(off + CHUNK, size) - 1;
+    const buf = await (await fetch(`${url}?range=${off}-${end}`)).arrayBuffer();
+    await new Promise((ok) => { sb.addEventListener('updateend', ok, { once: true }); sb.appendBuffer(buf); });
+  }
+}
+const ms = new MediaSource();
+const video = document.getElementById('v');
+video.src = URL.createObjectURL(ms);
+ms.addEventListener('sourceopen', async () => {
+  const vsb = ms.addSourceBuffer('video/mp4; codecs="avc1.4d401e"');
+  const asb = ms.addSourceBuffer('audio/mp4; codecs="mp4a.40.2"');
+  const sizes = await (await fetch('/media/mse/sizes.json')).json();
+  await Promise.all([feed(vsb, '/media/mse/video.mp4', sizes.video), feed(asb, '/media/mse/audio.mp4', sizes.audio)]);
+  ms.endOfStream();
+  document.body.dataset.ready = '1';
+}, { once: true });
+</script></body></html>

@@ -60,6 +60,8 @@
   "subsForced": { "message": "forcés" },
   "subsApart": { "message": "Dans un fichier .srt à part" },
   "subsApartHint": { "message": "Ce format ne garde pas les sous-titres : ils seront enregistrés à côté de la vidéo, en .srt." },
+  "st_pageClosed": { "message": "En pause · page fermée" },
+  "captureClip": { "message": "Enregistrer l'extrait" },
   "st_done": { "message": "Enregistré" },
   "st_canceled": { "message": "Annulé" },
 

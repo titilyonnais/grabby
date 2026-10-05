@@ -19,6 +19,9 @@ import { ensureOffscreen } from './offscreen-client';
 import type { Registry } from './registry';
 import { findVisible } from './visible';
 import { deleteParts, storedJobs } from '../shared/parts';
+import { capturedJobs, deleteJob } from '../shared/idb';
+import { rank } from '../shared/rank';
+import { cuesOf, toSrt } from '../shared/subtitles';
 
 const STORE_KEY = 'jobs';
 /** A job's download plan, kept apart (it can be big) for resuming. */
@@ -31,8 +34,12 @@ const MAX_PARALLEL = 2;
 const MAX_ATTEMPTS = 24;
 const KEEP_FINISHED_MS = 30 * 60_000;
 const STALL_MS = 120_000;
-/** A recording that receives nothing for this long is wrapped up with what it has. */
+/** A recording that receives nothing for this long is wrapped up, or carried on later. */
 const CAPTURE_STALL_MS = 60_000;
+/** A recording that carries on starts again this far back: what was stored last may be missing. */
+const CAPTURE_OVERLAP = 8;
+/** Hidden players recording at the same time (each plays at high speed). */
+const MAX_HIDDEN = 2;
 
 const ACTIVE: JobStatus[] = ['downloading', 'capturing', 'processing', 'saving'];
 /** Share of the progress bar for recording a playback; assembling it takes the rest. */
@@ -46,6 +53,11 @@ const INTERRUPT_REASONS: Record<string, ErrorCode> = {
   SERVER_FAILED: 'http_other',
   USER_CANCELED: 'canceled',
 };
+
+/** The expected size of a part of a video: its share of the whole. */
+function partOf(size: number, clip: Clip | undefined, duration: number | undefined): number {
+  return clip && duration ? Math.round((size * (clip.end - clip.start)) / duration) : size;
+}
 
 /** Waits between tries for the network: 3 s, 6 s, 12 s… up to 2 min. */
 export function retryDelay(attempt: number): number {
@@ -120,9 +132,9 @@ export class JobManager {
     return [...this.jobs.values()].filter((j) => j.status === 'paused' && j.pausedBy !== 'user' && j.retryAt !== undefined);
   }
 
-  /** A download can be paused while it fetches (not while it records or assembles). */
+  /** A download can be paused while it fetches or records (not while it assembles). */
   static canPause(j: Job): boolean {
-    return (j.status === 'downloading' || j.status === 'queued') && j.kind !== 'capture';
+    return j.status === 'downloading' || j.status === 'queued' || j.status === 'capturing';
   }
 
   /** True once the job was canceled or dropped: long-running steps check it after each await. */
@@ -191,9 +203,12 @@ export class JobManager {
       if (restarted) {
         // Results of the previous session are in the history; only unfinished work stays.
         if (FINISHED.includes(j.status)) continue;
-        if (j.kind === 'capture') {
-          // A recording can't go on without its page.
-          Object.assign(j, { status: 'error', error: 'capture_failed', speed: 0 });
+        if (j.kind === 'capture' && j.status === 'paused' && (j.pausedBy === 'user' || j.pausedBy === 'page')) {
+          // Paused on purpose: it waits for the user.
+        } else if (j.kind === 'capture') {
+          // A recording carries on where it got to (YouTube: in a new hidden player; another
+          // site: in its page, opened again if needed). Its first part is kept.
+          Object.assign(j, { status: 'paused', pausedBy: 'restart', retryAt: now + 3000, speed: 0 });
         } else if (!(j.status === 'paused' && j.pausedBy === 'user')) {
           // Its file was being written from memory that is gone: fetch what's missing again.
           if (j.blob) delete j.downloadId;
@@ -203,9 +218,13 @@ export class JobManager {
       this.jobs.set(j.id, j);
       this.lastUpdate.set(j.id, now);
     }
-    // Pieces no job owns any more (a job dropped while its pieces were being written).
+    // Pieces no job owns any more (a job dropped while its pieces were being written), and
+    // recordings left by jobs that are gone.
     void storedJobs()
       .then((ids) => Promise.all(ids.filter((id) => !this.jobs.has(id)).map((id) => deleteParts(id))))
+      .catch(() => {});
+    void capturedJobs()
+      .then((ids) => Promise.all(ids.filter((id) => !this.jobs.has(id) || FINISHED.includes(this.jobs.get(id)!.status)).map((id) => deleteJob(id))))
       .catch(() => {});
     if (restarted || saved.length) this.changed();
     this.pump();
@@ -289,8 +308,10 @@ export class JobManager {
       ...(scale ? { scale, quality: `${scale}p` } : mode === 'video' && variant ? { quality: variant.label } : {}),
       // A recording's size is known beforehand only when the site tells it (YouTube).
       ...(item.kind === 'capture' && mode === 'video' && (variant?.sizes?.[format as VideoFormat] ?? item.size)
-        ? { total: variant?.sizes?.[format as VideoFormat] ?? item.size, totalApprox: true }
+        ? { total: partOf(variant?.sizes?.[format as VideoFormat] ?? item.size!, clip, item.duration), totalApprox: true }
         : {}),
+      ...(item.kind === 'capture' && item.duration ? { duration: item.duration } : {}),
+      ...(item.ytId ? { ytId: item.ytId, ...(variant?.codecs ? { ytCodecs: variant.codecs } : {}) } : {}),
       ...(format && (mode === 'audio' ? isAudioFormat(format) : (scale ? SHRUNK_FORMATS : (item.formats ?? VIDEO_FORMATS)).includes(format as VideoFormat))
         ? { format }
         : {}),
@@ -350,6 +371,10 @@ export class JobManager {
     const browser = job.downloadId !== undefined && !job.blob;
     const prev = job.status;
     this.update(jobId, { status: 'paused', pausedBy: 'user', speed: 0, retryAt: undefined });
+    if (prev === 'capturing') {
+      await this.holdCapture(job);
+      return this.pump();
+    }
     if (browser) await chrome.downloads.pause(job.downloadId!).catch(() => {});
     else if (prev === 'downloading') await sendOffscreen({ target: 'offscreen', type: 'pause', jobId }).catch(() => {});
     await this.releaseRules(jobId);
@@ -363,6 +388,17 @@ export class JobManager {
     if (job?.status !== 'paused') return;
     // A try for the network that fails again waits longer next time.
     const attempts = auto && job.pausedBy === 'network' ? job.attempts ?? 0 : 0;
+    if (job.kind === 'capture') {
+      // Recorded to the end already (stopped while assembling): only the file is left to make.
+      if (this.recordedAll(job)) {
+        this.update(jobId, { status: 'capturing', pausedBy: undefined, retryAt: undefined, attempts });
+        return this.assembleCapture(job, true);
+      }
+      // A new session, after the ones already stored (none yet: this is still the first).
+      const session = job.captureAt !== undefined || job.bytes > 0 ? (job.session ?? 0) + 1 : (job.session ?? 0);
+      this.update(jobId, { status: 'queued', pausedBy: undefined, retryAt: undefined, attempts, resumed: true, session });
+      return this.pump();
+    }
     if (job.downloadId !== undefined && !job.blob) {
       const [d] = await chrome.downloads.search({ id: job.downloadId }).catch(() => []);
       if (d && (d.state === 'in_progress' || d.canResume)) {
@@ -391,7 +427,9 @@ export class JobManager {
     const attempts = (job.attempts ?? 0) + 1;
     if (attempts > MAX_ATTEMPTS) return this.fail(jobId, 'network');
     const retryAt = Date.now() + retryDelay(attempts);
+    const recording = job.status === 'capturing';
     this.update(jobId, { status: 'paused', pausedBy: 'network', retryAt, attempts, speed: 0 });
+    if (recording) void this.holdCapture(job);
     void this.releaseRules(jobId);
     // The worker may sleep meanwhile: the alarm brings it back.
     void chrome.alarms?.create(WAKE_ALARM, { when: retryAt + 500 })?.catch?.(() => {});
@@ -401,7 +439,17 @@ export class JobManager {
   async finishCapture(jobId: string): Promise<void> {
     await this.ready;
     const job = this.jobs.get(jobId);
+    // Paused: the file is made from what was recorded so far.
+    if (job?.status === 'paused' && job.kind === 'capture' && job.bytes > 0) {
+      this.update(jobId, { status: 'capturing', pausedBy: undefined, retryAt: undefined });
+      return this.assembleCapture(job, true);
+    }
     if (job?.status !== 'capturing') return;
+    // A hidden player (YouTube): stopped, and what it recorded becomes the file.
+    if (job.hidden) {
+      await sendOffscreen({ target: 'offscreen', type: 'yt-stop', jobId }).catch(() => {});
+      return this.assembleCapture(job, job.bytes > 0);
+    }
     // The page may be gone already: assemble whatever was stored.
     if (!(await this.toContent(job, { type: 'capture-stop', jobId }))) await this.assembleCapture(job);
   }
@@ -410,7 +458,15 @@ export class JobManager {
   async onTabGone(tabId: number): Promise<void> {
     await this.ready;
     for (const j of this.list(tabId)) {
-      if (j.status === 'capturing') await this.assembleCapture(j);
+      if (j.status !== 'capturing') continue;
+      // A YouTube recording plays in its own hidden player: it doesn't need the page.
+      if (j.hidden) continue;
+      if (this.recordedAll(j) || !j.bytes) await this.assembleCapture(j);
+      else {
+        // Not finished: it waits (Resume opens the page again, Finish keeps what was recorded).
+        this.update(j.id, { status: 'paused', pausedBy: 'page', speed: 0, retryAt: undefined });
+        if (j.openedTab === tabId) delete j.openedTab;
+      }
     }
   }
 
@@ -419,9 +475,17 @@ export class JobManager {
   private pump() {
     const running = [...this.jobs.values()].filter((j) => ['downloading', 'processing', 'saving'].includes(j.status)).length;
     let free = MAX_PARALLEL - running;
+    let hidden = [...this.jobs.values()].filter((j) => j.status === 'capturing' && j.hidden).length;
+    // A page records one player at a time.
+    const busyTabs = new Set([...this.jobs.values()].filter((j) => j.status === 'capturing' && !j.hidden).map((j) => j.tabId));
     for (const j of this.list()) {
       if (free <= 0) break;
       if (j.status !== 'queued') continue;
+      if (j.kind === 'capture') {
+        if (j.hidden ? hidden >= MAX_HIDDEN : busyTabs.has(j.tabId)) continue;
+        if (j.hidden) hidden++;
+        else busyTabs.add(j.tabId);
+      }
       free--;
       void this.run(j);
     }
@@ -439,10 +503,11 @@ export class JobManager {
     try {
       // Queued while the page moved on (a new page in the same tab): what was asked still stands.
       const item = (await this.itemOf(job)) ?? null;
-      if (!item && !(await this.planOf(job.id))) return this.fail(job.id, 'expired');
+      // A recording carrying on keeps its plan; its page may have to be found again.
+      if (!item && !(await this.planOf(job.id)) && !(job.kind === 'capture' && job.capturePlan)) return this.fail(job.id, 'expired');
       const settings = await getSettings();
       // Resumed: the same plan, so the pieces already stored still fit.
-      const plan = (await this.planOf(job.id)) ?? (await this.planFor(job, item, settings));
+      const plan = (await this.planOf(job.id)) ?? job.capturePlan ?? (await this.planFor(job, item, settings));
       if (this.gone(job.id)) return;
       this.update(job.id, {
         raw: plan.raw,
@@ -451,14 +516,15 @@ export class JobManager {
       });
 
       if (plan.kind === 'capture') {
-        if (!item) return this.fail(job.id, 'capture_failed');
-        return item.ytId ? await this.startHidden(job, plan, item) : await this.startCapture(job, plan);
+        const capturePlan = job.capturePlan ?? plan;
+        if (job.ytId || item?.ytId) return await this.startHidden(job, capturePlan, item ?? undefined);
+        return await this.startCapture(job, capturePlan);
       }
       // Kept for a resume, even after a restart when the page is long gone.
       await this.savePlan(job.id, plan);
       if (plan.kind === 'file' && plan.direct && !plan.fast) return await this.direct(job, plan.video?.segments[0]?.url ?? item!.url, plan.output, settings);
 
-      const urls = [plan.video, plan.audio].flatMap((t) => (t ? [...(t.init ? [t.init.url] : []), ...t.segments.map((s) => s.url)] : []));
+      const urls = [plan.video, plan.audio, plan.subtitles?.track].flatMap((t) => (t ? [...(t.init ? [t.init.url] : []), ...t.segments.map((s) => s.url)] : []));
       const perHost = [...new Map(urls.map((u) => [hostOf(u), u])).values()];
       this.releases.set(job.id, await withPageHeaders(job.pageUrl, perHost));
       if (this.gone(job.id)) return void this.cleanup(job.id);
@@ -550,6 +616,20 @@ export class JobManager {
     }
     this.update(job.id, { downloadId, filename, sourceUrl: url, ext });
     this.startPolling();
+    // Saved as it is by the browser: its subtitles (kept apart) are made here.
+    const plan = await this.planOf(job.id);
+    if (plan?.subtitles) await this.directSubtitles(job, plan, settings);
+  }
+
+  /** The .srt of a file the browser saves as it is: its subtitle file, fetched and converted. */
+  private async directSubtitles(job: Job, plan: Plan, settings: Settings) {
+    try {
+      const parts = await Promise.all(plan.subtitles!.track.segments.map(async (s) => new TextEncoder().encode(await fetchTextAs(s.url, job.pageUrl))));
+      const cues = cuesOf(parts, plan.subtitles!.track.container, plan.subtitles!.clock);
+      if (cues.length) await this.saveSubtitles(job, toSrt(cues), settings);
+    } catch (e) {
+      console.warn('[grabby] subtitles left out', e);
+    }
   }
 
   private async fetchFallback(job: Job) {
@@ -573,31 +653,109 @@ export class JobManager {
   }
 
   private async startCapture(job: Job, plan: Plan) {
+    // Carrying on: the page may have been closed or reloaded (a restart) — find it again.
+    if (job.session && !(await this.pageStillThere(job))) {
+      if (!(await this.findPage(job))) {
+        if (this.gone(job.id)) return;
+        return job.bytes > 0 ? this.retryLater(job.id) : this.fail(job.id, 'capture_unavailable');
+      }
+    }
     if (job.videoIndex === undefined) return this.fail(job.id, 'capture_unavailable');
-    this.update(job.id, { status: 'capturing', capturePlan: plan });
-    const ok = await this.toContent(job, { type: 'capture-start', jobId: job.id, videoIndex: job.videoIndex });
-    if (!ok && !this.gone(job.id)) this.fail(job.id, 'capture_unavailable');
+    this.update(job.id, { status: 'capturing', capturePlan: plan, bytesBefore: job.bytes });
+    const ok = await this.toContent(job, {
+      type: 'capture-start',
+      jobId: job.id,
+      videoIndex: job.videoIndex,
+      ...(job.clip ? { clip: job.clip } : {}),
+      ...(job.session ? { session: job.session, from: this.resumeFrom(job) } : {}),
+    });
+    if (!ok && !this.gone(job.id)) {
+      if (job.session && job.bytes > 0) this.retryLater(job.id);
+      else this.fail(job.id, 'capture_unavailable');
+    }
     this.pump();
+  }
+
+  /** Where a recording that carries on starts again: a little before where it got to. */
+  private resumeFrom(job: Job): number {
+    const start = job.clip?.start ?? 0;
+    return Math.max(start, (job.captureAt ?? start) - CAPTURE_OVERLAP);
+  }
+
+  /** Recorded up to the end of the video (or of the part): nothing left but the file to make. */
+  private recordedAll(job: Job): boolean {
+    const end = job.clip?.end ?? job.duration;
+    return end !== undefined && job.captureAt !== undefined && job.captureAt >= end - 0.5;
+  }
+
+  /** Ends the current recording session without finishing the file (pause, network, restart). */
+  private async holdCapture(job: Job) {
+    if (job.hidden) await sendOffscreen({ target: 'offscreen', type: 'yt-stop', jobId: job.id }).catch(() => {});
+    else await this.toContent(job, { type: 'capture-stop', jobId: job.id, hold: true });
+  }
+
+  private async pageStillThere(job: Job): Promise<boolean> {
+    const tab = await chrome.tabs.get(job.tabId).catch(() => undefined);
+    if (!tab || tab.url !== job.pageUrl) return false;
+    const items = await this.registry.get(job.tabId);
+    return items.some((i) => i.kind === 'capture' && i.videoIndex === job.videoIndex && (job.frameId === undefined || i.frameId === job.frameId));
+  }
+
+  /**
+   * The page of a recording that carries on, after it was closed or the browser restarted:
+   * an open tab showing it, else one Grabby opens in the background. Its player must show up.
+   */
+  private async findPage(job: Job): Promise<boolean> {
+    const tabs = await chrome.tabs.query({}).catch(() => [] as chrome.tabs.Tab[]);
+    let tab = tabs.find((t) => t.url === job.pageUrl && t.id !== undefined);
+    if (!tab) {
+      tab = await chrome.tabs.create({ url: job.pageUrl, active: false }).catch(() => undefined);
+      if (tab?.id !== undefined) job.openedTab = tab.id;
+    }
+    if (tab?.id === undefined) return false;
+    const tabId = tab.id;
+    // Its player shows up once the page has loaded and started it.
+    for (let i = 0; i < 40 && !this.gone(job.id); i++) {
+      const players = rank((await this.registry.get(tabId)).filter((x) => x.kind === 'capture' && x.protection === 'none' && !x.live));
+      const same = players.find((p) => p.videoIndex === job.videoIndex) ?? players[0];
+      if (same) {
+        this.update(job.id, {
+          tabId,
+          mediaId: same.id,
+          ...(same.frameId !== undefined ? { frameId: same.frameId } : {}),
+          ...(same.videoIndex !== undefined ? { videoIndex: same.videoIndex } : {}),
+        });
+        return true;
+      }
+      if (i === 4) chrome.tabs.sendMessage(tabId, { type: 'scan' } satisfies BgToContent).catch(() => {});
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    return false;
   }
 
   /**
    * YouTube: a hidden copy of the player records the video at high speed
    * while the user keeps watching theirs. Codecs are chosen so the file needs no re-encoding.
    */
-  private async startHidden(job: Job, plan: Plan, item: MediaItem) {
-    const v = item.variants.find((x) => x.id === job.variantId) ?? item.variants[0];
-    const codecs = v?.codecs ?? '';
+  private async startHidden(job: Job, plan: Plan, item?: MediaItem) {
+    const v = item?.variants.find((x) => x.id === job.variantId) ?? item?.variants[0];
+    const videoId = job.ytId ?? item?.ytId;
+    if (!videoId) return this.fail(job.id, 'capture_unavailable');
+    const codecs = v?.codecs ?? job.ytCodecs ?? '';
     const audio = job.mode === 'audio';
     const webm = !audio && job.format === 'webm';
     const vcodec = audio || (!webm && codecs.includes('avc1')) ? 'avc' : 'vp9';
-    this.update(job.id, { status: 'capturing', capturePlan: plan });
+    this.update(job.id, { status: 'capturing', capturePlan: plan, bytesBefore: job.bytes });
     const src = hiddenPlayerUrl({
       jobId: job.id,
-      videoId: item.ytId!,
+      videoId,
       // Audio only: the smallest picture, the audio track is the same.
-      quality: audio ? 'tiny' : (v?.id ?? 'hd1080'),
+      quality: audio ? 'tiny' : (v?.id ?? job.variantId ?? 'hd1080'),
       vcodec,
       acodec: webm ? 'opus' : 'aac',
+      ...(job.clip ? { part: job.clip } : {}),
+      ...(job.session ? { session: job.session, from: this.resumeFrom(job) } : {}),
+      ...(plan.subtitles?.captured ? { captions: plan.subtitles.captured } : {}),
     });
     try {
       await allowHiddenPlayer();
@@ -619,9 +777,20 @@ export class JobManager {
     // The page gives its video back (normal speed, its sound) and stops recording.
     else void this.toContent(job, { type: 'capture-stop', jobId: job.id });
     if (!plan || !hasTracks) return this.fail(job.id, 'capture_failed');
-    // A hidden player may also have recorded ads: keep only the tracks of the video itself.
-    const final: Plan = { ...plan, ...(keep?.length ? { keepTracks: keep } : {}) };
+    // A hidden player may also have recorded ads: keep only the tracks of the video itself
+    // (told along the way, for every session of the recording).
+    const kept = [...new Set([...(job.keepTracks ?? []), ...(keep ?? [])])];
+    const final: Plan = { ...plan, ...(kept.length ? { keepTracks: kept } : {}) };
+    if (job.openedTab !== undefined) {
+      void chrome.tabs.remove(job.openedTab).catch(() => {});
+      delete job.openedTab;
+    }
     this.update(job.id, { status: 'processing', progress: CAPTURE_SHARE, speed: 0, blob: true, capturePlan: final });
+    // Subtitles of a recording are fetched once it is over, with the page's headers.
+    if (final.subtitles) {
+      const urls = final.subtitles.track.segments.map((s) => s.url);
+      this.releases.set(job.id, await withPageHeaders(job.pageUrl, [...new Map(urls.map((u) => [hostOf(u), u])).values()]));
+    }
     await sendOffscreen({ target: 'offscreen', type: 'run', jobId: job.id, plan: final }).catch(() => this.fail(job.id, 'unknown'));
   }
 
@@ -645,6 +814,11 @@ export class JobManager {
     await this.releaseRules(jobId);
     this.forgetPlan(jobId);
     const job = this.jobs.get(jobId);
+    // A page Grabby opened to carry on a recording.
+    if (job?.openedTab !== undefined) {
+      void chrome.tabs.remove(job.openedTab).catch(() => {});
+      delete job.openedTab;
+    }
     if (job?.hidden) await sendOffscreen({ target: 'offscreen', type: 'yt-stop', jobId }).catch(() => {});
     if (job?.blob || job?.kind === 'capture') {
       await sendOffscreen({ target: 'offscreen', type: 'release', jobId }).catch(() => {});
@@ -661,11 +835,21 @@ export class JobManager {
     const job = this.jobs.get(msg.jobId);
     if (!job || job.status !== 'capturing') return;
     if (msg.type === 'capture-progress') {
-      this.update(job.id, { progress: msg.progress * CAPTURE_SHARE, bytes: msg.bytes });
+      // Bytes of this session, after those of the sessions before it.
+      const base = job.bytesBefore ?? 0;
+      const keep = msg.keep?.length ? [...new Set([...(job.keepTracks ?? []), ...msg.keep])] : undefined;
+      this.update(job.id, {
+        progress: msg.progress * CAPTURE_SHARE,
+        bytes: base + msg.bytes,
+        ...(msg.time !== undefined ? { captureAt: msg.time, attempts: 0 } : {}),
+        ...(keep && keep.length !== job.keepTracks?.length ? { keepTracks: keep } : {}),
+      });
     } else if (msg.type === 'capture-error') {
-      this.fail(job.id, msg.error);
+      // A recording carrying on whose player isn't ready yet: what it has is kept, it tries again.
+      if (job.session && job.bytes > 0 && msg.error === 'capture_unavailable') this.retryLater(job.id);
+      else this.fail(job.id, msg.error);
     } else if (msg.type === 'capture-done') {
-      await this.assembleCapture(job, msg.tracks.length > 0, msg.keep);
+      await this.assembleCapture(job, msg.tracks.length > 0 || job.bytes > 0, msg.keep);
     }
   }
 
@@ -783,12 +967,19 @@ export class JobManager {
           ...(info.totalBytes > 0 ? { total: info.totalBytes, totalApprox: false } : {}),
         });
       }
+      const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
       for (const j of this.jobs.values()) {
         const idle = now - (this.lastUpdate.get(j.id) ?? now);
         // Offscreen jobs send a heartbeat even while queued behind ffmpeg: silence means it died.
         if (['downloading', 'processing'].includes(j.status) && j.downloadId === undefined && idle > STALL_MS) {
           // Nothing heard for long: the offscreen document died or the server went quiet.
           void sendOffscreen({ target: 'offscreen', type: 'pause', jobId: j.id }).catch(() => {});
+          this.retryLater(j.id);
+        } else if (j.status === 'capturing' && offline) {
+          // No network: the recording stops here and carries on when it comes back.
+          this.retryLater(j.id);
+        } else if (j.status === 'capturing' && idle > CAPTURE_STALL_MS && j.bytes > 0 && !this.recordedAll(j) && j.captureAt !== undefined) {
+          // Stuck halfway (the player gave up, the page froze): carry on in a new session.
           this.retryLater(j.id);
         } else if (j.status === 'capturing' && idle > CAPTURE_STALL_MS) {
           if (!this.stopAsked.has(j.id)) {

@@ -11,6 +11,8 @@ export interface PageVideo {
   height: number;
   isMse: boolean;
   isProtected: boolean;
+  /** Its subtitle files (<track kind="subtitles|captions" src>). */
+  tracks?: { src: string; lang?: string; label?: string; isDefault?: boolean }[];
   poster?: string;
   muted?: boolean;
   loop?: boolean;
@@ -26,6 +28,8 @@ export interface YtInfo {
   embeddable: boolean;
   /** One entry per resolution, best first. `sizes` include the matching audio track. */
   qualities: { label: string; height: number; quality: string; avc: boolean; vp9: boolean; sizes: Partial<Record<VideoFormat, number>> }[];
+  /** Its subtitles: the player's own list (`auto`: made by speech recognition). */
+  captions?: { url: string; lang: string; name: string; auto: boolean }[];
 }
 
 export interface PageInfo {
@@ -48,7 +52,8 @@ export interface PageInfo {
 export type ContentToBg =
   | { type: 'page-info'; info: PageInfo }
   | { type: 'drm'; keySystem: string }
-  | { type: 'capture-progress'; jobId: string; progress: number; bytes: number }
+  /** `time`: where the recording is in the video; `keep`: the tracks of the video itself (YouTube). */
+  | { type: 'capture-progress'; jobId: string; progress: number; bytes: number; time?: number; keep?: number[] }
   | { type: 'capture-done'; jobId: string; tracks: { track: number; mime: string }[]; keep?: number[] }
   | { type: 'capture-error'; jobId: string; error: ErrorCode }
   /** The "done" bubble's button. */
@@ -57,8 +62,10 @@ export type ContentToBg =
 /* ---------- service worker → content script ---------- */
 export type BgToContent =
   | { type: 'scan' }
-  | { type: 'capture-start'; jobId: string; videoIndex: number }
-  | { type: 'capture-stop'; jobId: string }
+  /** `session`: which recording session of the job (0 first); `from`: where it starts again. */
+  | { type: 'capture-start'; jobId: string; videoIndex: number; clip?: Clip; session?: number; from?: number }
+  /** `hold`: paused, the recording stops without being finished. */
+  | { type: 'capture-stop'; jobId: string; hold?: boolean }
   /** Bubble in the page the user is looking at when a download ends. */
   | { type: 'toast'; ok: boolean; title: string; detail: string; action?: string; downloadId?: number };
 

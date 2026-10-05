@@ -3,6 +3,16 @@ const DB = 'grabby-capture';
 const CHUNKS = 'chunks';
 const TRACKS = 'tracks';
 
+/**
+ * A recording can be made of several sessions (paused, cut by a lost connection or a restart,
+ * then carried on): each session's tracks are numbered from its own block.
+ */
+export const SESSION_SPAN = 100_000;
+export const sessionOf = (track: number): number => Math.floor(track / SESSION_SPAN);
+/** The subtitles a player loaded while it was recorded (YouTube), stored like a track. */
+export const CAPTION_TRACK = SESSION_SPAN - 1;
+export const isCaptionTrack = (track: number): boolean => track % SESSION_SPAN === CAPTION_TRACK;
+
 export interface StoredChunk {
   jobId: string;
   track: number;
@@ -84,11 +94,11 @@ export async function deleteJob(jobId: string): Promise<void> {
   await done(tx);
 }
 
-/** Removes everything (startup cleanup of abandoned captures). */
-export async function clearAll(): Promise<void> {
+/** Jobs that have recorded something (to drop what no job owns any more). */
+export async function capturedJobs(): Promise<string[]> {
   const db = await open();
-  const tx = db.transaction([CHUNKS, TRACKS], 'readwrite');
-  tx.objectStore(CHUNKS).clear();
-  tx.objectStore(TRACKS).clear();
+  const tx = db.transaction(TRACKS, 'readonly');
+  const req = tx.objectStore(TRACKS).getAll();
   await done(tx);
+  return [...new Set((req.result as StoredTrack[]).map((t) => t.jobId))];
 }

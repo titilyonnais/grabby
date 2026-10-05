@@ -8,8 +8,8 @@ const ACTIVE = ['queued', 'downloading', 'capturing', 'processing', 'saving', 'p
 
 export const isActive = (j: Job | undefined): boolean => !!j && ACTIVE.includes(j.status);
 
-/** Pausing is for fetching: not while recording a playback or assembling the file. */
-export const canPause = (j: Job): boolean => (j.status === 'downloading' || j.status === 'queued') && j.kind !== 'capture';
+/** A download pauses while it fetches or records (not while the file is being assembled). */
+export const canPause = (j: Job): boolean => j.status === 'downloading' || j.status === 'queued' || j.status === 'capturing';
 
 /** Re-renders every second while `on`: for a countdown. */
 export function useTick(on: boolean): void {
@@ -26,6 +26,7 @@ export function label(job: Job): string {
   switch (job.status) {
     case 'paused': {
       if (job.pausedBy === 'user') return `${t('st_paused')} · ${pct}`;
+      if (job.pausedBy === 'page') return `${t('st_pageClosed')} · ${pct}`;
       const wait = Math.ceil(((job.retryAt ?? 0) - Date.now()) / 1000);
       if (job.pausedBy === 'restart') return t('st_resuming');
       return wait > 0 ? t('st_offline', String(wait)) : t('st_retrying');
@@ -164,7 +165,7 @@ export function JobBar({ job, send, canFinish = true }: { job: Job; send: (m: Po
             </button>
           )
         )}
-        {job.status === 'capturing' && canFinish && (
+        {(job.status === 'capturing' || (paused && job.kind === 'capture' && job.bytes > 0)) && canFinish && (
           <button class="btn btn--primary btn--icon" title={t('finishCapture')} aria-label={t('finishCapture')} onClick={() => send({ type: 'finish-capture', jobId: job.id })}>
             <Icon name="stop" />
           </button>

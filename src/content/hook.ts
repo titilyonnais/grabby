@@ -11,16 +11,17 @@
  */
 import { youtubeHook } from '../features/youtube-hook';
 import { deepVideos, isInitSegment } from '../shared/dom';
+import { CAPTION_TRACK } from '../shared/idb';
 
 type Up =
   | { type: 'drm'; keySystem: string }
   | { type: 'chunk'; track: number; mime: string; init: boolean; data: ArrayBuffer }
-  | { type: 'progress'; progress: number }
+  | { type: 'progress'; progress: number; time?: number }
   | { type: 'end'; keep?: number[] }
   | { type: 'error'; error: 'capture_unavailable' | 'protected' | 'capture_failed' }
   | { type: 'yt'; info: import('../shared/messages').YtInfo };
 
-type Down = { type: 'arm'; videoIndex: number } | { type: 'stop' };
+type Down = { type: 'arm'; videoIndex: number; clip?: { start: number; end?: number }; from?: number } | { type: 'stop'; hold?: boolean };
 
 const LOG_BUDGET = 48 * 1024 * 1024;
 
@@ -48,8 +49,9 @@ const LOG_BUDGET = 48 * 1024 * 1024;
     port = e.ports[0];
     port.onmessage = (m: MessageEvent) => {
       const d = m.data as Down | null;
-      if (d?.type === 'arm' && Number.isInteger(d.videoIndex)) arm(d.videoIndex);
-      else if (d?.type === 'stop') stop(true);
+      if (d?.type === 'arm' && Number.isInteger(d.videoIndex)) arm(d.videoIndex, validPart(d.clip), num(d.from));
+      // Held (paused): the recording stops without being finished.
+      else if (d?.type === 'stop') stop(!d.hold);
     };
     for (const [msg, transfer] of early.splice(0)) port.postMessage(msg, transfer);
   };
@@ -288,7 +290,22 @@ const LOG_BUDGET = 48 * 1024 * 1024;
     }
   }
 
-  function arm(videoIndex: number) {
+  const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined);
+
+  /** A part asked by the extension: where it starts and (optionally) ends, in order. */
+  function validPart(c: unknown): { start: number; end?: number } | undefined {
+    const p = c as { start?: unknown; end?: unknown } | undefined;
+    const start = num(p?.start);
+    if (start === undefined) return undefined;
+    const end = num(p?.end);
+    return end !== undefined && end > start ? { start, end } : { start };
+  }
+
+  /**
+   * Records a player. `part`: only that part of the video is wanted. `from`: a recording
+   * that carries on (after a pause, a lost connection, a restart) starts again there.
+   */
+  function arm(videoIndex: number, part?: { start: number; end?: number }, from?: number) {
     stop(false);
     const video = deepVideos()[videoIndex];
     if (!video) return post({ type: 'error', error: 'capture_unavailable' });
@@ -301,6 +318,8 @@ const LOG_BUDGET = 48 * 1024 * 1024;
     buffers.forEach((sb, i) => tracks.set(sb, i));
     const infos = buffers.map((sb) => sbInfo.get(sb)!);
     const haveLog = infos.every((i) => i.log && i.log.length > 0);
+    // Where recording starts: the part, or where an earlier recording stopped.
+    const seekTo = from ?? part?.start;
 
     const c: Capture = {
       ms,
@@ -309,8 +328,14 @@ const LOG_BUDGET = 48 * 1024 * 1024;
       rate: 1,
       wasMuted: video.muted,
       onTime: () => {
-        const d = video.duration;
-        if (Number.isFinite(d) && d > 0) post({ type: 'progress', progress: Math.min(1, video.currentTime / d) });
+        const t = video.currentTime;
+        const begin = part?.start ?? 0;
+        const end = part?.end ?? video.duration;
+        if (Number.isFinite(end) && end > begin) {
+          post({ type: 'progress', progress: Math.max(0, Math.min(1, (t - begin) / (end - begin))), time: t });
+        }
+        // A part: recorded to a little past its end, then done.
+        if (part?.end !== undefined && capture === c && t >= part.end + 1) stop(true);
       },
       onEnd: () => stop(true),
       onRate: () => {
@@ -319,7 +344,7 @@ const LOG_BUDGET = 48 * 1024 * 1024;
       },
     };
 
-    if (haveLog) {
+    if (haveLog && (seekTo === undefined || fullyBuffered(video, buffers))) {
       // Replay what the player already appended, from its very first byte.
       infos.forEach((info, track) => {
         for (const e of info.log!) {
@@ -337,7 +362,8 @@ const LOG_BUDGET = 48 * 1024 * 1024;
       capture = c;
       speedUp(c);
     } else {
-      // Log unavailable (long video): restart from zero so the player appends everything again.
+      // Log unavailable (long video), a part wanted, or a recording carrying on: the player
+      // appends again what is needed, from zero or from where it must start.
       infos.forEach((info, track) => {
         if (info.lastInit) {
           const copy = info.lastInit.slice(0);
@@ -354,7 +380,7 @@ const LOG_BUDGET = 48 * 1024 * 1024;
         }
       }
       speedUp(c);
-      video.currentTime = 0;
+      video.currentTime = seekTo ?? 0;
     }
     video.addEventListener('timeupdate', c.onTime);
     c.beat = setInterval(c.onTime, 5000);
@@ -375,6 +401,7 @@ const LOG_BUDGET = 48 * 1024 * 1024;
         generation++;
         recorded = false;
       },
+      caption: (data) => post({ type: 'chunk', track: CAPTION_TRACK, mime: 'text/plain', init: false, data }, [data]),
       tracksOf: (video) => {
         const ms = blobToMs.get(video.currentSrc || video.src);
         return ms ? (msBuffers.get(ms) ?? []).map((sb) => trackId(ms, sb)) : [];

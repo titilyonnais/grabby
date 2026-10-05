@@ -37,6 +37,8 @@ export interface SubtitleTrack {
   url: string;
   isDefault?: boolean;
   forced?: boolean;
+  /** Made by speech recognition (YouTube). */
+  auto?: boolean;
 }
 
 export interface MediaItem {
@@ -137,8 +139,26 @@ export interface Job {
   capturePlan?: Plan;
   /** The final file is an offscreen Blob URL that must be released once saved. */
   blob?: boolean;
-  /** Why a paused job is paused: the user, a lost connection, or the browser restarting. */
-  pausedBy?: 'user' | 'network' | 'restart';
+  /**
+   * Why a paused job is paused: the user, a lost connection, the browser restarting, or (a
+   * recording) its page was closed.
+   */
+  pausedBy?: 'user' | 'network' | 'restart' | 'page';
+  /** Recordings: which session is recording (each pause ends one, the resume starts the next). */
+  session?: number;
+  /** Recordings: where in the video the recording has got to, in seconds. */
+  captureAt?: number;
+  /** Recordings: how long the video is (where a recording without a part ends). */
+  duration?: number;
+  /** Recordings by a hidden player (YouTube): the tracks of the video itself, not the ads. */
+  keepTracks?: number[];
+  /** YouTube: the video, and the codecs of the chosen quality (for a hidden player to carry on). */
+  ytId?: string;
+  ytCodecs?: string;
+  /** A tab Grabby opened itself to carry on a recording (closed when it is done). */
+  openedTab?: number;
+  /** Recordings: bytes stored by the sessions before the current one. */
+  bytesBefore?: number;
   /** A job waiting for the network: when it tries again on its own. */
   retryAt?: number;
   /** Tries in a row that failed for the network (reset when data comes in). */

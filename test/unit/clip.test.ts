@@ -60,11 +60,12 @@ describe('times', () => {
 });
 
 describe('what can be cut', () => {
-  it('a stream or a file of known length, not a recording, a live or a locked video', () => {
+  it('any video of known length, recordings included, not a live or a locked one', () => {
     expect(canClip(item({}))).toBe(true);
     expect(canClip(item({ kind: 'file', size: 50e6 }))).toBe(true);
     expect(canClip(item({ kind: 'file', size: 3e9 }))).toBe(false);
-    expect(canClip(item({ kind: 'capture' }))).toBe(false);
+    expect(canClip(item({ kind: 'capture' }))).toBe(true);
+    expect(canClip(item({ kind: 'capture', duration: 2 }))).toBe(false);
     expect(canClip(item({ live: true }))).toBe(false);
     expect(canClip(item({ protection: 'drm' }))).toBe(false);
     expect(canClip(item({ duration: undefined }))).toBe(false);

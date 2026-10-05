@@ -6,6 +6,7 @@ import { fileItem, resolveDash, resolveHls, type DetectContext } from './manifes
 import { probeFile } from './probe';
 import type { Registry } from './registry';
 import { rememberTabUrl, tabUrl } from './tabs';
+import { isSubtitleFile } from '../shared/subtitles';
 
 function header(headers: chrome.webRequest.HttpHeader[] | undefined, name: string): string | undefined {
   return headers?.find((h) => h.name.toLowerCase() === name)?.value;
@@ -100,6 +101,15 @@ export function startDetector(registry: Registry, onNavigate: (tabId: number) =>
       const len = Number(header(d.responseHeaders, 'content-length') ?? 0) || undefined;
       const totalSize = totalFromRange(header(d.responseHeaders, 'content-range'));
       const requestType = d.type;
+      // Subtitles a player loads: offered with the video of that frame.
+      if (isSubtitleFile(d.url, contentType)) {
+        void (async () => {
+          const pageUrl = await tabUrl(d.tabId);
+          const frameUrl = (d as { documentUrl?: string }).documentUrl ?? (d.frameId === 0 ? pageUrl : d.initiator ?? pageUrl);
+          await registry.addFrameSub(d.tabId, frameUrl, d.url);
+        })();
+        return;
+      }
       if (!classify({ url: d.url, requestType, ...(contentType ? { contentType } : {}), ...(len ? { size: len } : {}), ...(totalSize ? { totalSize } : {}) })) return;
 
       void (async () => {

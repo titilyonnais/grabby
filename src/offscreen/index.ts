@@ -8,11 +8,11 @@ import type { JobStatus } from '../shared/types';
 import { deleteJob } from '../shared/idb';
 import { deleteParts, putPart, storedBlobs, storedSizes } from '../shared/parts';
 import { inputExt, muxAttempts, type MuxInputs } from './args';
-import { assembleCapture } from './capture';
+import { assembleSessions, capturedCaptions, type CapturedTrack } from './capture';
 import { fetchAll, HttpError, rangeSupport, rangesOf, streamFile } from './fetcher';
 import { type FFmpeg, getFFmpeg } from './muxer';
 import { Pacer } from './pacer';
-import { clipCues, joinVtt, toSrt } from '../shared/subtitles';
+import { clipCues, cuesOf, toSrt } from '../shared/subtitles';
 import { startHiddenPlayer, stopHiddenPlayer } from '../features/youtube-player';
 
 const controllers = new Map<string, AbortController>();
@@ -180,17 +180,97 @@ async function loadTrack(f: FFmpeg, jobId: string, trackNo: number, path: string
  */
 async function subtitlesOf(jobId: string, plan: Plan, o: TrackRun): Promise<string | null> {
   if (!plan.subtitles) return null;
-  try {
-    await fetchTrack(jobId, SUBS_TRACK, plan.subtitles.track, o);
-  } catch (e) {
-    if (o.signal.aborted) throw e;
-    console.warn('[grabby] subtitles left out', e);
-    return null;
+  let parts: Uint8Array[];
+  if (plan.subtitles.captured) {
+    // Loaded by the recorded player: stored with the recording.
+    const text = await capturedCaptions(jobId);
+    if (!text) return null;
+    parts = [text];
+  } else {
+    try {
+      await fetchTrack(jobId, SUBS_TRACK, plan.subtitles.track, o);
+    } catch (e) {
+      if (o.signal.aborted) throw e;
+      console.warn('[grabby] subtitles left out', e);
+      return null;
+    }
+    parts = await Promise.all((await storedBlobs(jobId, SUBS_TRACK)).map(async (b) => new Uint8Array(await b.arrayBuffer())));
   }
-  const texts = await Promise.all((await storedBlobs(jobId, SUBS_TRACK)).map((b) => b.text()));
-  let cues = joinVtt(texts);
+  let cues = cuesOf(parts, plan.subtitles.track.container, plan.subtitles.clock);
   if (plan.clip) cues = clipCues(cues, plan.clip.start, plan.clip.duration);
   return cues.length ? toSrt(cues) : null;
+}
+
+/** Where a file's timestamps start, in seconds, as ffmpeg reads it (0 when it can't tell). */
+async function startOf(f: FFmpeg, path: string, signal: AbortSignal): Promise<number> {
+  await f.exec(['-hide_banner', '-i', path], undefined, signal);
+  const m = /Duration:[^\n]*?start:\s*(-?\d+(?:\.\d+)?)/.exec(f.lastLogs());
+  return m ? Number(m[1]) : 0;
+}
+
+/** Writes the tracks of one recording session into ffmpeg's memory, video and audio apart. */
+async function loadCaptured(f: FFmpeg, dir: string, name: string, tracks: CapturedTrack[], audioOnly: boolean, rep: Reporter) {
+  const inputs: MuxInputs = {};
+  for (const t of tracks) {
+    const ext = t.mime.includes('webm') ? 'webm' : 'mp4';
+    const key = t.kind === 'audio' && !inputs.audio ? 'audio' : !inputs.video ? 'video' : null;
+    if (!key) continue;
+    inputs[key] = `${dir}/${name}${key[0]}.${ext}`;
+    await f.create(inputs[key]!);
+    await f.append(inputs[key]!, t.data);
+    rep.addBytes(t.data.byteLength);
+  }
+  if (!inputs.video && !audioOnly) {
+    inputs.video = inputs.audio;
+    delete inputs.audio;
+  }
+  return inputs;
+}
+
+/**
+ * A recording made in several sessions: each one is put in a file keeping the video's own
+ * clock, then they are joined, each stopping where the next one starts (the next one began a
+ * little earlier, so nothing is missing and nothing plays twice). Returns the joined file and
+ * where it starts on the video's clock.
+ */
+async function joinSessions(
+  f: FFmpeg,
+  dir: string,
+  sessions: { session: number; tracks: CapturedTrack[] }[],
+  plan: Plan,
+  rep: Reporter,
+  signal: AbortSignal,
+): Promise<{ inputs: MuxInputs; base: number }> {
+  const files: { path: string; start: number }[] = [];
+  for (const [k, s] of sessions.entries()) {
+    const ins = await loadCaptured(f, dir, `s${k}`, s.tracks, plan.audioOnly, rep);
+    const list = [ins.video, ins.audio].filter((x): x is string => !!x);
+    const out = `${dir}/p${k}.mkv`;
+    const code = await f.exec(['-y', '-copyts', ...list.flatMap((i) => ['-i', i]), ...list.flatMap((_, n) => ['-map', String(n)]), '-c', 'copy', out], undefined, signal);
+    if (signal.aborted) throw signal.reason;
+    if (code !== 0) {
+      console.warn('[grabby] session left out', k, f.lastLogs());
+      continue;
+    }
+    files.push({ path: out, start: await startOf(f, out, signal) });
+  }
+  if (!files.length) throw Object.assign(new Error('capture'), { code: 'capture_failed' });
+  // A session that starts earlier than the one before it (the player went back) replaces it.
+  const kept = files.filter((x, i) => !files.slice(i + 1).some((y) => y.start <= x.start + 0.05));
+  const lines = ['ffconcat version 1.0'];
+  kept.forEach((x, i) => {
+    lines.push(`file '${x.path}'`);
+    const next = kept[i + 1];
+    if (next) lines.push(`outpoint ${next.start.toFixed(3)}`);
+  });
+  const list = `${dir}/sessions.txt`;
+  await f.create(list);
+  await f.append(list, new TextEncoder().encode(`${lines.join('\n')}\n`));
+  const joined = `${dir}/joined.mkv`;
+  const code = await f.exec(['-y', '-f', 'concat', '-safe', '0', '-i', list, '-map', '0', '-c', 'copy', joined], undefined, signal);
+  if (signal.aborted) throw signal.reason;
+  if (code !== 0) throw new Error(`ffmpeg: sessions not joined\n${f.lastLogs()}`);
+  return { inputs: { video: joined }, base: kept[0]!.start };
 }
 
 const SUBS_TRACK = 2;
@@ -248,8 +328,9 @@ async function run(jobId: string, plan: Plan) {
           onBytes: () => rep.send('downloading', progress()),
         });
       }
-      srt = await subtitlesOf(jobId, plan, { signal, rep, pacer, fast: false, setCount: () => {}, onPart: () => {}, onBytes: () => {} });
     }
+    // Subtitles: fetched like the rest (for a recording, once it is over).
+    srt = await subtitlesOf(jobId, plan, { signal, rep, pacer: new Pacer(), fast: false, setCount: () => {}, onPart: () => {}, onBytes: () => {} });
     if (signal.aborted) throw signal.reason;
 
     if (plan.raw) {
@@ -260,20 +341,20 @@ async function run(jobId: string, plan: Plan) {
       await f.mkdir(dir);
       if (plan.kind === 'capture') {
         rep.send('processing', 0, true);
-        const tracks = await assembleCapture(jobId, plan.keepTracks);
-        if (!tracks.length) throw Object.assign(new Error('capture'), { code: 'capture_failed' });
-        for (const t of tracks) {
-          const ext = t.mime.includes('webm') ? 'webm' : 'mp4';
-          const key = t.kind === 'audio' && !inputs.audio ? 'audio' : !inputs.video ? 'video' : null;
-          if (!key) continue;
-          inputs[key] = `${dir}/${key[0]}.${ext}`;
-          await f.create(inputs[key]!);
-          await f.append(inputs[key]!, t.data);
-          rep.addBytes(t.data.byteLength);
-        }
-        if (!inputs.video && !plan.audioOnly) {
-          inputs.video = inputs.audio;
-          delete inputs.audio;
+        const sessions = await assembleSessions(jobId, plan.keepTracks);
+        if (!sessions.length) throw Object.assign(new Error('capture'), { code: 'capture_failed' });
+        if (sessions.length === 1) {
+          Object.assign(inputs, await loadCaptured(f, dir, '', sessions[0]!.tracks, plan.audioOnly, rep));
+          // A part: each track is cut from where the part starts in it.
+          if (plan.clip) {
+            const video = inputs.video ? plan.clip.start - (await startOf(f, inputs.video, signal)) : undefined;
+            const audio = inputs.audio ? plan.clip.start - (await startOf(f, inputs.audio, signal)) : undefined;
+            plan = { ...plan, clip: { ...plan.clip, ...(video !== undefined ? { video: Math.max(0, video) } : {}), ...(audio !== undefined ? { audio: Math.max(0, audio) } : {}) } };
+          }
+        } else {
+          const joined = await joinSessions(f, dir, sessions, plan, rep, signal);
+          Object.assign(inputs, joined.inputs);
+          if (plan.clip) plan = { ...plan, clip: { ...plan.clip, video: Math.max(0, plan.clip.start - joined.base) } };
         }
       } else {
         rep.send('processing', fetched, true);

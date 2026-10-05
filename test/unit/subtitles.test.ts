@@ -98,7 +98,7 @@ describe('subtitle tracks in manifests', () => {
     ]);
   });
 
-  it('DASH: WebVTT adaptation sets, not subtitles packed in MP4', () => {
+  it('DASH: WebVTT adaptation sets and subtitles packed in MP4', () => {
     const mpd = parseDash(
       `<MPD type="static" mediaPresentationDuration="PT6S"><Period>
         <AdaptationSet mimeType="video/mp4"><Representation id="v" bandwidth="1" codecs="avc1"><BaseURL>v.mp4</BaseURL></Representation></AdaptationSet>
@@ -107,7 +107,11 @@ describe('subtitle tracks in manifests', () => {
       </Period></MPD>`,
       'https://cdn.com/m.mpd',
     );
-    expect(mpd.text.map((r) => [r.id, r.lang, r.label, r.segments[0]!.url])).toEqual([['t1', 'fr', 'Français', 'https://cdn.com/fr.vtt']]);
+    expect(mpd.text.map((r) => [r.id, r.lang, r.label, r.segments[0]!.url])).toEqual([
+      ['t1', 'fr', 'Français', 'https://cdn.com/fr.vtt'],
+      ['t2', 'en', undefined, 'https://cdn.com/en.mp4'],
+    ]);
+    expect(mpd.text.map((r) => r.packing)).toEqual(['text', 'fmp4']);
     expect(mpd.video).toHaveLength(1);
     expect(mpd.audio).toHaveLength(0);
   });
@@ -161,6 +165,32 @@ describe('a plan with subtitles', () => {
     });
     expect(broken.subtitles).toBeUndefined();
     expect(broken.video!.segments).toHaveLength(2);
+  });
+});
+
+describe('YouTube subtitles', () => {
+  const yt: MediaItem = {
+    id: 'yt',
+    tabId: 1,
+    frameUrl: 'https://www.youtube.com/watch?v=abc',
+    pageUrl: 'https://www.youtube.com/watch?v=abc',
+    kind: 'capture',
+    ytId: 'abc',
+    title: 'Clip',
+    duration: 60,
+    url: '',
+    variants: [{ id: 'hd720', url: '', label: '720p', height: 720, codecs: 'avc1' }],
+    audioTracks: [],
+    protection: 'none',
+    live: false,
+    detectedAt: 1,
+    subtitles: [{ id: 's', url: 'https://www.youtube.com/api/timedtext?v=abc&lang=en&kind=asr&fmt=vtt', label: 'English (auto-generated)', lang: 'en', auto: true }],
+  } as MediaItem;
+
+  it('are kept from what the hidden player loads, nothing is fetched', async () => {
+    const p = await buildPlan(yt, { mode: 'video', settings: DEFAULT_SETTINGS, fetchText: () => Promise.reject(new Error('no fetch')), subtitles: { id: 's', separate: false } });
+    expect(p.subtitles).toMatchObject({ captured: { lang: 'en', auto: true }, label: 'English (auto-generated)', separate: false });
+    expect(p.subtitles!.track.segments).toEqual([]);
   });
 });
 

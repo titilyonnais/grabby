@@ -3,7 +3,7 @@ import { parseHls, type HlsMedia } from '../parsers/hls';
 import { extOf, reachableFrom } from '../parsers/url';
 import { isAudioFormat, sourceFormat } from '../shared/formats';
 import { RAW_THRESHOLD, type Clip, type ErrorCode, type OutputFormat, type Plan, type SubsChoice, type TrackPlan } from '../shared/plan';
-import { SUB_CODEC } from '../shared/subtitles';
+import { SUB_CODEC, type SubsClock } from '../shared/subtitles';
 import type { Settings } from '../shared/settings';
 import { scaleBox, scaleSource } from '../shared/scale';
 import type { JobMode, MediaItem, Variant } from '../shared/types';
@@ -237,31 +237,67 @@ function applyClip(plan: Plan, clip: Clip, o: PlanOptions, duration?: number): P
 }
 
 /** The WebVTT segments of a subtitle track, or nothing when they can't be read. */
-async function subsTrack(item: MediaItem, id: string, fetchText: PlanOptions['fetchText']): Promise<TrackPlan | null> {
+async function subsTrack(
+  item: MediaItem,
+  id: string,
+  fetchText: PlanOptions['fetchText'],
+): Promise<{ track: TrackPlan; clock?: SubsClock; captured?: { lang: string; auto?: boolean } } | null> {
   const sub = item.subtitles?.find((s) => s.id === id);
   if (!sub) return null;
+  // YouTube: its hidden player shows them while it records, Grabby keeps what it loads.
+  if (item.ytId && item.kind === 'capture') {
+    if (!sub.lang) return null;
+    return { track: { segments: [], container: 'vtt' }, captured: { lang: sub.lang, ...(sub.auto ? { auto: true } : {}) } };
+  }
   if (item.kind === 'hls') {
     const parsed = parseHls(await fetchText(sub.url), sub.url);
     if (parsed.type !== 'media' || parsed.encrypted || !parsed.segments.length) return null;
-    return checkReachable(sub.url, { segments: parsed.segments.map(({ url, range }) => (range ? { url, range } : { url })), container: 'vtt' });
+    const segments = parsed.segments.map(({ url, range }) => (range ? { url, range } : { url }));
+    // Subtitles packed in MP4 (EXT-X-MAP): their clock starts with the stream's first segment.
+    if (parsed.map) return { track: checkReachable(sub.url, { init: parsed.map, segments, container: 'fmp4' }), clock: { fromFirst: true } };
+    return { track: checkReachable(sub.url, { segments, container: 'vtt' }) };
   }
   if (item.kind === 'dash') {
     const rep = parseDash(await fetchText(item.url), item.url).text.find((r) => r.id === id);
     if (!rep?.segments.length) return null;
-    return checkReachable(item.url, { segments: rep.segments, container: 'vtt' });
+    const fmp4 = rep.packing === 'fmp4';
+    // Without an init segment, only a whole MP4 file can be read.
+    if (fmp4 && !rep.init && rep.segments.length !== 1) return null;
+    return {
+      track: checkReachable(item.url, { ...(fmp4 ? { init: rep.init! } : {}), segments: rep.segments, container: fmp4 ? 'fmp4' : 'vtt' }),
+      ...(rep.pto ? { clock: { shift: -rep.pto } } : {}),
+    };
   }
-  return null;
+  // A file or a recorded player: a subtitle file the page names (<track>) or loaded.
+  return { track: { segments: [{ url: sub.url }], container: 'vtt' } };
 }
 
 /** Adds the chosen subtitles to a video's plan; a track that can't be read is left out. */
 async function withSubs(plan: Plan, item: MediaItem, o: PlanOptions): Promise<Plan> {
   if (!o.subtitles || o.mode !== 'video' || plan.audioOnly) return plan;
   const sub = item.subtitles?.find((s) => s.id === o.subtitles!.id);
-  const track = sub ? await subsTrack(item, sub.id, o.fetchText).catch(() => null) : null;
-  if (!sub || !track) return plan;
-  // Not assembled (huge) or a container without subtitles: an .srt next to the video.
-  const separate = o.subtitles.separate || plan.raw || !SUB_CODEC[plan.output];
-  return { ...plan, subtitles: { track, label: sub.label, ...(sub.lang ? { lang: sub.lang } : {}), separate } };
+  const found = sub ? await subsTrack(item, sub.id, o.fetchText).catch(() => null) : null;
+  if (!sub || !found) return plan;
+  let out = plan;
+  // Putting them in a file saved as is means assembling it: fetched by Grabby, then remuxed.
+  if (plan.kind === 'file' && !o.subtitles.separate && SUB_CODEC[plan.output] && (item.size ?? 0) <= RAW_THRESHOLD) {
+    out = { ...plan, raw: false };
+    delete out.direct;
+    delete out.fast;
+  }
+  // Not assembled (saved as is, huge) or a container without subtitles: an .srt next to it.
+  const separate = o.subtitles.separate || !!out.raw || !!out.direct || !SUB_CODEC[out.output];
+  return {
+    ...out,
+    subtitles: {
+      track: found.track,
+      ...(found.clock ? { clock: found.clock } : {}),
+      ...(found.captured ? { captured: found.captured } : {}),
+      label: sub.label,
+      ...(sub.lang ? { lang: sub.lang } : {}),
+      separate,
+    },
+  };
 }
 
 /** Turns a detected item + user choice into a concrete download plan. */
@@ -272,7 +308,7 @@ export async function buildPlan(item: MediaItem, o: PlanOptions): Promise<Plan> 
 }
 
 async function clipped(item: MediaItem, o: PlanOptions): Promise<Plan> {
-  const clip = item.kind === 'capture' ? undefined : validClip(o.clip, item.duration);
+  const clip = validClip(o.clip, item.duration);
   if (!clip) return planFor(item, o);
   // Cutting needs ffmpeg, which works in memory: a huge file can't be cut.
   if (item.kind === 'file' && (item.size ?? 0) > RAW_THRESHOLD) throw new PlanError('too_large');

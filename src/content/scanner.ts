@@ -4,7 +4,8 @@
  * from the MAIN-world hook, and streams capture chunks into the extension's storage.
  */
 import { showToast } from './toast';
-import { hiddenJobFromUrl, readYouTubeInfo } from '../features/youtube';
+import { hiddenJobFromUrl, hiddenSessionFromUrl, readYouTubeInfo } from '../features/youtube';
+import { SESSION_SPAN } from '../shared/idb';
 import { deepVideos } from '../shared/dom';
 import type { BgToContent, ContentToBg, PageInfo, PageVideo, YtInfo } from '../shared/messages';
 import { cleanTitle } from '../shared/title';
@@ -12,7 +13,7 @@ import { cleanTitle } from '../shared/title';
 type HookUp =
   | { type: 'drm'; keySystem: string }
   | { type: 'chunk'; track: number; mime: string; init: boolean; data: ArrayBuffer }
-  | { type: 'progress'; progress: number }
+  | { type: 'progress'; progress: number; time?: number; keep?: number[] }
   | { type: 'end'; keep?: number[] }
   | { type: 'yt'; info: YtInfo }
   | { type: 'error'; error: 'capture_unavailable' | 'protected' | 'capture_failed' };
@@ -167,6 +168,24 @@ function declaredMedia(ld: { contentUrl?: string }): string[] {
   return [...urls].slice(0, MAX_DECLARED);
 }
 
+/** The subtitle files a player declares (<track>), up to 20. */
+function subtitleTracks(v: HTMLVideoElement): Pick<PageVideo, 'tracks'> {
+  const tracks: NonNullable<PageVideo['tracks']> = [];
+  for (const t of v.querySelectorAll('track')) {
+    const kind = (t.getAttribute('kind') || 'subtitles').toLowerCase();
+    const src = absolute(t.getAttribute('src'));
+    if ((kind !== 'subtitles' && kind !== 'captions') || !src || !/^https?:/i.test(src)) continue;
+    tracks.push({
+      src,
+      ...(t.srclang ? { lang: t.srclang } : {}),
+      ...(t.label ? { label: t.label } : {}),
+      ...(t.default ? { isDefault: true } : {}),
+    });
+    if (tracks.length >= 20) break;
+  }
+  return tracks.length ? { tracks } : {};
+}
+
 let ytPlayer: YtInfo | undefined;
 
 function collect(): PageInfo {
@@ -186,6 +205,7 @@ function collect(): PageInfo {
       autoplay: v.autoplay,
       controls: v.controls,
       ...(v.poster ? { poster: absolute(v.poster)! } : {}),
+      ...subtitleTracks(v),
     };
   });
   const ld = isTop ? videoObject() : {};
@@ -273,6 +293,8 @@ if (!hiddenJob) {
 
 interface Session {
   jobId: string;
+  /** First track number of this recording session (sessions after a pause go on from there). */
+  offset: number;
   bytes: number;
   seq: Map<number, number>;
   tracks: Map<number, string>;
@@ -375,12 +397,23 @@ function portSink(jobId: string): Sink {
   };
 }
 
-async function startCapture(jobId: string, videoIndex: number) {
+async function startCapture(jobId: string, videoIndex: number, clip?: { start: number; end: number }, n = 0, from?: number) {
   session?.sink.close();
   const sink = await iframeSink(jobId).catch(() => portSink(jobId));
-  session = { jobId, bytes: 0, seq: new Map(), tracks: new Map(), sink };
-  hook.postMessage({ type: 'arm', videoIndex });
+  session = { jobId, offset: n * SESSION_SPAN, bytes: 0, seq: new Map(), tracks: new Map(), sink };
+  hook.postMessage({ type: 'arm', videoIndex, ...(clip ? { clip } : {}), ...(from !== undefined ? { from } : {}) });
 }
+
+/** Paused: the recording stops, what it stored stays for the session that carries on. */
+async function hold(s: Session) {
+  hook.postMessage({ type: 'stop', hold: true });
+  if (session === s) session = null;
+  await s.sink.flush();
+  s.sink.close();
+}
+
+const offsetKeep = (s: Session, keep: unknown) =>
+  Array.isArray(keep) ? keep.filter(Number.isInteger).map((t: number) => s.offset + t) : undefined;
 
 async function finish(s: Session, keep?: number[]) {
   await s.sink.flush();
@@ -395,7 +428,7 @@ async function finish(s: Session, keep?: number[]) {
 }
 
 /** Starts storing chunks right away; they wait in memory until the sink is open. */
-function openSession(jobId: string): Session {
+function openSession(jobId: string, n: number): Session {
   const ready = iframeSink(jobId).catch(() => portSink(jobId));
   let sink: Sink | null = null;
   const queue: Parameters<Sink['put']>[] = [];
@@ -405,6 +438,7 @@ function openSession(jobId: string): Session {
   });
   return {
     jobId,
+    offset: n * SESSION_SPAN,
     bytes: 0,
     seq: new Map(),
     tracks: new Map(),
@@ -416,7 +450,7 @@ function openSession(jobId: string): Session {
   };
 }
 
-if (hiddenJob) session = openSession(hiddenJob);
+if (hiddenJob) session = openSession(hiddenJob, hiddenSessionFromUrl(location.href));
 
 let lastProgress = 0;
 hook.onmessage = (e: MessageEvent) => {
@@ -430,11 +464,12 @@ hook.onmessage = (e: MessageEvent) => {
     case 'chunk': {
       const s = session;
       if (!s || !(d.data instanceof ArrayBuffer) || !Number.isInteger(d.track)) return;
-      const seq = s.seq.get(d.track) ?? 0;
-      s.seq.set(d.track, seq + 1);
-      s.tracks.set(d.track, String(d.mime));
+      const track = s.offset + d.track;
+      const seq = s.seq.get(track) ?? 0;
+      s.seq.set(track, seq + 1);
+      s.tracks.set(track, String(d.mime));
       s.bytes += d.data.byteLength;
-      s.sink.put(d.track, seq, String(d.mime), !!d.init, d.data);
+      s.sink.put(track, seq, String(d.mime), !!d.init, d.data);
       break;
     }
     case 'progress': {
@@ -442,11 +477,19 @@ hook.onmessage = (e: MessageEvent) => {
       const now = Date.now();
       if (!s || now - lastProgress < 400) return;
       lastProgress = now;
-      void send({ type: 'capture-progress', jobId: s.jobId, progress: Number(d.progress) || 0, bytes: s.bytes });
+      const keep = offsetKeep(s, d.keep);
+      void send({
+        type: 'capture-progress',
+        jobId: s.jobId,
+        progress: Number(d.progress) || 0,
+        bytes: s.bytes,
+        ...(Number.isFinite(d.time) ? { time: Number(d.time) } : {}),
+        ...(keep?.length ? { keep } : {}),
+      });
       break;
     }
     case 'end':
-      if (session) void finish(session, Array.isArray(d.keep) ? d.keep.filter(Number.isInteger) : undefined);
+      if (session) void finish(session, offsetKeep(session, d.keep));
       break;
     case 'yt':
       if (isTop && d.info && typeof d.info.id === 'string') {
@@ -473,10 +516,12 @@ chrome.runtime.onMessage.addListener((msg: BgToContent) => {
       report(true);
       break;
     case 'capture-start':
-      void startCapture(msg.jobId, msg.videoIndex);
+      void startCapture(msg.jobId, msg.videoIndex, msg.clip, Number.isInteger(msg.session) ? msg.session! : 0, msg.from);
       break;
     case 'capture-stop':
-      if (session?.jobId === msg.jobId) hook.postMessage({ type: 'stop' });
+      if (session?.jobId !== msg.jobId) break;
+      if (msg.hold) void hold(session);
+      else hook.postMessage({ type: 'stop' });
       break;
     case 'toast':
       if (isTop) showToast(msg);

@@ -3,6 +3,10 @@
  * video files take everywhere).
  */
 
+import { mp4Cues, readInit, readSamples } from './mp4subs';
+import { parseTtml } from './ttml';
+import { isYouTubeCaptions, parseYouTubeCaptions } from './ytcaptions';
+
 export interface Cue {
   start: number;
   end: number;
@@ -20,7 +24,7 @@ function vttTime(s: string): number {
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', nbsp: ' ', lrm: '', rlm: '', quot: '"', apos: "'" };
 
 /** Keeps italics, bold and underline (SRT knows them); drops voices, classes, karaoke times. */
-function cleanText(text: string): string {
+export function cleanCueText(text: string): string {
   return text
     .replace(/<(\/?)([ibu])(?:\.[^>\s]*)?>/g, '\u0001$1$2\u0002')
     .replace(/<[^>]*>/g, '')
@@ -52,7 +56,7 @@ export function parseVtt(text: string, shift = 0): { cues: Cue[]; map?: number }
     const [from, rest] = lines[at]!.split('-->');
     const start = vttTime(from!);
     const end = vttTime(rest!.trim().split(/\s+/)[0]!);
-    const body = cleanText(lines.slice(at + 1).join('\n'));
+    const body = cleanCueText(lines.slice(at + 1).join('\n'));
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || !body) continue;
     cues.push({ start: start + shift, end: end + shift, text: body });
   }
@@ -72,14 +76,52 @@ export function joinVtt(segments: string[]): Cue[] {
     const shift = map !== undefined && base !== undefined ? map - base : 0;
     all.push(...parseVtt(seg, shift).cues);
   }
-  all.sort((a, b) => a.start - b.start || a.end - b.end);
+  return dedupe(all);
+}
+
+/** Sorted, each line once (segments repeat the lines crossing their edges). */
+export function dedupe(cues: Cue[]): Cue[] {
+  const sorted = [...cues].sort((a, b) => a.start - b.start || a.end - b.end);
   const seen = new Set<string>();
-  return all.filter((c) => {
+  return sorted.filter((c) => {
     const key = `${Math.round(c.start * 100)}|${Math.round(c.end * 100)}|${c.text}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+}
+
+/** How a subtitle track's times relate to the video's. */
+export interface SubsClock {
+  /** Seconds added to every cue (DASH: minus the presentation time offset). */
+  shift?: number;
+  /** The first sample is the start of the stream (HLS fMP4 subtitles). */
+  fromFirst?: boolean;
+}
+
+const isTtml = (text: string) => /^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*<(\w+:)?tt[\s>]/.test(text.replace(/^﻿/, ''));
+
+/**
+ * The cues of a fetched subtitle track, whatever it is made of: WebVTT (whole or in
+ * segments), SubRip, TTML, or subtitles packed in MP4 (`fmp4`: init segment first).
+ */
+export function cuesOf(parts: Uint8Array[], container: string, clock: SubsClock = {}): Cue[] {
+  let cues: Cue[];
+  if (container === 'fmp4') {
+    // A whole MP4 file (no separate init segment) holds both the header and the samples.
+    cues = parts.length ? mp4Cues(parts[0]!, parts.length === 1 ? parts : parts.slice(1)) : [];
+    if (clock.fromFirst && cues.length) {
+      const first = firstSampleTime(parts);
+      if (first !== undefined) cues = cues.map((c) => ({ ...c, start: c.start - first, end: c.end - first }));
+    }
+  } else {
+    const texts = parts.map((p) => new TextDecoder().decode(p));
+    cues = texts.some(isYouTubeCaptions)
+      ? texts.flatMap((t) => (isYouTubeCaptions(t) ? parseYouTubeCaptions(t) : []))
+      : texts.some(isTtml) ? texts.flatMap((t) => (isTtml(t) ? parseTtml(t) : [])) : joinVtt(texts);
+  }
+  const shift = clock.shift ?? 0;
+  return dedupe(shift ? cues.map((c) => ({ ...c, start: c.start + shift, end: c.end + shift })) : cues).filter((c) => c.end > 0);
 }
 
 const ms = (s: number) => Math.round(s * 1000) / 1000;
@@ -120,3 +162,47 @@ export function iso3(lang?: string): string | undefined {
 
 /** Containers that can hold subtitles, and in which form. */
 export const SUB_CODEC: Partial<Record<string, string>> = { mp4: 'mov_text', mov: 'mov_text', mkv: 'srt', webm: 'webvtt' };
+
+/** When the first media segment of an MP4 subtitle track starts, in seconds. */
+function firstSampleTime(parts: Uint8Array[]): number | undefined {
+  const init = readInit(parts[0]!);
+  for (const seg of parts.slice(1)) {
+    const first = readSamples(seg, init)[0];
+    if (first) return first.time;
+  }
+  return undefined;
+}
+
+const SUB_EXT = /\.(vtt|webvtt|srt|ttml|ttml2|dfxp)$/i;
+const SUB_TYPE = /^(text\/vtt|text\/srt|application\/x-subrip|application\/ttml\+xml|application\/ttaf\+xml)$/i;
+
+/** A subtitle file a page loads (a <track>, or a player fetching its own): by type or name. */
+export function isSubtitleFile(url: string, contentType?: string): boolean {
+  const type = (contentType ?? '').split(';')[0]!.trim();
+  if (SUB_TYPE.test(type)) return true;
+  try {
+    return SUB_EXT.test(new URL(url).pathname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A name and a language for a subtitle file known only by its address: "fr.vtt",
+ * "movie_en-US.srt", "subs?lang=de" → "fr", "en-US", "de".
+ */
+export function describeSubtitleUrl(url: string): { label: string; lang?: string } {
+  try {
+    const u = new URL(url);
+    const name = decodeURIComponent(u.pathname.split('/').pop() ?? '').replace(SUB_EXT, '');
+    const q = u.searchParams.get('lang') ?? u.searchParams.get('language') ?? u.searchParams.get('tlang') ?? u.searchParams.get('hl');
+    const tail = /(?:^|[._\-\s])([a-z]{2,3}(?:[-_][A-Za-z]{2,4})?)$/.exec(name)?.[1];
+    const lang = (q && /^[a-z]{2,3}([-_][A-Za-z]{2,4})?$/i.test(q) ? q : tail)?.replace('_', '-');
+    return { label: name || lang || 'Subtitles', ...(lang ? { lang } : {}) };
+  } catch {
+    return { label: 'Subtitles' };
+  }
+}
+
+/** Segments of a stream's subtitles ("sub_00012.vtt"): many files that differ only by a number. */
+export const segmentPattern = (url: string): string => url.replace(/[?#].*$/, '').replace(/\d+/g, '#');

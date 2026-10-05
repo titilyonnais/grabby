@@ -300,13 +300,13 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
               {!showJob && clippable && trimming && <Trim duration={item.duration!} clip={clip} onChange={setClip} />}
               {showJob ? (
                 <>
-                  <JobBar job={job} send={send} canFinish={!job.hidden} />
+                  <JobBar job={job} send={send} />
                   {job.raw && isActive(job) && <p class="hint">{t('rawNotice')}</p>}
                 </>
               ) : (
                 <button class="btn btn--primary btn--wide" onClick={start}>
                   <Icon name={item.kind === 'capture' && !hidden ? 'record' : audio ? 'audio' : 'download'} />
-                  {item.kind === 'capture' && !hidden ? t('capture') : cut ? t('downloadClip') : t('download')}
+                  {item.kind === 'capture' && !hidden ? (cut ? t('captureClip') : t('capture')) : cut ? t('downloadClip') : t('download')}
                 </button>
               )}
               {item.kind === 'capture' && !showJob && <p class="hint">{t(hidden ? 'hiddenHint' : 'captureHint')}</p>}

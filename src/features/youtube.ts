@@ -49,8 +49,32 @@ export function hiddenJobFromUrl(href: string): string | null {
   }
 }
 
-/** The hidden player's address for a job (codecs and quality travel in the URL). */
-export function hiddenPlayerUrl(o: { jobId: string; videoId: string; quality: string; vcodec: string; acodec: string }): string {
+/** The recording a hidden player belongs to: its job, and which of its sessions (0 first). */
+export function hiddenSessionFromUrl(href: string): number {
+  try {
+    const n = Number(new URL(href).searchParams.get('gys'));
+    return Number.isInteger(n) && n >= 0 && n < 1000 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * The hidden player's address for a job (codecs and quality travel in the URL). A part of the
+ * video (`part`), and where a recording carrying on starts again (`from`), are passed too.
+ */
+export function hiddenPlayerUrl(o: {
+  jobId: string;
+  videoId: string;
+  quality: string;
+  vcodec: string;
+  acodec: string;
+  session?: number;
+  from?: number;
+  part?: { start: number; end: number };
+  /** Subtitles to show while it plays, so that Grabby keeps them. */
+  captions?: { lang: string; auto?: boolean };
+}): string {
   const q = new URLSearchParams({
     autoplay: '0',
     mute: '1',
@@ -65,5 +89,17 @@ export function hiddenPlayerUrl(o: { jobId: string; videoId: string; quality: st
     gyv: o.vcodec,
     gya: o.acodec,
   });
+  if (o.session) q.set('gys', String(o.session));
+  const from = Math.floor(o.from ?? o.part?.start ?? 0);
+  // The player's own "start" parameter: it begins there, nothing before is loaded.
+  if (from > 0) q.set('start', String(from));
+  if (o.part) {
+    q.set('gyb', String(o.part.start));
+    q.set('gye', String(o.part.end));
+  }
+  if (o.captions) {
+    q.set('gysl', o.captions.lang);
+    if (o.captions.auto) q.set('gysk', 'asr');
+  }
   return `https://www.youtube.com/embed/${encodeURIComponent(o.videoId)}?${q}`;
 }

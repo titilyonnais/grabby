@@ -151,6 +151,23 @@ describe('Registry', () => {
     expect((await reg.get(1))[0]!.title).toBe('Explicit');
   });
 
+  it('offers a file its own <track>s, and a frame’s only player the subtitle files it loaded', async () => {
+    await reg.upsert(1, item({ id: 'f', url: 'https://cdn.com/a.mp4' }));
+    await reg.setVideoSubs(1, 'https://cdn.com/a.mp4', [{ id: 's', url: 'https://cdn.com/a.fr.vtt', label: 'Français', lang: 'fr' }]);
+    expect((await reg.get(1))[0]!.subtitles?.map((s) => s.label)).toEqual(['Français']);
+
+    await reg.upsert(1, item({ id: 'c', kind: 'capture', url: undefined, frameUrl: 'https://player.com/' }));
+    await reg.addFrameSub(1, 'https://player.com/', 'https://cdn.com/subs/movie_en.vtt');
+    // A stream's subtitle segments: many files alike, not offered one by one.
+    for (let i = 0; i < 4; i++) await reg.addFrameSub(1, 'https://player.com/', `https://cdn.com/seg/sub_${i}.vtt`);
+    const capture = (await reg.get(1)).find((i) => i.id === 'c')!;
+    expect(capture.subtitles?.map((s) => [s.label, s.lang])).toEqual([['movie_en', 'en']]);
+
+    // Two players in the frame: no telling whose subtitles they are.
+    await reg.upsert(1, item({ id: 'c2', kind: 'capture', url: undefined, frameUrl: 'https://player.com/', detectedAt: 2 }));
+    expect((await reg.get(1)).find((i) => i.id === 'c')!.subtitles).toBeUndefined();
+  });
+
   it('caps items per tab, dropping the oldest', async () => {
     for (let i = 0; i < 60; i++) await reg.upsert(1, item({ id: `i${i}`, detectedAt: i }));
     const items = await reg.get(1);

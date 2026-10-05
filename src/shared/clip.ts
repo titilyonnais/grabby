@@ -1,9 +1,12 @@
 import { RAW_THRESHOLD, type Clip } from './plan';
 import type { MediaItem } from './types';
 
-/** A part can be cut out of a downloaded video, not out of a recording (it plays in real time). */
+/**
+ * A part can be cut out of any video whose length is known: a stream fetches only its
+ * segments, a recording plays only that part, a file is cut once downloaded.
+ */
 export function canClip(item: MediaItem): boolean {
-  if (item.protection !== 'none' || item.live || item.kind === 'capture') return false;
+  if (item.protection !== 'none' || item.live) return false;
   if (!item.duration || item.duration < 3) return false;
   // Cutting a file means loading all of it in memory.
   return item.kind !== 'file' || (item.size ?? 0) <= RAW_THRESHOLD;

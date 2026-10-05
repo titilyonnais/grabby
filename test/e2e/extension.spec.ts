@@ -823,3 +823,140 @@ test('a clip with its subtitles: only the lines of the part, from zero', async (
   const info = probe(video);
   if (info) expect(info.streams).toEqual(['audio', 'video']);
 });
+
+const ALL_LINES = [
+  '00:00:00,500 --> 00:00:01,800',
+  'Bonjour',
+  '00:00:02,500 --> 00:00:03,800',
+  '<i>le monde</i>',
+  '00:00:03,900 --> 00:00:04,600',
+  'Au revoir',
+  '00:00:05,000 --> 00:00:05,800',
+  'Fin',
+];
+
+test('a file with a <track>: its subtitles are put in the video', async ({ context, sw, extId }) => {
+  const { tabId } = await openFixture(context, sw, 'track.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  await pick(popup, 'Subtitles', 'Français');
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
+  await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
+  const { video, srt } = await videoAndSrt(sw, false);
+  expect(srt).toBeNull();
+  const info = probe(video);
+  if (info) expect(info.streams).toEqual(['audio', 'subtitle', 'video']);
+  const inside = embeddedSrt(video);
+  if (inside !== null) expect(lines(inside)).toEqual(ALL_LINES);
+});
+
+for (const [track, form] of [
+  ['German', 'WebVTT packed in MP4 (wvtt)'],
+  ['Spanish', 'TTML packed in MP4 (stpp)'],
+  ['Italian', 'a TTML file'],
+] as const) {
+  test(`DASH subtitles in ${form} are read, each line once`, async ({ context, sw, extId }) => {
+    const { tabId } = await openFixture(context, sw, 'dash-packed.html');
+    await expect.poll(() => badge(sw, tabId)).toBe('1');
+    const popup = await openPopup(context, extId, tabId);
+    await pick(popup, 'Subtitles', track);
+    await popup.getByRole('switch', { name: 'In a separate .srt file' }).check();
+    await popup.getByRole('button', { name: 'Download', exact: true }).click();
+    await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
+    const { srt } = await videoAndSrt(sw, true);
+    expect(lines(srt!)).toEqual(ALL_LINES);
+  });
+}
+
+test('a clip of a recorded player, with the subtitles of its <track>', async ({ context, sw, extId }) => {
+  const { page, tabId } = await openFixture(context, sw, 'mse-track.html');
+  await page.waitForSelector('body[data-ready="1"]');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  await pick(popup, 'Subtitles', 'Français');
+  await popup.getByRole('switch', { name: 'In a separate .srt file' }).check();
+  await cutClip(popup, '0:02', '0:05');
+  await popup.getByRole('button', { name: 'Record the clip' }).click();
+  await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
+  const { video, srt } = await videoAndSrt(sw, true);
+  expect(lines(srt!)).toEqual(['00:00:00,500 --> 00:00:01,800', '<i>le monde</i>', '00:00:01,900 --> 00:00:02,600', 'Au revoir']);
+  const info = probe(video);
+  if (info) {
+    expect(info.streams).toEqual(['audio', 'video']);
+    expect(info.duration).toBeGreaterThan(2);
+    expect(info.duration).toBeLessThan(4.5);
+  }
+});
+
+test('a recording can be paused and resumed: both parts end up in one file', async ({ context, sw, extId }) => {
+  // A player that fetches its segments as playback goes, slowly: the recording takes a while.
+  const { page, tabId } = await openFixture(context, sw, 'mse-slow.html');
+  await page.waitForSelector('body[data-ready="1"]');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  const before = await completed(sw);
+  await popup.getByRole('button', { name: 'Record playback' }).click();
+  await expect.poll(() => meterValue(popup), { timeout: 30_000 }).toBeGreaterThan(15);
+  await popup.getByRole('button', { name: 'Pause' }).click();
+  await expect(popup.getByText(/^Paused/).first()).toBeVisible();
+  // It stays paused until asked to carry on.
+  await popup.waitForTimeout(2000);
+  await expect(popup.getByText(/^Paused/).first()).toBeVisible();
+  await popup.getByRole('button', { name: 'Resume' }).click();
+  const { filename } = await nextDownload(sw, before);
+  const info = probe(filename);
+  if (info) {
+    expect(info.streams).toEqual(['audio', 'video']);
+    expect(info.duration).toBeGreaterThan(5);
+    expect(info.duration).toBeLessThan(7);
+  }
+  await expect(popup.getByText('Saved')).toBeVisible();
+});
+
+test('a recording cut by closing the browser carries on when it opens again', async () => {
+  test.setTimeout(120_000);
+  const userData = mkdtempSync(join(tmpdir(), 'grabby-restart-rec-'));
+  const launch = () =>
+    chromium.launchPersistentContext(userData, {
+      channel: 'chromium',
+      headless: true,
+      acceptDownloads: true,
+      locale: 'en-US',
+      args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, '--autoplay-policy=no-user-gesture-required', '--lang=en-US'],
+    });
+  const worker = async (c: BrowserContext) => c.serviceWorkers()[0] ?? (await c.waitForEvent('serviceworker'));
+  let ctx: BrowserContext | undefined;
+  try {
+    ctx = await launch();
+    let sw = await worker(ctx);
+    const { page, tabId } = await openFixture(ctx, sw, 'mse-slow.html');
+    await page.waitForSelector('body[data-ready="1"]');
+    await expect.poll(() => badge(sw, tabId)).toBe('1');
+    const popup = await openPopup(ctx, new URL(sw.url()).host, tabId);
+    await popup.getByRole('button', { name: 'Record playback' }).click();
+    await expect.poll(() => meterValue(popup), { timeout: 30_000 }).toBeGreaterThan(15);
+    await ctx.close();
+
+    ctx = await launch();
+    sw = await worker(ctx);
+    // No tab left: Grabby opens the page again in the background and records the rest.
+    await expect
+      .poll(async () => sw.evaluate(async () => (await chrome.downloads.search({ state: 'complete' })).length), { timeout: 90_000 })
+      .toBeGreaterThan(0);
+    const { filename } = await lastDownload(sw);
+    const info = probe(filename);
+    if (info) {
+      expect(info.streams).toEqual(['audio', 'video']);
+      expect(info.duration).toBeGreaterThan(5);
+    }
+    // The tab it opened is closed again.
+    await expect.poll(async () => sw.evaluate(async () => (await chrome.tabs.query({ url: '*://*/pages/mse-slow.html' })).length), { timeout: 10_000 }).toBe(0);
+  } finally {
+    await ctx?.close().catch(() => {});
+    try {
+      rmSync(userData, { recursive: true, force: true });
+    } catch {
+      /* Windows may hold the profile a moment longer */
+    }
+  }
+});

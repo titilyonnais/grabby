@@ -1,4 +1,4 @@
-import { readTracks, type StoredChunk } from '../shared/idb';
+import { isCaptionTrack, readTracks, sessionOf, type StoredChunk } from '../shared/idb';
 
 export interface CapturedTrack {
   mime: string;
@@ -42,9 +42,31 @@ function concat(chunks: StoredChunk[]): Uint8Array {
   return out;
 }
 
+/**
+ * Rebuilds each recorded track, session by session (a recording paused or cut, then carried
+ * on). `keep` limits a session to the tracks of the video itself when it names some of them.
+ */
+export async function assembleSessions(jobId: string, keep?: number[]): Promise<{ session: number; tracks: CapturedTrack[] }[]> {
+  const all = (await readTracks(jobId)).filter((t) => !isCaptionTrack(t.track));
+  const sessions = [...new Set(all.map((t) => sessionOf(t.track)))].sort((a, b) => a - b);
+  const out: { session: number; tracks: CapturedTrack[] }[] = [];
+  for (const n of sessions) {
+    const own = keep?.filter((k) => sessionOf(k) === n) ?? [];
+    const tracks = await assembleCapture(jobId, own, all.filter((t) => sessionOf(t.track) === n));
+    if (tracks.length) out.push({ session: n, tracks });
+  }
+  return out;
+}
+
+/** The subtitles the recorded player loaded: the most complete copy, if any. */
+export async function capturedCaptions(jobId: string): Promise<Uint8Array | null> {
+  const copies = (await readTracks(jobId)).filter((t) => isCaptionTrack(t.track)).flatMap((t) => t.chunks.map((c) => new Uint8Array(c.data)));
+  return copies.sort((a, b) => b.byteLength - a.byteLength)[0] ?? null;
+}
+
 /** Rebuilds each recorded track; `keep` limits it to the tracks of the video itself. */
-export async function assembleCapture(jobId: string, keep?: number[]): Promise<CapturedTrack[]> {
-  const all = await readTracks(jobId);
+export async function assembleCapture(jobId: string, keep?: number[], from?: Awaited<ReturnType<typeof readTracks>>): Promise<CapturedTrack[]> {
+  const all = (from ?? (await readTracks(jobId))).filter((t) => !isCaptionTrack(t.track));
   const tracks = all.filter((t) => !keep?.length || keep.includes(t.track));
   // Diagnostic summary (visible in the offscreen document's console).
   console.debug(

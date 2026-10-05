@@ -2,7 +2,8 @@ import { videoFormatsFor } from '../shared/formats';
 import { classify } from '../parsers/classify';
 import { hashId } from '../shared/ids';
 import type { PageInfo, PageVideo } from '../shared/messages';
-import type { MediaItem } from '../shared/types';
+import type { MediaItem, SubtitleTrack } from '../shared/types';
+import { describeSubtitleUrl } from '../shared/subtitles';
 import { handleMediaUrl } from './detector';
 import type { DetectContext } from './manifests';
 import type { Registry } from './registry';
@@ -43,11 +44,45 @@ async function upsertYouTube(registry: Registry, ctx: DetectContext, frameId: nu
     // Recorded discreetly by a hidden player when YouTube allows embedding it.
     ...(p?.embeddable ? { ytId: p.id } : {}),
     ...(variants[0]?.sizes.mp4 ? { size: variants[0].sizes.mp4 } : {}),
+    ...(p?.captions?.length ? { subtitles: youtubeSubs(p.captions) } : {}),
   });
   // One item per YouTube video id (the page URL changes between videos).
   item.id = hashId(`yt:${ctx.pageUrl}`);
   await registry.upsert(ctx.tabId, item);
   return item.id;
+}
+
+/** A player's <track>s as subtitle choices. */
+function trackSubs(v: PageVideo): SubtitleTrack[] {
+  const seen = new Set<string>();
+  return (v.tracks ?? [])
+    .filter((t) => typeof t.src === 'string' && /^https?:/i.test(t.src) && !seen.has(t.src) && seen.add(t.src))
+    .map((t) => {
+      const guess = describeSubtitleUrl(t.src);
+      const lang = typeof t.lang === 'string' && t.lang ? t.lang.slice(0, 20) : guess.lang;
+      return {
+        id: hashId(t.src),
+        url: t.src,
+        label: (typeof t.label === 'string' && t.label.slice(0, 80)) || lang || guess.label,
+        ...(lang ? { lang } : {}),
+        ...(t.isDefault ? { isDefault: true } : {}),
+      };
+    });
+}
+
+/** YouTube's subtitles, the ones made by speech recognition said so. */
+function youtubeSubs(captions: NonNullable<import('../shared/messages').YtInfo['captions']>): SubtitleTrack[] {
+  return captions
+    .filter((c) => typeof c.url === 'string' && /^https:\/\/([\w-]+\.)*youtube\.com\//.test(c.url))
+    .slice(0, 40)
+    .map((c) => ({
+      id: hashId(c.url),
+      url: c.url,
+      // YouTube's own name already says when they are made automatically.
+      label: c.name || c.lang,
+      lang: c.lang,
+      ...(c.auto ? { auto: true } : {}),
+    }));
 }
 
 function captureItem(ctx: DetectContext, frameId: number, index: number, over: Partial<MediaItem>): MediaItem {
@@ -129,10 +164,13 @@ export async function handlePageInfo(registry: Registry, sender: chrome.runtime.
           formats: videoFormatsFor(''),
           ...(Number.isFinite(v.duration) && v.duration > 0 ? { duration: v.duration } : {}),
           ...(v.poster ? { thumbnail: v.poster } : {}),
+          ...(trackSubs(v).length ? { subtitles: trackSubs(v) } : {}),
         });
         keep.add(item.id);
         await registry.upsert(tabId, item);
       } else if (/^https?:/i.test(v.src)) {
+        const subs = trackSubs(v);
+        if (subs.length) await registry.setVideoSubs(tabId, v.src, subs);
         // A <video src> is a video even when its URL doesn't say so (".pmp4", no extension).
         await handleMediaUrl(registry, v.src, ctx, classify({ url: v.src }) ? {} : { contentType: 'video/mp4' });
       }

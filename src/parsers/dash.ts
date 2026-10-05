@@ -12,6 +12,12 @@ export interface DashRep {
   lang?: string;
   /** Subtitles: the name the site gives them. */
   label?: string;
+  /** Subtitles: text files (WebVTT, TTML), or packed in MP4 segments (wvtt, stpp). */
+  packing?: 'text' | 'fmp4';
+  /** Subtitles: only the lines in another language (signs, foreign dialogue). */
+  forced?: boolean;
+  /** Where the period starts on the segments' clock, in seconds (presentationTimeOffset). */
+  pto?: number;
   init?: SegRef;
   segments: SegRef[];
 }
@@ -22,7 +28,7 @@ export interface DashManifest {
   protected: boolean;
   video: DashRep[];
   audio: DashRep[];
-  /** Subtitles in plain WebVTT (a file, or segments). */
+  /** Subtitles: WebVTT or TTML (a file, or segments), or packed in MP4 segments. */
   text: DashRep[];
 }
 
@@ -135,10 +141,19 @@ function listSegments(list: XmlNode, base: string): { init?: SegRef; segments: S
 const VIDEO_CODEC = /^(avc|hev|hvc|vp0?[89]|av01|dvh|mp4v)/i;
 const AUDIO_CODEC = /^(mp4a|opus|ac-3|ec-3|vorbis|flac|mp3|dtsc)/i;
 
+/** Subtitle formats Grabby can read: WebVTT, TTML and SubRip files, or wvtt / stpp in MP4. */
+function textPacking(contentType: string, mime: string, codecs: string): 'text' | 'fmp4' | null {
+  // Subtitles drawn as pictures (IMSC image profile) can't become text.
+  if (/im1i|im2i/i.test(codecs) || mime.startsWith('image/')) return null;
+  if (/^(text\/vtt|application\/ttml\+xml|text\/srt|application\/x-subrip)$/.test(mime)) return 'text';
+  if (/^(stpp|wvtt)/i.test(codecs)) return 'fmp4';
+  if (contentType === 'text' && mime === 'application/mp4') return 'fmp4';
+  return null;
+}
+
 function kindOf(contentType: string, mime: string, codecs: string): 'video' | 'audio' | 'text' | null {
-  // Only WebVTT as text: subtitles packed in MP4 (wvtt, stpp) or TTML are left out.
-  if (mime === 'text/vtt') return 'text';
-  if (contentType === 'text' || mime.startsWith('text/') || /^(stpp|wvtt)/i.test(codecs)) return null;
+  if (textPacking(contentType, mime, codecs)) return 'text';
+  if (contentType === 'text' || mime.startsWith('text/') || mime.startsWith('image/') || mime.startsWith('application/ttml')) return null;
   if (contentType === 'video' || mime.startsWith('video/')) return 'video';
   if (contentType === 'audio' || mime.startsWith('audio/')) return 'audio';
   if (VIDEO_CODEC.test(codecs)) return 'video';
@@ -216,6 +231,8 @@ export function parseDash(text: string, baseUrl: string): DashManifest {
       const height = Number(rep.attrs.height ?? set.attrs.height ?? 0);
       const lang = set.attrs.lang ?? rep.attrs.lang;
       const label = child(set, 'Label')?.text || rep.attrs.label || set.attrs.label;
+      const roles = [...children(set, 'Role'), ...children(rep, 'Role')].map((r) => r.attrs.value ?? '');
+      const pto = template ? Number(template.attrs.presentationTimeOffset ?? 0) / (Number(template.attrs.timescale ?? 1) || 1) : 0;
       const out: DashRep = {
         id,
         bandwidth,
@@ -224,7 +241,14 @@ export function parseDash(text: string, baseUrl: string): DashManifest {
         ...(height ? { height } : {}),
         ...(codecs ? { codecs } : {}),
         ...(lang ? { lang } : {}),
-        ...(label && kind === 'text' ? { label } : {}),
+        ...(kind === 'text'
+          ? {
+              packing: textPacking(set.attrs.contentType ?? '', mime, codecs)!,
+              ...(label ? { label } : {}),
+              ...(roles.includes('forced-subtitle') ? { forced: true } : {}),
+            }
+          : {}),
+        ...(pto ? { pto } : {}),
         ...segs,
       };
       result[kind].push(out);

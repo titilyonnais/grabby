@@ -12,6 +12,7 @@ export interface Clip {
   end: number;
 }
 
+/** `vtt`: subtitles as text files (WebVTT, SubRip or TTML, told apart by their content). */
 export type Container = 'ts' | 'fmp4' | 'file' | 'webm' | 'vtt';
 /** Containers the user can pick for a video. */
 export type VideoFormat = 'mp4' | 'mkv' | 'webm' | 'mov' | 'avi' | 'ts';
@@ -57,7 +58,15 @@ export interface Plan {
    * Subtitles (WebVTT, fetched as a third track): put in the video, or saved next to it as
    * an .srt file (always, when the video can't hold them or isn't assembled).
    */
-  subtitles?: { track: TrackPlan; label: string; lang?: string; separate: boolean };
+  subtitles?: {
+    track: TrackPlan;
+    clock?: import('./subtitles').SubsClock;
+    label: string;
+    lang?: string;
+    separate: boolean;
+    /** Loaded by the recorded player itself (YouTube): its language, made by speech recognition or not. */
+    captured?: { lang: string; auto?: boolean };
+  };
 }
 
 /** The user's subtitle choice: which track, and as a separate file or not. */

@@ -10,13 +10,21 @@ import type { VideoFormat } from '../shared/plan';
 import type { YtInfo } from '../shared/messages';
 
 export interface HookApi {
-  post(msg: { type: 'yt'; info: YtInfo } | { type: 'progress'; progress: number } | { type: 'end'; keep: number[] } | { type: 'error'; error: 'capture_unavailable' | 'capture_failed' }): void;
+  post(
+    msg:
+      | { type: 'yt'; info: YtInfo }
+      | { type: 'progress'; progress: number; time?: number; keep?: number[] }
+      | { type: 'end'; keep: number[] }
+      | { type: 'error'; error: 'capture_unavailable' | 'capture_failed' },
+  ): void;
   /** Sends every MediaSource append from now on, tagged per player; `onSwitch` runs on a quality change. */
   recordAll(onSwitch: () => void): void;
   /** Starts a new generation of tracks: what was recorded before is left out of the file. */
   restart(): void;
   /** Tracks recorded for the MediaSource currently playing in `video`. */
   tracksOf(video: HTMLVideoElement): number[];
+  /** The subtitles the player loaded, kept with the recording. */
+  caption(data: ArrayBuffer): void;
 }
 
 interface Format {
@@ -27,7 +35,15 @@ interface Format {
   fps?: number;
 }
 
+interface CaptionTrack {
+  baseUrl?: string;
+  languageCode?: string;
+  kind?: string;
+  name?: { simpleText?: string; runs?: { text?: string }[] };
+}
+
 interface PlayerResponse {
+  captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: CaptionTrack[] } };
   videoDetails?: { videoId?: string; title?: string; lengthSeconds?: string; isLive?: boolean };
   playabilityStatus?: { status?: string; playableInEmbed?: boolean };
   streamingData?: { adaptiveFormats?: Format[] };
@@ -43,6 +59,9 @@ type Player = HTMLElement & {
   seekTo?: (seconds: number, allowSeekAhead: boolean) => void;
   mute?: () => void;
   getPlayerState?: () => number;
+  loadModule?: (name: string) => void;
+  setOption?: (module: string, option: string, value: unknown) => void;
+  getOption?: (module: string, option: string, args?: unknown) => unknown;
 };
 
 const LEVELS: [number, string][] = [
@@ -88,10 +107,24 @@ export function describeFormats(r: PlayerResponse): YtInfo | null {
       if (vp9 && size(vp9)) sizes.webm = size(vp9) + size(opus);
       return { label: label.replace(/^(\d+p)(\d+)?.*$/, '$1$2'), height: h, quality: levelFor(h), avc: !!avc, vp9: !!vp9, sizes };
     });
+  const captions = (r.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? []).flatMap((c) => {
+    const name = c.name?.simpleText ?? c.name?.runs?.map((x) => x.text ?? '').join('') ?? c.languageCode ?? '';
+    if (!c.baseUrl || !c.languageCode) return [];
+    try {
+      // WebVTT, from YouTube's own address for these subtitles.
+      const u = new URL(c.baseUrl, 'https://www.youtube.com');
+      if (!/(^|\.)youtube\.com$/.test(u.hostname)) return [];
+      u.searchParams.set('fmt', 'vtt');
+      return [{ url: u.href, lang: c.languageCode, name, auto: c.kind === 'asr' }];
+    } catch {
+      return [];
+    }
+  });
   return {
     id: d.videoId,
     title: d.title ?? '',
     duration: Number(d.lengthSeconds) || 0,
+    ...(captions.length ? { captions } : {}),
     embeddable: r.playabilityStatus?.playableInEmbed !== false && r.playabilityStatus?.status === 'OK',
     qualities,
   };
@@ -106,7 +139,7 @@ function reportPlayerInfo(api: HookApi) {
     const r = player()?.getPlayerResponse?.() ?? (window as { ytInitialPlayerResponse?: PlayerResponse }).ytInitialPlayerResponse;
     const info = r ? describeFormats(r) : null;
     if (!info) return;
-    const sig = `${info.id}|${info.qualities.length}|${info.embeddable}`;
+    const sig = `${info.id}|${info.qualities.length}|${info.embeddable}|${info.captions?.length ?? 0}`;
     if (sig === last) return;
     last = sig;
     api.post({ type: 'yt', info });
@@ -173,8 +206,66 @@ function hideDroppedFrames() {
 /** Restarts after a quality change, a few times at most (then keeps the longest part). */
 const MAX_RESTARTS = 6;
 
+const seconds = (v: string | null): number | undefined => {
+  const n = v === null ? Number.NaN : Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
+};
+
+/**
+ * The subtitles the player loads once they are switched on: the response it gets for the
+ * wanted language is passed on (nothing else is fetched).
+ */
+function keepCaptions(lang: string, auto: boolean, onText: (data: ArrayBuffer) => void): () => boolean {
+  let got = false;
+  const wanted = (url: string) => {
+    try {
+      const u = new URL(url, location.href);
+      if (!u.pathname.endsWith('/api/timedtext') || u.searchParams.get('tlang')) return false;
+      return u.searchParams.get('lang') === lang && (u.searchParams.get('kind') === 'asr') === auto;
+    } catch {
+      return false;
+    }
+  };
+  const keep = (data: ArrayBuffer) => {
+    if (got || !data.byteLength) return;
+    got = true;
+    onText(data);
+  };
+  const realFetch = window.fetch;
+  window.fetch = function (this: unknown, input: RequestInfo | URL, init?: RequestInit) {
+    const p = realFetch.call(this, input, init);
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (wanted(url)) {
+      void p.then((r) => (r.ok ? r.clone().arrayBuffer() : null)).then((b) => b && keep(b)).catch(() => {});
+    }
+    return p;
+  } as typeof window.fetch;
+  const open = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function (this: XMLHttpRequest, method: string, url: string | URL, ...rest: unknown[]) {
+    if (wanted(String(url))) {
+      this.addEventListener('load', () => {
+        if (this.status !== 200) return;
+        const r = this.response as unknown;
+        if (r instanceof ArrayBuffer) keep(r.slice(0));
+        else if (this.responseType === '' || this.responseType === 'text') keep(new TextEncoder().encode(this.responseText).buffer as ArrayBuffer);
+      });
+    }
+    return (open as (...a: unknown[]) => void).call(this, method, url, ...rest);
+  } as typeof XMLHttpRequest.prototype.open;
+  return () => got;
+}
+
 function hiddenPlayer(api: HookApi, params: URLSearchParams) {
   const quality = params.get('gyq') ?? 'hd1080';
+  // Subtitles to keep: switched on in this player, what it loads is passed on.
+  const captionLang = params.get('gysl');
+  const captionAuto = params.get('gysk') === 'asr';
+  const gotCaptions = captionLang && /^[\w-]{2,20}$/.test(captionLang) ? keepCaptions(captionLang, captionAuto, (d) => api.caption(d)) : null;
+  // A part of the video (gyb–gye), and where this recording starts (start: a part, or a
+  // recording carrying on after a pause or a restart).
+  const begin = seconds(params.get('gyb')) ?? 0;
+  const partEnd = seconds(params.get('gye'));
+  const from = seconds(params.get('start')) ?? 0;
   restrictCodecs(params.get('gyv'), params.get('gya'));
   hideDroppedFrames();
   let restarts = 0;
@@ -188,7 +279,7 @@ function hiddenPlayer(api: HookApi, params: URLSearchParams) {
     setTimeout(() => {
       const p = player();
       p?.setPlaybackQualityRange?.(quality, quality);
-      p?.seekTo?.(0, true);
+      p?.seekTo?.(from, true);
     }, 400);
   });
   // Decoding many frames per second of 4K would overload the machine (and the player
@@ -217,6 +308,19 @@ function hiddenPlayer(api: HookApi, params: URLSearchParams) {
       p.playVideo();
     }
     if (document.querySelector('.ytp-error') && !ad) return fail('capture_unavailable');
+    // Subtitles on, in the wanted language (asked again until the player loads them).
+    if (gotCaptions && !gotCaptions() && !ad && checks % 8 === 0) {
+      try {
+        p.loadModule?.('captions');
+        // The player's own description of the track when it has one (needed to tell the
+        // automatic track from the written one in the same language).
+        const list = p.getOption?.('captions', 'tracklist', { includeAsr: true }) as { languageCode?: string; kind?: string }[] | undefined;
+        const track = Array.isArray(list) ? list.find((t) => t.languageCode === captionLang && (t.kind === 'asr') === captionAuto) : undefined;
+        p.setOption?.('captions', 'track', track ?? { languageCode: captionLang, ...(captionAuto ? { kind: 'asr' } : {}) });
+      } catch {
+        /* the video plays on without them */
+      }
+    }
     // Keep asking for the chosen quality: the player's own logic may lower it.
     if (!ad && ++checks % 8 === 0 && p.getPlaybackQuality?.() !== quality) p.setPlaybackQualityRange?.(quality, quality);
     // Fast and silent, ads included (they are dropped from the file).
@@ -235,13 +339,19 @@ function hiddenPlayer(api: HookApi, params: URLSearchParams) {
     if (ad) return;
     const d = video.duration;
     if (Number.isFinite(d) && d > 0) {
-      const progress = Math.min(1, video.currentTime / d);
-      if (progress !== lastProgress) api.post({ type: 'progress', progress });
+      const t = video.currentTime;
+      const end = partEnd ?? d;
+      const progress = Math.max(0, Math.min(1, (t - begin) / Math.max(0.001, end - begin)));
+      // The tracks of the video itself go along: a recording paused before its end still knows them.
+      if (progress !== lastProgress) api.post({ type: 'progress', progress, time: t, keep: api.tracksOf(video) });
       lastProgress = progress;
-      if (video.ended || p.getPlayerState?.() === 0 || video.currentTime >= d - 0.05) {
-      console.debug('[grabby] hidden player end', JSON.stringify({ t: video.currentTime, d, restarts, keep: api.tracksOf(video) }));
-      finish(video);
-    }
+      const past = partEnd !== undefined ? t >= partEnd + 1 : t >= d - 0.05;
+      // The end waits a little for subtitles still on their way.
+      const waitCaptions = gotCaptions && !gotCaptions() && Date.now() - started < 12_000;
+      if ((video.ended || p.getPlayerState?.() === 0 || past) && !waitCaptions) {
+        console.debug('[grabby] hidden player end', JSON.stringify({ t, d, restarts, keep: api.tracksOf(video) }));
+        finish(video);
+      }
     }
   }, 250);
 
