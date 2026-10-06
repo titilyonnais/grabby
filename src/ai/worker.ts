@@ -19,11 +19,15 @@ const lib = import('@huggingface/transformers').then((t) => {
   t.env.allowLocalModels = false;
   // The runtime is loaded from the extension (a copy turned into a blob would be refused here).
   t.env.useWasmCache = false;
+  // Nothing written to the console: a failure reaches Grabby as an error and is said there;
+  // a mere notice would show up in the extension's errors.
+  t.env.logLevel = t.LogLevel.NONE;
   return t;
 });
 
 type Req =
   | { id: number; type: 'transcribe'; pcm: Float32Array; lang?: string }
+  | { id: number; type: 'detect'; pcm: Float32Array[] }
   | { id: number; type: 'translate'; texts: string[]; from: string; to: string };
 
 const post = (m: object) => (self as unknown as Worker).postMessage(m);
@@ -66,14 +70,49 @@ function loadTranslator(id: number, model: string): Promise<Tr> {
   return p;
 }
 
+/** Whisper as transformers.js makes it: the model and its processor are on the pipeline. */
+interface AsrParts {
+  processor: (audio: Float32Array) => Promise<Record<string, unknown>>;
+  model: ((inputs: object) => Promise<{ logits: { data: Float32Array | number[] } }>) & {
+    generation_config?: { decoder_start_token_id?: number; lang_to_id?: Record<string, number> };
+  };
+}
+
+/**
+ * The language spoken, as Whisper hears it: from each sample (up to 30 s), the chance of each
+ * language as the first word it would write, added up. transformers.js doesn't do it itself
+ * (without a language it takes English), so « Détecter » is done here.
+ */
+async function detect(id: number, samples: Float32Array[]): Promise<string | null> {
+  const run = (await loadAsr(id)) as unknown as AsrParts;
+  const { Tensor } = await lib;
+  const gc = run.model.generation_config;
+  const langs = Object.entries(gc?.lang_to_id ?? {});
+  if (!langs.length || gc?.decoder_start_token_id === undefined) return null;
+  const start = new Tensor('int64', BigInt64Array.of(BigInt(gc.decoder_start_token_id)), [1, 1]);
+  const score = new Map<string, number>();
+  for (const pcm of samples) {
+    const out = await run.model({ ...(await run.processor(pcm)), decoder_input_ids: start });
+    const logits = out.logits.data;
+    const top = Math.max(...langs.map(([, i]) => Number(logits[i])));
+    const odds = langs.map(([tok, i]) => [tok, Math.exp(Number(logits[i]) - top)] as const);
+    const sum = odds.reduce((a, [, p]) => a + p, 0);
+    for (const [tok, p] of odds) score.set(tok, (score.get(tok) ?? 0) + p / sum);
+  }
+  const best = [...score].sort((a, b) => b[1] - a[1])[0]?.[0];
+  return best ? best.replace(/^<\|(.+)\|>$/, '$1') : null;
+}
+
 async function handle(r: Req) {
+  if (r.type === 'detect') return detect(r.id, r.pcm);
   if (r.type === 'transcribe') {
     const run = await loadAsr(r.id);
     post({ id: r.id, type: 'progress', stage: 'work', progress: 0 });
     const out = await run(r.pcm, {
       return_timestamps: true,
       task: 'transcribe',
-      ...(r.lang && r.lang !== 'auto' ? { language: r.lang } : {}),
+      // Always a language: without one, transformers.js takes English and says so.
+      language: r.lang && r.lang !== 'auto' ? r.lang : 'en',
     });
     return out.chunks ?? [{ text: out.text, timestamp: [0, null] }];
   }

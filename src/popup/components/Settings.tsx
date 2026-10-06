@@ -457,7 +457,8 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
     pages: () => (
       <Group index={0}>
         <Toggle label={t('set_ai')} hint={t('set_ai_hint')} checked={settings.aiModels} onChange={(aiModels) => onChange({ aiModels })} />
-        <AiPanel allowed={settings.aiModels} />
+        <Toggle label={t('set_chrome_ai')} hint={t('set_chrome_ai_hint')} checked={settings.chromeAi} onChange={(chromeAi) => onChange({ chromeAi })} />
+        <AiPanel allowed={settings.aiModels} chromeAi={settings.chromeAi} onChromeOff={() => onChange({ chromeAi: false })} />
       </Group>
     ),
     updates: () => (
@@ -543,11 +544,13 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
                 {t('set_tour_again')}
               </button>
             </div>
-            <p class="page__foot">
-              <Icon name="shield" size={14} />
-              <span>{t('set_privacy')}</span>
-              <span class="page__version">v{__VERSION__}</span>
-            </p>
+            <footer class="page__foot">
+              <p class="page__privacy">
+                <Icon name="shield" size={14} />
+                <span>{t('set_privacy')}</span>
+              </p>
+              <p class="page__version">Grabby {__VERSION__}</p>
+            </footer>
           </div>
         )}
       </div>

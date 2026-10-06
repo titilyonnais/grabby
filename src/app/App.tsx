@@ -199,7 +199,7 @@ export function AppPage() {
           ) : section === 'channels' ? (
             <Channels watches={state.watches ?? []} jobs={state.jobs} send={send} preferred={{ video: state.settings.videoFormat, audio: state.settings.audioFormat }} />
           ) : section === 'workshop' ? (
-            <Workshop aiAllowed={state.settings.aiModels} onAllowAi={() => setSettings({ aiModels: true })} />
+            <Workshop aiAllowed={state.settings.aiModels} chromeAi={state.settings.chromeAi} onAllowAi={() => setSettings({ aiModels: true })} />
           ) : section === 'join' ? (
             <Join />
           ) : section === 'rules' ? (

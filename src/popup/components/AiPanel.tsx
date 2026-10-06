@@ -10,18 +10,34 @@ type Test = { state: 'idle' } | { state: 'busy'; stage: 'download' | 'work'; pro
 
 /**
  * « IA locale », as it stands: which models are on this computer and the room they take,
- * what the browser's own AI can do, a test that really runs the transcription, and a way to
- * forget the models.
+ * what the browser's own AI can do (only asked when the user turned it on: asking Chrome is
+ * enough for it to write a warning when its AI is off), a test that really runs the
+ * transcription, and a way to forget the models.
  */
-export function AiPanel({ allowed }: { allowed: boolean }) {
+export function AiPanel({ allowed, chromeAi, onChromeOff }: { allowed: boolean; chromeAi: boolean; onChromeOff: () => void }) {
   const [models, setModels] = useState<CachedModel[] | null>(null);
   const [builtin, setBuiltin] = useState<{ translator: string; summarizer: string } | null>(null);
   const [test, setTest] = useState<Test>({ state: 'idle' });
+  const chromeReady = (s: string | undefined) => s === 'available' || s === 'readily';
+  const chromeLater = (s: string | undefined) => s === 'downloadable' || s === 'downloading' || s === 'after-download';
   const load = () => void cachedModels().then(setModels, () => setModels([]));
+  useEffect(load, []);
+  // Chrome has its AI turned off: said here, and the switch goes back off, so Chrome is not
+  // asked again (each time, it writes its warning).
+  const [refused, setRefused] = useState(false);
   useEffect(() => {
-    load();
-    void builtinAi().then(setBuiltin, () => setBuiltin({ translator: 'unavailable', summarizer: 'unavailable' }));
-  }, []);
+    if (!chromeAi) return setBuiltin(null);
+    setRefused(false);
+    const seen = (b: { translator: string; summarizer: string }) => {
+      setBuiltin(b);
+      const none = (s: string) => !chromeReady(s) && !chromeLater(s);
+      if (none(b.translator) && none(b.summarizer)) {
+        setRefused(true);
+        onChromeOff();
+      }
+    };
+    void builtinAi().then(seen, () => seen({ translator: 'unavailable', summarizer: 'unavailable' }));
+  }, [chromeAi]);
 
   const whisper = models?.find((m) => isWhisper(m.id));
   const pairs = (models ?? []).filter((m) => pairOf(m.id));
@@ -48,8 +64,6 @@ export function AiPanel({ allowed }: { allowed: boolean }) {
     load();
   };
 
-  const chromeReady = (s: string | undefined) => s === 'available' || s === 'readily';
-  const chromeLater = (s: string | undefined) => s === 'downloadable' || s === 'downloading' || s === 'after-download';
 
   /** One thing the AI does: its name and its state on one line, who does it under them. */
   const Row = ({ label, by, children }: { label: string; by: string; children: ComponentChildren }) => (
@@ -88,9 +102,10 @@ export function AiPanel({ allowed }: { allowed: boolean }) {
           )}
         </Row>
         <Row label={t('aiRowSummary')} by={t('aiRowSummaryBy')}>
-          {builtin === null ? <Chip>…</Chip> : chromeReady(builtin.summarizer) ? <Chip on>{t('aiBuiltinTranslator', t('aiBuiltinReady'))}</Chip> : <Chip on>{t(chromeLater(builtin.summarizer) ? 'aiSummarySimpleFor' : 'aiSummarySimple')}</Chip>}
+          {chromeAi && builtin === null ? <Chip>…</Chip> : builtin && chromeReady(builtin.summarizer) ? <Chip on>{t('aiBuiltinTranslator', t('aiBuiltinReady'))}</Chip> : <Chip on>{t(chromeLater(builtin?.summarizer) ? 'aiSummarySimpleFor' : 'aiSummarySimple')}</Chip>}
         </Row>
       </ul>
+      {refused && <p class="setting__hint ai__note">{t('aiChromeOff')}</p>}
       {allowed && (
         <div class="ai__actions">
           <button class="btn btn--soft btn--small" disabled={test.state === 'busy'} onClick={() => void run()}>

@@ -62,7 +62,7 @@ async function workspace<T>(fn: (f: FFmpeg, dir: string) => Promise<T>): Promise
 export function runWorkshop(
   file: File,
   finish: Finish,
-  o: { subs?: File; report: (step: FinishStep | 'load', p: number) => void; signal: AbortSignal },
+  o: { subs?: File; chromeAi?: boolean; report: (step: FinishStep | 'load', p: number) => void; signal: AbortSignal },
 ): Promise<Output[]> {
   return workspace(async (f, dir) => {
     o.report('load', 0);
@@ -78,7 +78,7 @@ export function runWorkshop(
       const lang = /\.([a-z]{2,3})(?:-[A-Za-z]+)?\.(srt|vtt)$/i.exec(o.subs.name)?.[1];
       if (cues.length) texts.push({ cues, label: o.subs.name, separate: false, ...(lang ? { lang } : {}) });
     }
-    const plan: Plan = { kind: 'file', output: (ext as Plan['output']) ?? 'mp4', raw: false, audioOnly, pageUrl: '', finish, meta: { title: stemOf(file.name) }, words: finishWords((k, s) => chrome.i18n.getMessage(k, s), chrome.i18n.getUILanguage()) };
+    const plan: Plan = { kind: 'file', output: (ext as Plan['output']) ?? 'mp4', raw: false, audioOnly, pageUrl: '', finish, ...(o.chromeAi ? { chromeAi: true } : {}), meta: { title: stemOf(file.name) }, words: finishWords((k, s) => chrome.i18n.getMessage(k, s), chrome.i18n.getUILanguage()) };
     const made = await finishFile(f, dir, { out: input, ext }, { plan, texts, apart: [], signal: o.signal, report: o.report });
     const stem = sanitizeFilename(`${stemOf(file.name)} (Grabby)`);
     const read = async (path: string, name: string): Promise<Output> => ({

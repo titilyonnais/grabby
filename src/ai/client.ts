@@ -75,6 +75,7 @@ export class LocalAi {
    * seconds, cut where it is quietest.
    */
   async transcribe(pcm: Float32Array, lang: string, onProgress?: (p: AiProgress) => void, signal?: AbortSignal): Promise<Cue[]> {
+    if (lang === 'auto') lang = (await this.detect(pcm, onProgress, signal)) ?? 'en';
     const cuts = [0, ...quietCuts(pcm), pcm.length];
     const pieces: { offset: number; length: number; said: Said[] }[] = [];
     const n = cuts.length - 1;
@@ -93,10 +94,26 @@ export class LocalAi {
     return cuesFromSaid(pieces);
   }
 
-  /** The cues' text in another language (their times stay). Null when no model can. */
-  async translate(cues: Cue[], from: string, to: string, onProgress?: (p: AiProgress) => void, signal?: AbortSignal): Promise<Cue[] | null> {
+  /**
+   * The language spoken: Whisper listens to up to three stretches of 30 s (the start, the
+   * middle and near the end of a long sound, where an opening jingle no longer counts).
+   */
+  async detect(pcm: Float32Array, onProgress?: (p: AiProgress) => void, signal?: AbortSignal): Promise<string | null> {
+    const span = 30 * SAMPLE_RATE;
+    const starts = pcm.length > 3 * span ? [0.1, 0.5, 0.8].map((f) => Math.floor(pcm.length * f)) : [0];
+    const samples = starts.map((s) => pcm.slice(s, s + span));
+    return this.call<string | null>({ type: 'detect', pcm: samples }, samples.map((s) => s.buffer), (p) => {
+      if (p.stage === 'download') onProgress?.(p);
+    }, signal);
+  }
+
+  /**
+   * The cues' text in another language (their times stay). Null when no model can. `chrome`:
+   * Chrome's own translator may be asked first (only when the user turned it on).
+   */
+  async translate(cues: Cue[], from: string, to: string, onProgress?: (p: AiProgress) => void, signal?: AbortSignal, chrome = false): Promise<Cue[] | null> {
     const texts = cues.map((c) => c.text.replace(/\s*\n\s*/g, ' '));
-    const builtin = await builtinTranslator(from, to);
+    const builtin = chrome ? await builtinTranslator(from, to) : null;
     if (builtin) {
       const out: string[] = [];
       for (const [i, t] of texts.entries()) {

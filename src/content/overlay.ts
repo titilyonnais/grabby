@@ -381,40 +381,49 @@ function ytRowIn(row: Element, video: () => HTMLVideoElement | null): YtRow {
    * on the next button, a gap on the row): the same space on both sides as between the thumbs
    * and the button that follows them.
    */
-  // Measured from where things are, minus the margins already given: nothing is written when
-  // nothing changes, so the row is never laid out again for nothing (YouTube watches it too).
+  // Read only from YouTube's own styles (the row's gap, the next button's margin), never from
+  // where Grabby ends up: what is written never changes what is read, so it can't grow, and
+  // each side stays between 0 and 8 px. Nothing is written when nothing changes.
+  const WANT = 8;
   const margin = (side: 'marginLeft' | 'marginRight', px: number) => {
-    const v = `${Math.max(0, Math.round(px))}px`;
+    const v = `${Math.min(WANT, Math.max(0, Math.round(px)))}px`;
     if (el.style[side] !== v) el.style[side] = v;
   };
+  const px = (v: string) => parseFloat(v) || 0;
   const space = () => {
-    const next = el.nextElementSibling;
-    const left = thumbs?.getBoundingClientRect();
-    if (!next || !left) {
-      margin('marginLeft', 8);
-      margin('marginRight', 0);
-      return;
-    }
-    const want = 8;
-    const me = el.getBoundingClientRect();
-    const has = getComputedStyle(el);
-    const gapLeft = me.left - left.right - (parseFloat(has.marginLeft) || 0);
-    const gapRight = next.getBoundingClientRect().left - me.right - (parseFloat(has.marginRight) || 0);
-    margin('marginLeft', want - gapLeft);
-    margin('marginRight', want - gapRight);
+    const gap = px(getComputedStyle(row).columnGap);
+    let next = el.nextElementSibling;
+    while (next && getComputedStyle(next).display === 'none') next = next.nextElementSibling;
+    margin('marginLeft', WANT - gap - (thumbs ? px(getComputedStyle(thumbs).marginRight) : 0));
+    margin('marginRight', next ? WANT - gap - px(getComputedStyle(next).marginLeft) : 0);
   };
-  // Too narrow for the word: the icon only, like YouTube does with its own buttons. The word's
-  // width is kept from when it was shown, so the choice is made without trying it again.
-  let wide = 0;
+  // Too narrow for the word: the icon only, like YouTube does with its own buttons. Too narrow
+  // means the row spills out of itself, or pushes YouTube's « ⋯ » out of its menu, or out of the
+  // window. Decided afresh each time from the word shown (in the same task, so never painted):
+  // nothing carried over, so it comes back as soon as there is room again.
+  const menuBox = row.parentElement ?? row;
+  const column = row.closest('ytd-watch-metadata');
+  const spill = () => {
+    const box = menuBox.getBoundingClientRect();
+    const end = menuBox.scrollWidth;
+    return Math.max(
+      row.scrollWidth - row.clientWidth,
+      end - menuBox.clientWidth,
+      // Where the menu's content ends, left to right or right to left.
+      box.left + end - document.documentElement.clientWidth,
+      end - box.right,
+    );
+  };
   const fit = () => {
     space();
     const compact = seg.classList.contains('compact');
-    if (!compact) wide = seg.getBoundingClientRect().width;
-    const short = compact ? row.scrollWidth + (wide - seg.getBoundingClientRect().width) > row.clientWidth + 1 : row.scrollWidth > row.clientWidth + 1;
-    if (short !== compact) seg.classList.toggle('compact', short);
+    if (compact) seg.classList.remove('compact');
+    if (spill() > 1) seg.classList.add('compact');
   };
   const sizes = new ResizeObserver(fit);
   sizes.observe(row);
+  if (menuBox !== row) sizes.observe(menuBox);
+  if (column) sizes.observe(column);
   // YouTube's theme changed (light / dark): its colours again.
   const theme = new MutationObserver(paint);
   theme.observe(document.documentElement, { attributes: true, attributeFilter: ['dark'] });

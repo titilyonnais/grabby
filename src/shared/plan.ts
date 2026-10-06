@@ -115,6 +115,8 @@ export interface Plan {
   finish?: Finish;
   /** The words the processing writes, in the browser's language. */
   words?: FinishWords;
+  /** Chrome's own translator and summarizer may be asked (the user turned them on). */
+  chromeAi?: boolean;
   /** A live stream, recorded until stopped or for at most `max` seconds. */
   live?: { max: number };
 }

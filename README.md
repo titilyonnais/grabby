@@ -17,28 +17,29 @@
 
 ---
 
-<!-- release:2.3.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
-## Nouveautés de la version 2.3.0
+<!-- release:2.3.1 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
+## Nouveautés de la version 2.3.1
 
-- **Boutons YouTube identiques au pixel près** : le léger dégradé et le gris au survol sont
-  maintenant ceux de YouTube (mesurés pixel par pixel à côté de « Partager », en clair et en
-  sombre : le nôtre était plus clair). L'espace à droite n'est plus doublé : 8 px de chaque
-  côté, comme entre les boutons de YouTube.
-- **Supprimé, la bulle ronde sur les vidéos et les miniatures** : plus rien n'est dessiné
-  sur une vidéo ni sur une miniature, nulle part. Les boutons sous le lecteur YouTube, le
-  clic droit et les raccourcis restent.
-- **Cartes allégées** : une carte ouverte montre l'essentiel (qualité, format,
-  **Télécharger**). Sous-titres, langues audio, chapitres, extrait, retouches et Plus tard
-  sont rangés dans **Plus d'options**, dont la ligne dit ce qui est activé. « Suivre la
-  chaîne » quitte les cartes de vidéo (il reste sur les chaînes et playlists, et dans la
-  page complète).
-- **Pause, Arrêter et Annuler** ont la même couleur (celle de **Télécharger**), et **Arrêter
-  et enregistrer** est aussi là quand la carte est repliée.
-- **Réglages, IA locale** redessinée : chaque fonction sur une ligne avec son état, rien ne
-  dépasse ; **Noms et dossiers** : la note du bas respecte les marges.
-- **Corrigé, deux erreurs** : « Extension context invalidated » (scanner.js) sur YouTube
-  après une mise à jour, et « The feature flag gating model execution was disabled » dans
-  la popup. Vérifié dans un vrai navigateur : aucune erreur sur aucun écran.
+- **Corrigé, le défilement horizontal sans fin sur YouTube** : l'espace à droite de
+  **Télécharger | ⌄** pouvait grandir sans arrêt et pousser la page vers la droite. Il est
+  maintenant fixe (8 px au plus de chaque côté), quelle que soit la largeur de la fenêtre.
+  Sur une fenêtre étroite, la pilule passe à l'icône seule au lieu de faire déborder la page.
+- **Corrigé, les deux messages dans les erreurs de l'extension** :
+  - « The feature flag gating model execution was disabled » : c'est Chrome qui l'écrit
+    dès qu'on lui demande si son IA intégrée est là alors qu'il l'a coupée. Grabby ne lui
+    demande plus rien sauf si tu actives le nouveau réglage **IA de Chrome** (désactivé par
+    défaut) ;
+  - « No language specified - defaulting to English » : avec **Détecter**, Whisper prenait
+    en fait l'anglais pour toute vidéo. Grabby détecte maintenant vraiment la langue parlée
+    avant de transcrire (une vidéo en français est transcrite en français).
+- **Plus d'options** : **Extrait**, **Retouches** et **Plus tard** se partagent toute la
+  largeur, en colonnes égales. Le nombre de retouches s'affiche dans une pastille à la
+  place de l'icône : plus rien ne bouge ni ne passe à la ligne.
+- **Retiré** de la carte : « Grabby télécharge cette vidéo en arrière-plan… ».
+- **Réglages** : la phrase sur la confidentialité est centrée, la version juste en dessous.
+
+**Rappel de la 2.3.0** : boutons YouTube identiques au pixel près, plus aucune bulle sur
+les vidéos ni les miniatures, cartes allégées avec **Plus d'options**.
 
 **Rappel de la 2.2.0** : pilule **Télécharger | ⌄** sous le lecteur YouTube avec son menu
 (qualité, son seul, photo, Plus tard, Grabby), plus de panne après une mise à jour.
@@ -92,8 +93,8 @@ suppression), **Lire l'extrait** en boucle et une interface à une seule couleur
   **traduction** des sous-titres dans 20 langues, **résumé et mots-clés** avec chapitres
   proposés. Les modèles se téléchargent une fois, seulement si tu l'acceptes.
 - **Règles automatiques** par site : vidéo ou son, format, qualité, sous-titres, dossier.
-- **Bouton sur les vidéos** : un clic au survol (et sous le lecteur YouTube) pour
-  télécharger sans ouvrir Grabby.
+- **Boutons sous le lecteur YouTube** : **Télécharger | ⌄** pour télécharger sans ouvrir
+  Grabby.
 - **Page complète** : **bibliothèque** avec lecteur, **liste d'adresses** à télécharger
   d'un coup, **chaînes YouTube suivies** (leurs nouvelles vidéos s'enregistrent seules),
   **atelier** pour les fichiers de ton ordinateur, **assembler** des vidéos bout à bout,
@@ -279,8 +280,9 @@ Le détail de chaque version est dans le [journal des modifications](CHANGELOG.m
   **compresser à une taille** (10, 25, 50 ou 100 Mo), **sous-titres incrustés** dans
   l'image, **un fichier par chapitre** ; **aperçu** de l'extrait avant de télécharger.
 - **IA locale** (modèles téléchargés une fois, avec ton accord ; rien n'est envoyé) :
-  **transcription** de ce qui est dit (Whisper), **traduction** des sous-titres (traducteur
-  du navigateur ou Opus-MT), **résumé, mots-clés et chapitres proposés**.
+  **transcription** de ce qui est dit (Whisper, langue détectée ou choisie), **traduction**
+  des sous-titres (Opus-MT, ou le traducteur de Chrome si tu actives **IA de Chrome**),
+  **résumé, mots-clés et chapitres proposés**.
 - **Règles automatiques** par site (vidéo ou son, format, qualité, sous-titres, dossier),
   suivies aussi par le clic droit, le raccourci, le bouton sur les vidéos et la liste
   d'adresses.
@@ -524,6 +526,7 @@ mises à jour.
 | Page complète, Panneau latéral, Revoir la visite | Trois boutons sous la liste des rubriques |
 | Réglages synchronisés | Réglages et règles suivent ton compte de navigateur sur tes autres ordinateurs (désactivé par défaut) |
 | IA locale | Autorise le téléchargement unique des modèles (désactivé par défaut) ; montre chaque modèle, s'il est prêt et sa taille, avec Tester la transcription et Supprimer les modèles |
+| IA de Chrome | Laisse Grabby essayer d'abord le traducteur et le résumeur intégrés à Chrome (désactivé par défaut : demander à Chrome suffit à lui faire écrire un avertissement quand il a coupé son IA ; si c'est le cas, le réglage se désactive tout seul) |
 | Prévenir des nouvelles versions | Une fois par jour, demande à GitHub la dernière version (désactivé par défaut) |
 | Installer la dernière version | Bouton Mettre à jour : télécharge, vérifie et installe la dernière version (Windows, avec l'assistant) |
 

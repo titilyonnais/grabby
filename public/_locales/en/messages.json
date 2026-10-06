@@ -105,7 +105,6 @@
   "justNow": { "message": "just now" },
   "formatLabel": { "message": "Format" },
   "redownload": { "message": "Download again" },
-  "hiddenHint": { "message": "Grabby downloads this video in the background: keep watching as usual. You'll get a message when it's done." },
   "notifyDone": { "message": "Download complete" },
   "notifyFailed": { "message": "Download failed" },
   "set_video": { "message": "Video format" },
@@ -706,9 +705,9 @@
   "aiRowTranscribe": {"message": "Transcription"},
   "aiRowTranscribeBy": {"message": "Whisper base (OpenAI) listens and writes it down"},
   "aiRowTranslate": {"message": "Translation"},
-  "aiRowTranslateBy": {"message": "Chrome's translator when ready, otherwise Opus-MT"},
+  "aiRowTranslateBy": {"message": "Opus-MT, or Chrome's translator when it is on and ready"},
   "aiRowSummary": {"message": "Summary"},
-  "aiRowSummaryBy": {"message": "Chrome's summarizer, otherwise a simple summary made by Grabby"},
+  "aiRowSummaryBy": {"message": "A simple summary made by Grabby, or Chrome's summarizer when it is on and ready"},
   "aiReady": {"message": "Ready, $P1$", "placeholders": {"p1": {"content": "$1"}}},
   "aiNotYet": {"message": "$P1$ MB to download", "placeholders": {"p1": {"content": "$1"}}},
   "aiPair": {"message": "$P1$ to $P2$", "placeholders": {"p1": {"content": "$1"}, "p2": {"content": "$2"}}},
@@ -756,5 +755,8 @@
   "moreAudio": {"message": "$P1$ audio tracks", "placeholders": {"p1": {"content": "$1"}}},
   "moreSubs": {"message": "subtitles"},
   "moreCut": {"message": "clip"},
-  "moreFinish": {"message": "$P1$ edits", "placeholders": {"p1": {"content": "$1"}}}
+  "moreFinish": {"message": "$P1$ edits", "placeholders": {"p1": {"content": "$1"}}},
+  "set_chrome_ai": {"message": "Chrome's AI"},
+  "set_chrome_ai_hint": {"message": "Off by default. When on, Grabby first tries the translator and summarizer built into Chrome, when they are ready."},
+  "aiChromeOff": {"message": "Chrome has turned its AI off in this browser: Grabby uses its own models."}
 }

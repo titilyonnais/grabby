@@ -206,6 +206,10 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
   const whole = (c: Clip) => !!item.duration && c.start <= 0 && c.end >= Math.floor(item.duration);
   const chosen = trimming && parts ? parts.filter((c) => !whole(c) || parts.length > 1) : [];
   const cut = chosen.length === 1 ? chosen[0]! : null;
+  // Extrait, Lire l'extrait, Retouches, Plus tard: as many equal columns as there are (two by two
+  // when they are four), filling the card's width.
+  const actionCount = (clippable ? 1 : 0) + (!item.audioOnly && cut ? 1 : 0) + 1 + (/^https?:/i.test(item.pageUrl) ? 1 : 0);
+  const evenColumns = actionCount === 4 ? 2 : actionCount;
   // A format the chosen quality can't go in (WebM for a shrunk picture, MOV back on a VP9
   // source): back to the preferred one, so what is shown is what gets sent.
   const formatOk = isAudioFormat(format) || (isImageFormat(format) && !item.audioOnly) || videoFormats.includes(format as VideoFormat);
@@ -661,22 +665,34 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
                     </label>
                   )}
                   {!image && (
-                    <div class="card__actions">
+                    <div class="card__actions card__actions--even" style={`--n:${evenColumns}`}>
                       {clippable && (
                         <button class="trim-toggle" aria-expanded={trimming} onClick={() => setTrimming((v) => !v)}>
                           <Icon name={trimming ? 'close' : 'scissors'} size={16} />
-                          {trimming ? t('trimWhole') : t('trimOpen')}
+                          <span class="trim-toggle__label">{trimming ? t('trimWhole') : t('trimOpen')}</span>
                         </button>
                       )}
                       {!item.audioOnly && cut && (
                         <button class="trim-toggle" aria-expanded={previewUrl ? previewing : undefined} onClick={preview} title={previewUrl ? t('previewHere') : t('previewInPage')}>
                           <Icon name={previewing ? 'close' : 'play'} size={16} />
-                          {previewing ? t('previewStop') : t('preview')}
+                          <span class="trim-toggle__label">{previewing ? t('previewStop') : t('preview')}</span>
                         </button>
                       )}
-                      <button class="trim-toggle" aria-expanded={finishing} onClick={() => setFinishing((v) => !v)}>
-                        <Icon name={finishing ? 'close' : 'wand'} size={16} />
-                        {finishing ? t('finishClose') : finishCount(finish) ? t('finishOpenCount', String(finishCount(finish))) : t('finishOpen')}
+                      <button
+                        class="trim-toggle"
+                        aria-expanded={finishing}
+                        aria-label={!finishing && finishCount(finish) ? t('finishOpenCount', String(finishCount(finish))) : undefined}
+                        onClick={() => setFinishing((v) => !v)}
+                      >
+                        {/* How many retouches are on, in place of the icon: the button keeps its width. */}
+                        {!finishing && finishCount(finish) > 0 ? (
+                          <span class="trim-toggle__count" aria-hidden="true">
+                            {finishCount(finish)}
+                          </span>
+                        ) : (
+                          <Icon name={finishing ? 'close' : 'wand'} size={16} />
+                        )}
+                        <span class="trim-toggle__label">{finishing ? t('finishClose') : t('finishOpen')}</span>
                       </button>
                       {/^https?:/i.test(item.pageUrl) && (
                         <button
@@ -693,7 +709,7 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
                           }}
                         >
                           <Icon name={kept ? 'check' : 'later'} size={16} />
-                          {kept ? t('laterKept') : t('laterAdd')}
+                          <span class="trim-toggle__label">{kept ? t('laterKept') : t('laterAdd')}</span>
                         </button>
                       )}
                     </div>
@@ -740,7 +756,7 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
                   )}
                 </div>
               )}
-              {!showJob && item.kind === 'capture' && <p class="hint">{t(hidden ? 'hiddenHint' : 'captureHint')}</p>}
+              {!showJob && item.kind === 'capture' && !hidden && <p class="hint">{t('captureHint')}</p>}
               {showJob ? (
                 <>
                   <JobStack job={job} others={others} send={send} listed={(j) => inQueue.includes(j.id)} />

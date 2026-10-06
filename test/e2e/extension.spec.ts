@@ -1840,6 +1840,33 @@ test('2.0: on YouTube, Grabby sits right after the thumbs, as YouTube buttons; n
   await page.waitForTimeout(3500);
   await expect(page.locator('grabby-yt')).toHaveCount(1);
   expect(errors).toEqual([]);
+  // Never pushes anything to the right: 8 px on each side, and still 8 px at most when the
+  // button after it is hidden or put on the next line (2.3.0 grew its margin without end then).
+  const spacing = () =>
+    page.evaluate(() => {
+      const g = document.querySelector('grabby-yt')!;
+      const cs = getComputedStyle(g);
+      return { left: cs.marginLeft, right: cs.marginRight, page: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+    });
+  expect(await spacing()).toEqual({ left: '8px', right: '8px', page: 0 });
+  await page.evaluate(() => {
+    document.getElementById('share')!.style.display = 'none';
+  });
+  await page.waitForTimeout(600);
+  const hidden = await spacing();
+  expect(hidden.left).toBe('8px');
+  expect(parseFloat(hidden.right)).toBeLessThanOrEqual(8);
+  expect(hidden.page).toBe(0);
+  await page.evaluate(() => {
+    document.getElementById('share')!.style.display = '';
+    const row = document.getElementById('top-level-buttons-computed')!;
+    row.style.flexWrap = 'wrap';
+    row.style.width = '330px';
+  });
+  const wrapped = await spacing();
+  await page.waitForTimeout(1500);
+  expect(await spacing()).toEqual(wrapped);
+  expect(wrapped).toEqual({ left: '8px', right: '8px', page: 0 });
   // The bubble stays away from YouTube's player.
   const v = (await page.locator('video').boundingBox())!;
   await page.mouse.move(v.x + v.width / 2, v.y + v.height / 2);
@@ -1854,19 +1881,47 @@ test('no error anywhere: every screen of the popup, the settings, the full page 
   const errors: string[] = [];
   const watch = (p: Page) => {
     p.on('pageerror', (e) => errors.push(`${p.url()}: ${e.message}`));
-    // Grabby's own messages: its pages, and its script in the site's page (the test site's
-    // missing favicon is not one).
-    p.on('console', (m) => m.type() === 'error' && (p.url().startsWith('chrome-extension:') || m.location().url.startsWith('chrome-extension:')) && errors.push(`${p.url()}: ${m.text()}`));
+    // Grabby's own messages, warnings included (Chrome lists them with the extension's errors):
+    // its pages, and its script in the site's page (the test site's missing favicon is not one).
+    p.on('console', (m) => (m.type() === 'error' || m.type() === 'warning') && (p.url().startsWith('chrome-extension:') || m.location().url.startsWith('chrome-extension:')) && errors.push(`${p.url()}: ${m.type()} ${m.text()}`));
   };
   context.on('page', watch);
+  // Chrome with its own AI turned off: asking it anything writes a warning, as Chrome does.
+  await context.addInitScript(() => {
+    const off = () => {
+      console.warn('The feature flag gating model execution was disabled.');
+      return Promise.resolve('unavailable');
+    };
+    for (const name of ['Translator', 'Summarizer', 'LanguageDetector', 'LanguageModel']) {
+      Object.defineProperty(self, name, { configurable: true, value: { availability: off, create: () => Promise.reject(new Error('off')) } });
+    }
+  });
   const { page, tabId } = await openFixture(context, sw, 'direct.html');
   watch(page);
   await expect.poll(() => badge(sw, tabId)).toBe('1');
   const popup = await openPopup(context, extId, tabId);
-  // The card, its options, a download.
+  // The card, its options (Clip, Retouch, Later: equal columns on one line, a number of
+  // retouches changes nothing), a download.
   await more(popup);
+  const row = () =>
+    popup.locator('.card__actions--even > button').evaluateAll((bs) => bs.map((b) => { const r = b.getBoundingClientRect(); return { top: Math.round(r.top), w: Math.round(r.width) }; }));
+  const even = async () => {
+    const r = await row();
+    expect(r.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(r.map((b) => b.top)).size).toBe(1);
+    expect(Math.max(...r.map((b) => b.w)) - Math.min(...r.map((b) => b.w))).toBeLessThanOrEqual(1);
+  };
+  await even();
   await popup.getByRole('button', { name: /^Retouch/ }).click();
-  await popup.getByRole('button', { name: /^Retouch|^Close/ }).first().click();
+  await popup.getByRole('switch', { name: 'Without sound' }).check();
+  await popup.getByRole('switch', { name: /Mirror/ }).check();
+  await popup.getByRole('button', { name: 'Close' }).click();
+  await expect(popup.getByRole('button', { name: 'Retouch (2)' })).toBeVisible();
+  await even();
+  await popup.getByRole('button', { name: 'Retouch (2)' }).click();
+  await popup.getByRole('switch', { name: 'Without sound' }).uncheck();
+  await popup.getByRole('switch', { name: /Mirror/ }).uncheck();
+  await popup.getByRole('button', { name: 'Close' }).click();
   const before = await completed(sw);
   await popup.getByRole('button', { name: 'Download', exact: true }).click();
   await nextDownload(sw, before);
@@ -1878,6 +1933,9 @@ test('no error anywhere: every screen of the popup, the settings, the full page 
   for (let i = 0; i < sections; i++) {
     await popup.locator('.smenu__item').nth(i).click();
     await popup.waitForTimeout(400);
+    // The local AI: Chrome's own is never asked unless turned on (asking is enough for Chrome
+    // to write a warning when it has it off); the version sits under the note at the bottom.
+    if (await popup.getByText("Chrome's AI", { exact: true }).isVisible()) await expect(popup.getByRole('switch', { name: /Chrome's AI/ })).not.toBeChecked();
     await popup.keyboard.press('Escape');
     await popup.waitForTimeout(200);
   }

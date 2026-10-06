@@ -45,7 +45,7 @@ export function FilePick({ multiple, accept, onFiles, label }: { multiple?: bool
  * "Atelier": a video or sound of the computer, edited with a live preview (the picture turns,
  * is cropped and plays at the new speed as it will be), made smaller, given subtitles, summed up.
  */
-export function Workshop({ aiAllowed, onAllowAi }: { aiAllowed: boolean; onAllowAi: () => void }) {
+export function Workshop({ aiAllowed, chromeAi, onAllowAi }: { aiAllowed: boolean; chromeAi: boolean; onAllowAi: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [url, setUrl] = useState('');
   const [picture, setPicture] = useState<string | undefined>();
@@ -97,7 +97,7 @@ export function Workshop({ aiAllowed, onAllowAi }: { aiAllowed: boolean; onAllow
     setResult(null);
     setWork({ step: 'load', p: 0 });
     try {
-      const outs = await runWorkshop(file, finish, { ...(subs ? { subs } : {}), signal: ac.signal, report: (step, p) => setWork({ step, p }) });
+      const outs = await runWorkshop(file, finish, { ...(subs ? { subs } : {}), chromeAi, signal: ac.signal, report: (step, p) => setWork({ step, p }) });
       await save(outs);
       setResult({ ok: true, files: outs });
     } catch (err) {

@@ -141,7 +141,7 @@ export async function finishFile(
       if (src && from) {
         o.report('translate', 0);
         try {
-          const cues = await ai.translate(src.cues, from, to, aiReport('translate'), signal);
+          const cues = await ai.translate(src.cues, from, to, aiReport('translate'), signal, !!o.plan.chromeAi);
           if (cues?.length) texts.push({ cues, lang: to, label: say('aiTranslated', langName(to)), separate: true, made: 'translated' });
         } catch (e) {
           if (signal.aborted) throw e;
@@ -163,7 +163,7 @@ export async function finishFile(
       const all = sentences.map((s) => s.text).join(' ');
       const lang = baseLang(src.lang) ?? guessLang(all);
       const duration = info.duration ?? src.cues[src.cues.length - 1]!.end;
-      const own = await builtinSummary(all, lang);
+      const own = o.plan.chromeAi ? await builtinSummary(all, lang) : null;
       proposed = o.plan.chapters?.length ? [] : proposeChapters(sentences, duration, lang);
       notes.push({
         tag: say('summaryTag'),

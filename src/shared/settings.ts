@@ -44,6 +44,13 @@ export interface Settings {
   overlayButton: boolean;
   /** The user agreed to download the local AI's models (transcription, translation). */
   aiModels: boolean;
+  /**
+   * Chrome's own AI (its translator, Gemini Nano's summarizer) may be used. Off by default:
+   * merely asking Chrome whether it has it writes a warning in the extension's errors when
+   * Chrome has it turned off (« The feature flag gating model execution was disabled »), so
+   * Grabby never asks unless told to.
+   */
+  chromeAi: boolean;
   /** How many downloads run at the same time (the others wait their turn). */
   parallel: number;
   /** Every file read again once made: a damaged one is made again. */
@@ -77,6 +84,7 @@ export const DEFAULT_SETTINGS: Settings = {
   rules: [],
   overlayButton: true,
   aiModels: false,
+  chromeAi: false,
   parallel: 2,
   verify: true,
   sync: false,

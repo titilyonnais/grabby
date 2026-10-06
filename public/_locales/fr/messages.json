@@ -105,7 +105,6 @@
   "justNow": { "message": "à l'instant" },
   "formatLabel": { "message": "Format" },
   "redownload": { "message": "Télécharger à nouveau" },
-  "hiddenHint": { "message": "Grabby télécharge cette vidéo en arrière-plan : tu peux continuer à la regarder normalement. Un message te prévient quand c'est fini." },
   "notifyDone": { "message": "Téléchargement terminé" },
   "notifyFailed": { "message": "Échec du téléchargement" },
   "set_video": { "message": "Format vidéo" },
@@ -706,9 +705,9 @@
   "aiRowTranscribe": {"message": "Transcription"},
   "aiRowTranscribeBy": {"message": "Whisper base (OpenAI) écoute le son et l'écrit"},
   "aiRowTranslate": {"message": "Traduction"},
-  "aiRowTranslateBy": {"message": "Le traducteur de Chrome s'il est prêt, sinon Opus-MT"},
+  "aiRowTranslateBy": {"message": "Opus-MT, ou le traducteur de Chrome s'il est activé et prêt"},
   "aiRowSummary": {"message": "Résumé"},
-  "aiRowSummaryBy": {"message": "Le résumeur de Chrome, sinon un résumé simple fait par Grabby"},
+  "aiRowSummaryBy": {"message": "Un résumé simple fait par Grabby, ou le résumeur de Chrome s'il est activé et prêt"},
   "aiReady": {"message": "Prête, $P1$", "placeholders": {"p1": {"content": "$1"}}},
   "aiNotYet": {"message": "$P1$ Mo à télécharger", "placeholders": {"p1": {"content": "$1"}}},
   "aiPair": {"message": "$P1$ vers $P2$", "placeholders": {"p1": {"content": "$1"}, "p2": {"content": "$2"}}},
@@ -756,5 +755,8 @@
   "moreAudio": {"message": "$P1$ pistes audio", "placeholders": {"p1": {"content": "$1"}}},
   "moreSubs": {"message": "sous-titres"},
   "moreCut": {"message": "extrait"},
-  "moreFinish": {"message": "$P1$ retouches", "placeholders": {"p1": {"content": "$1"}}}
+  "moreFinish": {"message": "$P1$ retouches", "placeholders": {"p1": {"content": "$1"}}},
+  "set_chrome_ai": {"message": "IA de Chrome"},
+  "set_chrome_ai_hint": {"message": "Désactivée par défaut. Activée, Grabby essaie d'abord le traducteur et le résumeur intégrés à Chrome, s'ils sont prêts."},
+  "aiChromeOff": {"message": "Chrome a coupé son IA dans ce navigateur : Grabby utilise ses propres modèles."}
 }

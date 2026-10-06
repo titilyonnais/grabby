@@ -56,7 +56,7 @@ export async function forgetModels(): Promise<void> {
 export async function builtinAi(): Promise<{ translator: string; summarizer: string }> {
   const g = globalThis as {
     Translator?: { availability(o: object): Promise<string> };
-    Summarizer?: { availability(): Promise<string> };
+    Summarizer?: { availability(o: object): Promise<string> };
   };
   // Chrome can refuse outright (« The feature flag gating model execution was disabled »),
   // sometimes by throwing at once rather than rejecting: either way, not there.
@@ -68,6 +68,9 @@ export async function builtinAi(): Promise<{ translator: string; summarizer: str
     }
   };
   const translator = g.Translator ? await ask(() => g.Translator!.availability({ sourceLanguage: 'en', targetLanguage: 'fr' })) : 'unavailable';
-  const summarizer = g.Summarizer ? await ask(() => g.Summarizer!.availability()) : 'unavailable';
+  // Asked for a language it writes (else Chrome warns that none was given).
+  const ui = (typeof chrome !== 'undefined' && chrome.i18n?.getUILanguage?.().slice(0, 2)) || 'en';
+  const outputLanguage = ['de', 'en', 'es', 'fr', 'ja'].includes(ui) ? ui : 'en';
+  const summarizer = g.Summarizer ? await ask(() => g.Summarizer!.availability({ type: 'key-points', format: 'plain-text', length: 'medium', outputLanguage })) : 'unavailable';
   return { translator, summarizer };
 }

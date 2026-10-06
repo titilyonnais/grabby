@@ -13,6 +13,76 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 ## [Non publié]
 
+## [2.3.1] — 2026-10-06
+
+Un correctif : la page YouTube ne défile plus sans fin vers la droite, les deux messages
+signalés disparaissent de la liste d'erreurs de l'extension, et la carte « Plus d'options »
+est rangée. Cette fois, la vérification lit la vraie liste d'erreurs de Chrome
+(chrome://extensions), avertissements compris.
+
+### Corrigé
+- **Défilement horizontal sans fin sous les vidéos YouTube.** En 2.3.0, l'espace autour de
+  **Télécharger | ⌄** était mesuré d'après sa propre position : quand le bouton suivant de
+  YouTube était caché ou passait à la ligne (fenêtre étroite, compte connecté avec plus de
+  boutons), chaque mesure trouvait l'écart trop petit, élargissait la marge, ce qui
+  relançait la mesure… La marge grandissait sans fin (reproduit : 156 px et 208 px au lieu
+  de 8) et poussait la page vers la droite. L'espace est maintenant lu uniquement dans les
+  styles de YouTube (l'écart de sa rangée, la marge du bouton suivant) et borné entre 0 et
+  8 px : ce que Grabby écrit ne change plus ce qu'il lit.
+- **Débordement sur une fenêtre étroite.** À 500 px, la pilule poussait le bouton « ⋯ » de
+  YouTube hors de la page (528 px de large pour 500). Grabby regarde maintenant si son menu
+  ou la fenêtre débordent, pas seulement sa rangée, et passe à l'icône seule ; il revient au
+  mot dès qu'il y a la place (la 2.3.0 restait en icône seule).
+- **« The feature flag gating model execution was disabled »** (popup.html). Ce n'est pas
+  une erreur de Grabby que l'on peut attraper : c'est Chrome qui écrit cet avertissement dans
+  la liste de l'extension chaque fois qu'on lui demande si son IA intégrée (traducteur,
+  résumeur Gemini Nano) est disponible alors qu'il l'a coupée. La rubrique IA locale le
+  demandait à chaque ouverture. Grabby ne demande plus rien à Chrome sauf si le nouveau
+  réglage **IA de Chrome** est activé ; s'il l'est et que Chrome répond qu'il a coupé son
+  IA, le réglage se désactive seul et le dit, pour que l'avertissement ne revienne pas. La
+  demande précise aussi la langue du résumé (Chrome avertissait qu'elle manquait).
+- **« No language specified - defaulting to English (en) »** (transformers.js). Avec
+  **Détecter**, aucune langue n'était donnée à Whisper, et transformers.js prend alors
+  l'anglais sans rien détecter : une vidéo en français était transcrite comme de l'anglais.
+  Grabby détecte maintenant la langue lui-même (Whisper écoute jusqu'à trois passages de
+  30 s, au début, au milieu et vers la fin d'un long son) puis transcrit dans cette langue.
+  Vérifié sur de vraies voix : le français et l'anglais sont reconnus et bien transcrits.
+  transformers.js n'écrit plus rien dans la console.
+- **Plus d'options, « Retouches (2) » renvoyait « Plus tard » à la ligne.** Le nombre de
+  retouches s'affiche maintenant dans une pastille à la place de l'icône : le bouton garde
+  sa largeur.
+
+### Modifié
+- **Plus d'options** : **Extrait**, **Lire l'extrait**, **Retouches** et **Plus tard** se
+  partagent toute la largeur de la carte en colonnes égales (deux par deux quand ils sont
+  quatre), le texte centré.
+- **Réglages** : en bas, la phrase sur la confidentialité est centrée et la version
+  (« Grabby 2.3.1 ») est juste en dessous, au lieu d'être collée à droite.
+
+### Ajouté
+- Réglage **IA de Chrome** (rubrique IA locale), désactivé par défaut : Grabby essaie
+  d'abord le traducteur et le résumeur intégrés à Chrome, quand ils sont prêts. Il vaut
+  pour les téléchargements comme pour l'Atelier de la page complète.
+
+### Supprimé
+- Dans la carte d'une vidéo enregistrée en arrière-plan, le texte « Grabby télécharge
+  cette vidéo en arrière-plan : tu peux continuer à la regarder normalement. Un message te
+  prévient quand c'est fini. »
+
+### Vérifié
+- Sur le vrai youtube.com, en clair et en sombre, à 1400, 1100, 900, 700 et 500 px de large,
+  après une navigation vers une autre vidéo, avec le bouton suivant caché puis passé à la
+  ligne : marges de 8 px au plus, stables pendant 8 s, page jamais plus large que sans
+  Grabby.
+- La vraie liste d'erreurs de Chrome (chrome://extensions, mode développeur), lue après la
+  popup, ses options, les 7 rubriques de réglages, les 9 rubriques de la page complète, le
+  panneau latéral et youtube.com à quatre largeurs : vide. Le même relevé montre bien
+  l'avertissement de Chrome quand **IA de Chrome** est activé (le relevé fonctionne).
+- Le test « aucune erreur » compte maintenant aussi les avertissements, simule un Chrome
+  qui a coupé son IA, fait des retouches et vérifie que les boutons restent sur une ligne
+  en colonnes égales ; il échoue bien sur l'ancien comportement. Le test YouTube vérifie
+  les marges avec le bouton suivant caché ou passé à la ligne.
+
 ## [2.3.0] — 2026-10-06
 
 Les boutons sous YouTube sont maintenant identiques à ceux de YouTube au pixel près, la bulle
@@ -1348,7 +1418,8 @@ Première version.
 - Capture YouTube expérimentale.
 - Interface en français et en anglais, thème clair et sombre.
 
-[Non publié]: https://github.com/titilyonnais/grabby/compare/v2.3.0...HEAD
+[Non publié]: https://github.com/titilyonnais/grabby/compare/v2.3.1...HEAD
+[2.3.1]: https://github.com/titilyonnais/grabby/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/titilyonnais/grabby/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/titilyonnais/grabby/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/titilyonnais/grabby/compare/v2.0.0...v2.1.0
