@@ -58,7 +58,8 @@ async function ask(dir: string, message: unknown, env: Record<string, string>): 
   return JSON.parse(all.subarray(4).toString('utf8'));
 }
 
-describe.skipIf(!SHELL)('the update helper', () => {
+// PowerShell can take seconds to start on a cold machine (CI).
+describe.skipIf(!SHELL)('the update helper', { timeout: 30_000 }, () => {
   let server: Server;
   let base = '';
   let release: { name: string; body: Uint8Array; digest: string } = { name: '', body: new Uint8Array(), digest: '' };
