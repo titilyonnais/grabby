@@ -31,11 +31,19 @@ export const MAX_LIST = 500;
 
 /** Qualities a whole list can be recorded in (YouTube's names), best first. */
 export const LIST_QUALITIES = [
+  { id: 'hd2160', label: '2160p (4K)', height: 2160 },
+  { id: 'hd1440', label: '1440p', height: 1440 },
   { id: 'hd1080', label: '1080p', height: 1080 },
   { id: 'hd720', label: '720p', height: 720 },
   { id: 'large', label: '480p', height: 480 },
   { id: 'medium', label: '360p', height: 360 },
 ] as const;
+
+/** What a list or a followed channel is recorded in, unless chosen otherwise. */
+export const LIST_DEFAULT = 'hd1080';
+
+/** A LIST_QUALITIES entry (the default one for an unknown id). */
+export const listQuality = (id: string) => LIST_QUALITIES.find((x) => x.id === id) ?? LIST_QUALITIES.find((x) => x.id === LIST_DEFAULT)!;
 
 const ID = /^[\w-]{11}$/;
 
@@ -130,7 +138,7 @@ export function readYtList(doc: Document, href: string): YtList | null {
  * the whole list (YouTube gives the nearest one when it doesn't have it).
  */
 export function listItem(entry: YtEntry, tabId: number, quality: string, title = entry.title): MediaItem {
-  const q = LIST_QUALITIES.find((x) => x.id === quality) ?? LIST_QUALITIES[0];
+  const q = listQuality(quality);
   const watch = `https://www.youtube.com/watch?v=${entry.id}`;
   return {
     id: hashId(`ytlist:${entry.id}`),
@@ -142,8 +150,9 @@ export function listItem(entry: YtEntry, tabId: number, quality: string, title =
     title,
     thumbnail: `https://i.ytimg.com/vi/${entry.id}/mqdefault.jpg`,
     ...(entry.duration ? { duration: entry.duration } : {}),
-    // H.264 up to 1080p (every video has it): the most compatible files.
-    variants: [{ id: q.id, label: q.label, height: q.height, url: '', codecs: 'avc1' }],
+    // H.264 up to 1080p (every video has it): the most compatible files. Above, YouTube only
+    // has VP9 (kept as it is in an MP4 too); a video without that quality gets its best one.
+    variants: [{ id: q.id, label: q.label, height: q.height, url: '', codecs: q.height > 1080 ? 'vp9' : 'avc1' }],
     audioTracks: [],
     protection: 'none',
     live: false,

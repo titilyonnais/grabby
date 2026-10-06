@@ -393,6 +393,11 @@ test('settings open as a full page; the file name is built from checkboxes', asy
   await popup.getByRole('button', { name: 'Settings' }).click();
   await expect(popup.getByRole('heading', { name: 'Settings' })).toBeVisible();
   await expect(popup.getByRole('heading', { name: 'Sample: direct clip' })).toHaveCount(0);
+  // A menu of sections, each with what is set in it.
+  await expect(popup.locator('.smenu__item')).toHaveCount(8);
+  await expect(popup.getByRole('button', { name: /^Default formats\s*MP4 · M4A/ })).toBeVisible();
+  await settingsSection(popup, 'Names and folders');
+  await expect(popup.getByRole('heading', { name: 'Names and folders' })).toBeVisible();
   // Tick "Site": the saved template gains {site}.
   await popup.getByRole('checkbox', { name: 'Site' }).click();
   await expect
@@ -401,8 +406,10 @@ test('settings open as a full page; the file name is built from checkboxes', asy
       return got.settings?.template;
     })
     .toBe('{title} - {site}');
-  // Back returns to the list, same popup size.
-  await popup.getByRole('button', { name: 'Back' }).click();
+  // Escape goes back to the menu (the section left has the focus), Back to the list.
+  await popup.keyboard.press('Escape');
+  await expect(popup.locator('.smenu__item[data-cat="files"]')).toBeFocused();
+  await popup.getByRole('button', { name: 'Back', exact: true }).click();
   await expect(popup.getByRole('heading', { name: 'Sample: direct clip' })).toBeVisible();
 });
 
@@ -428,6 +435,12 @@ const FORMAT_CHECKS: Record<string, { magic: (b: Buffer) => boolean; format?: Re
   GIF: { magic: (b) => b.subarray(0, 6).toString('latin1') === 'GIF89a', format: /gif/ },
   WebP: { magic: (b) => b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP' },
 };
+
+/** Opens a section of the settings' menu. */
+async function settingsSection(popup: Page, name: string) {
+  await popup.getByRole('button', { name: new RegExp(`^${name}`) }).click();
+  await expect(popup.getByRole('button', { name: 'Back to the settings' })).toBeVisible();
+}
 
 /** The formats the open card offers, in order. */
 async function offeredFormats(popup: Page): Promise<string[]> {
@@ -552,6 +565,7 @@ test('the file name keeps at least one part; the title can be unticked', async (
   const { tabId } = await openFixture(context, sw, 'direct.html');
   const popup = await openPopup(context, extId, tabId);
   await popup.getByRole('button', { name: 'Settings' }).click();
+  await settingsSection(popup, 'Names and folders');
   const template = async () =>
     ((await sw.evaluate(() => chrome.storage.local.get('settings'))) as { settings?: { template?: string } }).settings?.template;
   // Title + Quality, then untick Title: Quality alone.
@@ -1224,6 +1238,7 @@ test('settings: the hours and the speed limit; the update check tells about a ne
   const { tabId } = await openFixture(context, sw, 'direct.html');
   const popup = await openPopup(context, extId, tabId);
   await popup.getByRole('button', { name: 'Settings' }).click();
+  await settingsSection(popup, 'Downloads');
   await popup.getByRole('switch', { name: /Only at certain times/ }).check();
   const from = popup.getByRole('textbox', { name: 'From' });
   await from.fill('23h30');
@@ -1238,11 +1253,14 @@ test('settings: the hours and the speed limit; the update check tells about a ne
   // No Wi-Fi switch where the browser doesn't tell the connection type.
   await expect(popup.getByRole('switch', { name: /Only on Wi-Fi/ })).toHaveCount(0);
   // Off by default; on: GitHub is asked at once, and the daily check is set.
+  await popup.getByRole('button', { name: 'Back to the settings' }).click();
+  await settingsSection(popup, 'Updates');
   const updates = popup.getByRole('switch', { name: /Tell me about new versions/ });
   await expect(updates).not.toBeChecked();
   await updates.check();
   await expect.poll(() => sw.evaluate(async () => !!(await chrome.alarms.get('grabby-update')))).toBe(true);
-  await popup.getByRole('button', { name: 'Back' }).click();
+  await popup.getByRole('button', { name: 'Back to the settings' }).click();
+  await popup.getByRole('button', { name: 'Back', exact: true }).click();
   await expect(popup.getByText('Grabby 99.0.0 is out')).toBeVisible();
   await expect(popup.getByRole('link', { name: /See the new version/ })).toHaveAttribute('href', 'https://github.com/titilyonnais/grabby/releases/tag/v99.0.0');
   // Closed: it stays closed for this version.
@@ -1250,6 +1268,7 @@ test('settings: the hours and the speed limit; the update check tells about a ne
   await expect(popup.getByText('Grabby 99.0.0 is out')).toHaveCount(0);
   // Off again: no more checks.
   await popup.getByRole('button', { name: 'Settings' }).click();
+  await settingsSection(popup, 'Updates');
   await popup.getByRole('switch', { name: /Tell me about new versions/ }).uncheck();
   await expect.poll(() => sw.evaluate(async () => !!(await chrome.alarms.get('grabby-update')))).toBe(false);
 });
@@ -1272,6 +1291,9 @@ test('the queue: waiting downloads are put in another order, all paused and all 
   await expect.poll(async () => (await titles()).length).toBe(2);
   const [first, second] = (await titles()) as [string, string];
   expect(first).not.toBe(second);
+  // Listed in the queue, a download is not shown again on its card: the card says where it is.
+  await expect(cards.nth(1).getByText('In the queue above')).toBeVisible();
+  await expect(cards.nth(1).locator('.job')).toHaveCount(0);
   // With the keyboard: the second one goes up.
   const grips = queue.locator('.jrow__grip');
   await expect(grips).toHaveCount(2);
@@ -1482,9 +1504,10 @@ test('the button on videos downloads the one under the pointer; it can be turned
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await expect.poll(() => page.evaluate(() => !!document.querySelector('grabby-overlay'))).toBe(true);
   const before = await completed(sw);
-  // The bar is in a closed shadow root, at the video's top left corner: its first button.
-  await page.mouse.move(box.x + 34, box.y + 28);
-  await page.mouse.click(box.x + 34, box.y + 28);
+  // The bar is in a closed shadow root, at the video's top left corner: the logo, then
+  // "Download" (the video), then "Sound only".
+  await page.mouse.move(box.x + 80, box.y + 31);
+  await page.mouse.click(box.x + 80, box.y + 31);
   const { bytes } = await nextDownload(sw, before);
   expect(isMp4(bytes)).toBe(true);
   // The video itself didn't get the click.
@@ -1617,19 +1640,53 @@ test('full page: the library lists what was saved, and followed channels can be 
   const app = await openApp(context, extId, 'library');
   await expect(app.getByRole('heading', { name: 'Library' })).toBeVisible();
   await expect(app.getByText('Sample: direct clip').first()).toBeVisible();
-  await expect(app.getByText(/^1 file · /)).toBeVisible();
+  // The figures: one file, its size.
+  await expect(app.locator('.kpi').filter({ hasText: 'Files' }).locator('.kpi__value')).toHaveText('1');
+  await expect(app.locator('.kpi').filter({ hasText: 'Space used' }).locator('.kpi__value')).toHaveText(/\d/);
   await app.getByRole('radio', { name: 'Sounds' }).click();
   await expect(app.getByText('Sample: direct clip')).toHaveCount(0);
 
   await sw.evaluate(() =>
     chrome.storage.local.set({
-      watches: [{ id: 'w1', kind: 'channel', key: 'UCxxxxxxxxxxxxxxxxxxxxxx', title: 'Ma chaîne', mode: 'video', quality: 'hd1080', since: Date.now(), seen: [], got: 2 }],
+      watches: [
+        {
+          id: 'w1',
+          kind: 'channel',
+          key: 'UCxxxxxxxxxxxxxxxxxxxxxx',
+          title: 'Ma chaîne',
+          handle: '@machaine',
+          subscribers: '12 k subscribers',
+          mode: 'video',
+          quality: 'hd1080',
+          since: Date.now() - 86400_000,
+          seen: ['aaaaaaaaaaa', 'bbbbbbbbbbb'],
+          taken: ['aaaaaaaaaaa'],
+          recent: [
+            { id: 'aaaaaaaaaaa', title: 'Une vidéo prise', published: Date.now() - 3600_000 },
+            { id: 'bbbbbbbbbbb', title: 'Une vieille vidéo', published: Date.now() - 5 * 86400_000 },
+          ],
+          got: 2,
+        },
+      ],
     }),
   );
   await app.getByRole('link', { name: /Followed channels/ }).click();
   await expect(app.getByText('Ma chaîne')).toBeVisible();
   await expect(app.getByText(/videos saved: 2/)).toBeVisible();
+  // Its @name, its subscribers and its latest videos, each with what became of it.
+  await expect(app.getByText('@machaine · 12 k subscribers')).toBeVisible();
+  await expect(app.locator('.recent--taken')).toContainText('Une vidéo prise');
+  await expect(app.locator('.recent--before')).toContainText('Une vieille vidéo');
+  // Up to 4K.
+  await app.locator('.chan').getByRole('button', { name: /^Quality/ }).click();
+  await app.getByRole('option', { name: /^2160p \(4K\)/ }).click();
+  await expect
+    .poll(() => sw.evaluate(async () => ((await chrome.storage.local.get('watches')) as { watches: { quality: string }[] }).watches[0]?.quality))
+    .toBe('hd2160');
+  // Unfollowing asks once more.
   await app.getByRole('button', { name: 'Unfollow' }).click();
+  await expect(app.getByText('Ma chaîne')).toBeVisible();
+  await app.getByRole('button', { name: 'Stop following?' }).click();
   await expect(app.getByText('Ma chaîne')).toHaveCount(0);
   await expect.poll(() => sw.evaluate(async () => ((await chrome.storage.local.get('watches')) as { watches?: unknown[] }).watches?.length)).toBe(0);
 });

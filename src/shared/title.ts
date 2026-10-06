@@ -45,3 +45,16 @@ export function looksLikeId(name: string): boolean {
   const hexRun = /[0-9a-f]{12,}/i.test(s.replace(/[-_]/g, ''));
   return hexRun || letters < 3 || /^(index|master|playlist|manifest|video|media|stream|chunk|seg(ment)?|file)[-_\d]*$/i.test(s);
 }
+
+/**
+ * A YouTube video's title: the player's when it describes this very video, else the page's
+ * (never just "YouTube", what the tab says while another video loads).
+ */
+export function ytTitle(yt: { id: string; title: string }, p?: { id: string; title: string }): string {
+  const own = p?.id === yt.id ? p.title.trim() : '';
+  if (own) return own.slice(0, 300);
+  return /^(youtube)?$/i.test(yt.title.trim()) ? `YouTube ${yt.id}` : yt.title;
+}
+
+/** A picture a job can carry around: an address, or a small one (jobs are saved often). */
+export const jobThumb = (src?: string): string | undefined => (src && (/^https:\/\//i.test(src) ? src.length < 2000 : /^data:image\//i.test(src) && src.length < 60_000) ? src : undefined);

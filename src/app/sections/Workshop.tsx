@@ -23,7 +23,9 @@ export function FilePick({ multiple, accept, onFiles, label }: { multiple?: bool
         if (files.length) onFiles(multiple ? files : files.slice(0, 1));
       }}
     >
-      <Icon name="upload" size={22} />
+      <span class="drop__icon" aria-hidden="true">
+        <Icon name="upload" size={24} />
+      </span>
       <span>{label}</span>
       <input
         type="file"

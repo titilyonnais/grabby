@@ -27,6 +27,11 @@ function latestJob(jobs: Job[], mediaId: string): Job | undefined {
   return jobs.filter((j) => j.mediaId === mediaId).sort((a, b) => b.startedAt - a.startedAt)[0];
 }
 
+/** A card's other downloads still under way, besides its latest one (oldest first). */
+function otherJobs(jobs: Job[], mediaId: string, latest?: Job): Job[] {
+  return jobs.filter((j) => j.mediaId === mediaId && j !== latest && isActive(j)).sort((a, b) => a.startedAt - b.startedAt);
+}
+
 /** Placeholder shaped like the list (a big card, then rows) while the first state arrives. */
 function Skeleton() {
   return (
@@ -99,9 +104,14 @@ export function App() {
   // Jobs of this tab go on their cards; the others (another tab, before a restart) get a list.
   const here = (state?.jobs ?? []).filter((j) => j.tabId === state?.tabId);
   const elsewhere = (state?.jobs ?? []).filter((j) => isActive(j) && !(j.tabId === state?.tabId && items.some((i) => i.id === j.mediaId)));
-  // Two or more under way: the whole queue, in its order (it can be changed there).
+  // Two or more under way: "Pause all" for the whole queue. Its rows are the downloads without
+  // a card here; those on a card are shown there, never twice.
   const active = (state?.jobs ?? []).filter(isActive);
   const queue = active.length >= 2;
+  // Two or more waiting their turn (or paused): they are all listed, to be put in another
+  // order; the ones downloading stay on their card only.
+  const idle = (j: Job) => j.status === 'queued' || j.status === 'paused';
+  const rows = active.filter(idle).length >= 2 ? active.filter((j) => idle(j) || elsewhere.includes(j)) : elsewhere;
   const prefs = { video: settings?.videoFormat ?? 'mp4', audio: settings?.audioFormat ?? 'm4a' } as const;
   const openCard = openId ?? items[0]?.id;
   const many = items.filter(bulkable);
@@ -219,7 +229,7 @@ export function App() {
                 <>
                   {!settings!.firstRunAck && <FirstRun onOk={() => send({ type: 'settings', patch: { firstRunAck: true } })} />}
                   {state.update && <UpdateNotice release={state.update} install={state.install} send={send} />}
-                  <OtherJobs jobs={queue ? active : elsewhere} queue={queue} send={send} />
+                  <OtherJobs jobs={rows} queue={queue} all={active} send={send} />
                   {/* A playlist or a channel page: its videos first. Under a video being watched, the list it belongs to comes after it, folded. */}
                   {state.ytList && !state.blocked && !items.length && <Playlist key={state.ytList.title} list={state.ytList} pageUrl={state.pageUrl} preferred={prefs} send={send} />}
                   {state.blocked === 'restricted' ? (
@@ -237,6 +247,8 @@ export function App() {
                           item={i}
                           index={n}
                           job={latestJob(here, i.id)}
+                          others={otherJobs(here, i.id, latestJob(here, i.id))}
+                          inQueue={rows.map((j) => j.id)}
                           open={i.id === openCard}
                           onToggle={() => setOpenId(i.id === openCard ? '' : i.id)}
                           preferred={prefs}

@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks';
 import { AUDIO_FORMATS, FORMAT_NAMES, isAudioFormat } from '../../shared/formats';
 import type { PopupToBg } from '../../shared/messages';
 import type { OutputFormat } from '../../shared/plan';
-import { LIST_QUALITIES, type YtList } from '../../shared/ytlist';
+import { LIST_DEFAULT, LIST_QUALITIES, type YtList } from '../../shared/ytlist';
 import { t } from '../i18n';
 import { Icon } from './Icon';
 import { Select } from './Select';
@@ -30,7 +30,7 @@ export function Playlist({
   compact?: boolean;
 }) {
   const [open, setOpen] = useState(!compact);
-  const [quality, setQuality] = useState<string>(LIST_QUALITIES[0].id);
+  const [quality, setQuality] = useState<string>(LIST_DEFAULT);
   const [format, setFormat] = useState<OutputFormat>((LIST_VIDEO as readonly string[]).includes(preferred.video) ? preferred.video : 'mp4');
   const [sent, setSent] = useState(false);
   const audio = isAudioFormat(format);

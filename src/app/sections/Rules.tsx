@@ -88,7 +88,14 @@ export function Rules({ rules, onChange }: { rules: Rule[]; onChange: (r: Rule[]
           </div>
         </section>
       ))}
-      {!rules.length && <p class="empty">{t('rulesEmpty')}</p>}
+      {!rules.length && (
+        <div class="blank">
+          <span class="blank__icon" aria-hidden="true">
+            <Icon name="list" size={30} />
+          </span>
+          <p>{t('rulesEmpty')}</p>
+        </div>
+      )}
       <button class="btn btn--primary" onClick={() => commit([...latest.current, newRule()])}>
         <Icon name="plus" size={16} />
         {t('ruleAdd')}

@@ -5,7 +5,7 @@
  */
 import { showToast } from './toast';
 import { startOverlay } from './overlay';
-import { hiddenJobFromUrl, hiddenSessionFromUrl, readYouTubeInfo } from '../features/youtube';
+import { forgetForcedQuality, hiddenJobFromUrl, hiddenSessionFromUrl, readYouTubeInfo } from '../features/youtube';
 import { SESSION_SPAN } from '../shared/idb';
 import { deepVideos } from '../shared/dom';
 import type { BgToContent, ContentToBg, PageInfo, PageVideo, YtInfo } from '../shared/messages';
@@ -317,6 +317,17 @@ const hiddenJob = hiddenJobFromUrl(location.href);
 if (!hiddenJob) {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startObserving, { once: true });
   else startObserving();
+  // Once: the 144p an older hidden player made YouTube remember is forgotten.
+  if (location.hostname === 'www.youtube.com' && window === window.top) {
+    void chrome.storage.local
+      .get('ytQualityRepaired')
+      .then(async (r) => {
+        if (r.ytQualityRepaired) return;
+        forgetForcedQuality(localStorage);
+        await chrome.storage.local.set({ ytQualityRepaired: true });
+      })
+      .catch(() => {});
+  }
 }
 
 /* ------------------------------------------------------------- capture */

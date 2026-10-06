@@ -1759,6 +1759,69 @@ p {
   padding: 8px 8px 8px 10px;
   border-radius: 22px;
   background: var(--surface);
+  animation: card-in var(--t-gentle) var(--spring-gentle) both;
+  transition: background-color 160ms var(--ease);
+}
+
+.jrow:hover {
+  background: var(--surface-2, var(--surface));
+}
+
+.jrow__thumb {
+  position: relative;
+  width: 38px;
+  height: 38px;
+}
+
+.jrow__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.jrow__badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.jrow__badge--paused {
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* A card with several downloads (the video, its sound…): each one under its own label. */
+.jobstack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.jobstack__item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: card-in var(--t-gentle) var(--spring-gentle) both;
+}
+
+.jobstack__kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 14px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--muted);
 }
 
 .jrow__icon {
@@ -2521,6 +2584,145 @@ label.row-setting:hover {
 
 .row-setting:active .switch:checked::before {
   transform: translateX(12px);
+}
+
+/* ------------------------------------------------------ the settings' menu */
+.smenu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
+
+.smenu__item {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 58px;
+  padding: 8px 12px 8px 10px;
+  border: 0;
+  border-radius: 26px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  animation: group-in 520ms var(--spring-gentle) backwards;
+  animation-delay: calc(140ms + var(--i, 0) * 38ms);
+  transition: background-color 140ms var(--ease), transform 140ms var(--ease);
+}
+
+.smenu__item:hover,
+.smenu__item:focus-visible {
+  background: var(--surface-2);
+}
+
+.smenu__item:active {
+  transform: scale(0.985);
+}
+
+.smenu__icon {
+  --c: var(--accent);
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 13px;
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) 16%, transparent);
+  transition: transform 260ms var(--spring-bouncy);
+}
+
+.smenu__item:hover .smenu__icon {
+  transform: rotate(-6deg) scale(1.06);
+}
+
+.smenu__icon--look { --c: #f5a524; }
+.smenu__icon--formats { --c: #ff5b4f; }
+.smenu__icon--files { --c: #4f8df5; }
+.smenu__icon--downloads { --c: #22b07d; }
+.smenu__icon--keys { --c: #9b6cf6; }
+.smenu__icon--youtube { --c: #ef4444; }
+.smenu__icon--pages { --c: #e8579a; }
+.smenu__icon--updates { --c: #18a8a0; }
+
+.smenu__text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.smenu__title {
+  font-size: 14px;
+  font-weight: 620;
+}
+
+.smenu__sum {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.smenu__chevron {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  transform: rotate(-90deg);
+  transition: transform 200ms var(--ease), color 140ms var(--ease);
+}
+
+.smenu__item:hover .smenu__chevron {
+  color: var(--text);
+  transform: rotate(-90deg) translateY(3px);
+}
+
+/* A section slides in from the right; going back, the menu comes from the left. */
+.page__title--swap {
+  animation: value-in 380ms var(--spring-bouncy);
+}
+
+.scat {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.scat--in {
+  animation: from-right 380ms var(--ease-out);
+}
+
+.scat--back {
+  animation: from-left 380ms var(--ease-out);
+}
+
+.scat--in .group,
+.scat--back .smenu__item {
+  animation-delay: calc(40ms + var(--i, 0) * 50ms);
+}
+
+.page--out .smenu__item {
+  animation: group-out 220ms cubic-bezier(0.5, 0, 0.75, 0) forwards;
+  animation-delay: calc((var(--n, 8) - 1 - var(--i, 0)) * 22ms);
+}
+
+.jobstack__queued {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--r-inner, 14px);
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 13px;
+  animation: rise 320ms var(--spring-gentle) backwards;
 }
 
 .page__foot {

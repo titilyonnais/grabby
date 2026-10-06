@@ -2,9 +2,9 @@
  * Followed channels and playlists: once an hour Grabby reads their public feed and records
  * each new video with the hidden player, in the quality and format chosen when following.
  */
-import { channelIdIn, feedUrl, newEntries, parseFeed, watchTarget, type FeedEntry, type Watch } from '../shared/feeds';
+import { channelIdIn, channelProfile, feedUrl, newEntries, parseFeed, watchTarget, type FeedEntry, type Watch, type WatchKind } from '../shared/feeds';
 import { uid } from '../shared/ids';
-import { LIST_QUALITIES } from '../shared/ytlist';
+import { LIST_DEFAULT, LIST_QUALITIES } from '../shared/ytlist';
 import type { JobManager } from './jobs';
 
 export const WATCH_ALARM = 'grabby-watch';
@@ -12,6 +12,11 @@ const KEY = 'watches';
 const MAX_WATCHES = 50;
 /** Video ids remembered per feed (a feed shows 15). */
 const MAX_SEEN = 300;
+/** Latest videos shown for each, and videos remembered as taken. */
+const MAX_RECENT = 6;
+const MAX_TAKEN = 50;
+/** A channel's picture and subscribers are read again once a day. */
+const PROFILE_EVERY = 24 * 60 * 60_000;
 
 
 export type { Watch };
@@ -51,6 +56,20 @@ async function fetchText(url: string): Promise<string | null> {
   }
 }
 
+/** A channel's picture, @name and subscribers, from its page (nothing for a playlist). */
+async function readProfile(kind: WatchKind, key: string): Promise<Partial<Watch> | null> {
+  if (kind !== 'channel') return null;
+  const html = await fetchText(`https://www.youtube.com/channel/${encodeURIComponent(key)}`);
+  if (html === null) return null;
+  const p = channelProfile(html);
+  return {
+    ...(p.avatar ? { avatar: p.avatar } : {}),
+    ...(p.handle ? { handle: p.handle } : {}),
+    ...(p.subscribers ? { subscribers: p.subscribers } : {}),
+    profileAt: Date.now(),
+  };
+}
+
 /** Follows the channel or playlist of an address; its videos published so far are skipped. */
 export async function addWatch(url: string, choice: Pick<Watch, 'mode' | 'quality' | 'format'>): Promise<Watch | WatchAddError> {
   let target = watchTarget(url);
@@ -66,6 +85,7 @@ export async function addWatch(url: string, choice: Pick<Watch, 'mode' | 'qualit
   const xml = await fetchText(feedUrl(kind, key));
   const feed = xml === null ? null : parseFeed(xml);
   if (!feed) return 'not_found';
+  const profile = await readProfile(kind, key);
   return serial(async () => {
     const list = await getWatches();
     if (list.some((w) => w.kind === kind && w.key === key)) return 'already' as const;
@@ -76,12 +96,14 @@ export async function addWatch(url: string, choice: Pick<Watch, 'mode' | 'qualit
       key,
       title: feed.title || key,
       mode: choice.mode === 'audio' ? 'audio' : 'video',
-      quality: LIST_QUALITIES.some((q) => q.id === choice.quality) ? choice.quality : LIST_QUALITIES[0].id,
+      quality: LIST_QUALITIES.some((q) => q.id === choice.quality) ? choice.quality : LIST_DEFAULT,
       ...(choice.format ? { format: choice.format } : {}),
       since: Date.now(),
       seen: feed.entries.map((e) => e.id),
       lastCheck: Date.now(),
       got: 0,
+      recent: feed.entries.slice(0, MAX_RECENT),
+      ...(profile ?? {}),
     };
     await save([...list, watch]);
     return watch;
@@ -129,13 +151,18 @@ export function checkWatches(jobs: JobManager, only?: string): Promise<number> {
       const fresh: FeedEntry[] = newEntries(feed.entries, w.seen, w.since).reverse();
       const n = fresh.length ? await jobs.startEntries(fresh, { quality: w.quality, mode: w.mode, ...(w.format ? { format: w.format } : {}), ...(w.kind === 'channel' ? { author: w.title } : {}) }) : 0;
       started += n;
+      // Its picture and subscribers, once a day.
+      const profile = !w.profileAt || Date.now() - w.profileAt > PROFILE_EVERY ? await readProfile(w.kind, w.key) : null;
       const { error: _e, ...rest } = w;
       next.push({
         ...rest,
         ...(feed.title ? { title: feed.title } : {}),
+        ...(profile ?? {}),
         seen: [...feed.entries.map((e) => e.id).filter((id) => !w.seen.includes(id)), ...w.seen].slice(0, MAX_SEEN),
         lastCheck: Date.now(),
         got: w.got + n,
+        recent: feed.entries.slice(0, MAX_RECENT),
+        ...(n ? { taken: [...fresh.slice(-n).map((e) => e.id).reverse(), ...(w.taken ?? [])].slice(0, MAX_TAKEN) } : {}),
       });
     }
     await save(next);

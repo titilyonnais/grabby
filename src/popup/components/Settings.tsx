@@ -167,6 +167,49 @@ function Help({ warn, onOpen }: { warn: boolean; onOpen: () => void }) {
   );
 }
 
+/** The settings' sections, in the order of the menu. */
+const CATEGORIES = ['look', 'formats', 'files', 'downloads', 'keys', 'youtube', 'pages', 'updates'] as const;
+type Category = (typeof CATEGORIES)[number];
+
+const CATEGORY_ICONS: Record<Category, IconName> = {
+  look: 'sun',
+  formats: 'film',
+  files: 'folder',
+  downloads: 'clock',
+  keys: 'keyboard',
+  youtube: 'skip',
+  pages: 'sparkle',
+  updates: 'gift',
+};
+
+/** What a section holds now, said in a few words under its name. */
+function summary(c: Category, s: S, keys: string | null): string {
+  switch (c) {
+    case 'look':
+      return t(`set_theme_${s.theme}`);
+    case 'formats':
+      return `${FORMAT_NAMES[s.videoFormat]} · ${FORMAT_NAMES[s.audioFormat]}`;
+    case 'files':
+      return [t(`set_folder_${s.folder}`), s.saveAs ? t('set_sum_ask') : ''].filter(Boolean).join(' · ');
+    case 'downloads':
+      return [
+        s.scheduleOn ? t('set_sum_hours', [hhmm(s.scheduleFrom), hhmm(s.scheduleTo)]) : t('set_sum_now'),
+        s.rateLimit ? `${size(s.rateLimit)}/s` : '',
+        s.notify ? t('set_sum_notify') : '',
+      ]
+        .filter(Boolean)
+        .join(' · ');
+    case 'keys':
+      return [keys || t('set_sum_nokeys'), t(s.quickMode === 'audio' ? 'set_quick_audio' : 'set_quick_video')].join(' · ');
+    case 'youtube':
+      return t(s.skipSponsors ? 'set_sum_sponsors_on' : 'set_sum_sponsors_off');
+    case 'pages':
+      return `${t(s.overlayButton ? 'set_sum_overlay_on' : 'set_sum_overlay_off')} · ${t(s.aiModels ? 'set_sum_ai_on' : 'set_sum_ai_off')}`;
+    case 'updates':
+      return s.updateCheck ? t('set_sum_updates_on') : t('set_sum_updates_off');
+  }
+}
+
 export function Settings({ class: className, settings, browserAsks, onChange, onOpenBrowserSettings, install, onInstall, onOpenShortcuts, onClose }: Props) {
   // The keys the browser gives the "download" shortcut (the user may have changed them, or removed them).
   const [keys, setKeys] = useState<string | null>(null);
@@ -176,7 +219,12 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
       .then((all) => setKeys(all.find((c) => c.name === 'download-best')?.shortcut ?? ''))
       .catch(() => setKeys(''));
   }, []);
+  // The section open (null: the menu), and which way the screen slides.
+  const [cat, setCat] = useState<Category | null>(null);
+  const [dir, setDir] = useState<'in' | 'back' | 'first'>('first');
+  const lastCat = useRef<Category | null>(null);
   const pageRef = useRef<HTMLElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const title = t('set_name_sample') === 'set_name_sample' ? 'Ma vidéo' : t('set_name_sample');
   const sub = folderFor(settings.folder, { site: SAMPLE.site, kind: 'video' }, folderNames());
   const path = buildFilename(settings.template, { title, ...SAMPLE, format: settings.videoFormat.toUpperCase(), date: new Date() }, settings.videoFormat, sub);
@@ -184,82 +232,93 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
   const downloads = t('set_folder_downloads') === 'set_folder_downloads' ? 'Téléchargements' : t('set_folder_downloads');
   const folder = [downloads, ...path.split('/').slice(0, -1)].join('/');
 
-  // Read through a ref: a new onClose never re-runs the effects below.
+  const open = (c: Category) => {
+    lastCat.current = c;
+    setDir('in');
+    setCat(c);
+    bodyRef.current?.scrollTo({ top: 0 });
+  };
+  const back = () => {
+    setDir('back');
+    setCat(null);
+    // Focus goes back to the section left.
+    requestAnimationFrame(() => (document.querySelector(`[data-cat="${lastCat.current}"]`) as HTMLElement | null)?.focus());
+  };
+
+  // Read through refs: a new onClose never re-runs the effects below.
   const close = useRef(onClose);
   close.current = onClose;
+  const inCat = useRef(cat);
+  inCat.current = cat;
   useEffect(() => pageRef.current?.focus(), []);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !e.defaultPrevented && close.current();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (inCat.current) back();
+      else close.current();
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  return (
-    <section ref={pageRef} tabIndex={-1} class={`page${className ? ` ${className}` : ''}`} aria-labelledby="settings-title">
-      <header class="top top--page">
-        <button class="icon-btn" aria-label={t('back')} title={t('back')} onClick={onClose}>
-          <Icon name="back" />
-        </button>
-        <h2 id="settings-title" class="page__title">
-          {t('openSettings')}
-        </h2>
-        <span />
-      </header>
-
-      {/* --n: how many groups, so closing can send them away last-first. */}
-      <div class="page__body" style={{ '--n': '8' }}>
-        <Group title={t('set_group_look')} icon="sun" index={0}>
-          <div class="row-setting">
-            <span class="setting__label">{t('set_theme')}</span>
-            <Segmented
-              label={t('set_theme')}
-              value={settings.theme}
-              options={[
-                ['auto', t('set_theme_auto')],
-                ['light', t('set_theme_light')],
-                ['dark', t('set_theme_dark')],
-              ]}
-              onChange={(theme) => onChange({ theme })}
+  const groups: Record<Category, () => preact.JSX.Element> = {
+    look: () => (
+      <Group title={t('set_group_look')} icon="sun" index={0}>
+        <div class="row-setting">
+          <span class="setting__label">{t('set_theme')}</span>
+          <Segmented
+            label={t('set_theme')}
+            value={settings.theme}
+            options={[
+              ['auto', t('set_theme_auto')],
+              ['light', t('set_theme_light')],
+              ['dark', t('set_theme_dark')],
+            ]}
+            onChange={(theme) => onChange({ theme })}
+          />
+        </div>
+      </Group>
+    ),
+    formats: () => (
+      <Group title={t('set_group_formats')} icon="film" index={0}>
+        <div class="row-setting">
+          <span class="setting__label">{t('set_video')}</span>
+          <span class="setting__control">
+            <Select
+              label={t('set_video')}
+              hideLabel
+              value={settings.videoFormat}
+              options={VIDEO_FORMATS.map((f) => ({ value: f, label: FORMAT_NAMES[f], detail: t(`fmt_${f}`) }))}
+              onChange={(videoFormat) => onChange({ videoFormat })}
             />
-          </div>
-        </Group>
-
-        <Group title={t('set_group_formats')} icon="film" index={1}>
-          <div class="row-setting">
-            <span class="setting__label">{t('set_video')}</span>
-            <span class="setting__control">
-              <Select
-                label={t('set_video')}
-                hideLabel
-                value={settings.videoFormat}
-                options={VIDEO_FORMATS.map((f) => ({ value: f, label: FORMAT_NAMES[f], detail: t(`fmt_${f}`) }))}
-                onChange={(videoFormat) => onChange({ videoFormat })}
-              />
-            </span>
-          </div>
-          <div class="row-setting">
-            <span class="setting__label">{t('set_audio')}</span>
-            <span class="setting__control">
-              <Select
-                label={t('set_audio')}
-                hideLabel
-                value={settings.audioFormat}
-                options={AUDIO_FORMATS.map((f) => ({ value: f, label: FORMAT_NAMES[f], detail: t(`fmt_${f}`) }))}
-                onChange={(audioFormat) => onChange({ audioFormat })}
-              />
-            </span>
-          </div>
-        </Group>
-
-        <Group title={t('set_group_files')} icon="folder" index={2}>
+          </span>
+        </div>
+        <div class="row-setting">
+          <span class="setting__label">{t('set_audio')}</span>
+          <span class="setting__control">
+            <Select
+              label={t('set_audio')}
+              hideLabel
+              value={settings.audioFormat}
+              options={AUDIO_FORMATS.map((f) => ({ value: f, label: FORMAT_NAMES[f], detail: t(`fmt_${f}`) }))}
+              onChange={(audioFormat) => onChange({ audioFormat })}
+            />
+          </span>
+        </div>
+      </Group>
+    ),
+    files: () => (
+      <>
+        <Group title={t('set_template')} icon="file" index={0}>
           <div class="row-setting row-setting--stack">
             <span class="row-setting__text">
-              <span class="setting__label">{t('set_template')}</span>
               <span class="setting__hint">{t('set_template_hint')}</span>
             </span>
             <NameTiles template={settings.template} onChange={(template) => onChange({ template })} />
             <FilePreview name={name} ext={settings.videoFormat} folder={folder} />
           </div>
+        </Group>
+        <Group title={t('set_group_files')} icon="folder" index={1}>
           <div class="row-setting">
             <span class="row-setting__text">
               <span class="setting__label">{t('set_folder')}</span>
@@ -278,13 +337,11 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
           <Toggle label={t('set_saveAs')} hint={t('set_saveAs_hint')} checked={settings.saveAs} onChange={(saveAs) => onChange({ saveAs })} />
           {!settings.saveAs && <Help warn={browserAsks} onOpen={onOpenBrowserSettings} />}
         </Group>
-
-        <Group title={t('set_group_end')} icon="check" index={3}>
-          <Toggle label={t('set_notify')} hint={t('set_notify_hint')} checked={settings.notify} onChange={(notify) => onChange({ notify })} />
-          <Toggle label={t('set_normalize')} hint={t('set_normalize_hint')} checked={settings.normalize} onChange={(normalize) => onChange({ normalize })} />
-        </Group>
-
-        <Group title={t('set_group_when')} icon="clock" index={4}>
+      </>
+    ),
+    downloads: () => (
+      <>
+        <Group title={t('set_group_when')} icon="clock" index={0}>
           <Toggle label={t('set_schedule')} hint={t('set_schedule_hint')} checked={settings.scheduleOn} onChange={(scheduleOn) => onChange({ scheduleOn })} />
           {settings.scheduleOn && (
             <div class="hours" role="group" aria-label={t('set_schedule')}>
@@ -309,84 +366,133 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
             </span>
           </div>
         </Group>
-
-        <Group title={t('set_group_keys')} icon="keyboard" index={5}>
-          <div class="row-setting row-setting--stack">
-            <span class="row-setting__text">
-              <span class="setting__label">{t('set_keys')}</span>
-              <span class="setting__hint">{keys === null ? '' : keys ? t('set_keys_hint', keys) : t('set_keys_none')}</span>
-            </span>
-            <span class="keys-row">
-              {keys ? <kbd class="keys">{keys}</kbd> : null}
-              <button class="btn btn--soft btn--small" onClick={onOpenShortcuts}>
-                {t('set_keys_change')}
-                <Icon name="external" size={14} />
-              </button>
-            </span>
-          </div>
-          <div class="row-setting">
-            <span class="setting__label">{t('set_quick')}</span>
-            <Segmented
-              label={t('set_quick')}
-              value={settings.quickMode}
-              options={[
-                ['video', t('set_quick_video')],
-                ['audio', t('set_quick_audio')],
-              ]}
-              onChange={(quickMode) => onChange({ quickMode })}
-            />
-          </div>
+        <Group title={t('set_group_end')} icon="check" index={1}>
+          <Toggle label={t('set_notify')} hint={t('set_notify_hint')} checked={settings.notify} onChange={(notify) => onChange({ notify })} />
+          <Toggle label={t('set_normalize')} hint={t('set_normalize_hint')} checked={settings.normalize} onChange={(normalize) => onChange({ normalize })} />
         </Group>
+      </>
+    ),
+    keys: () => (
+      <Group title={t('set_group_keys')} icon="keyboard" index={0}>
+        <div class="row-setting row-setting--stack">
+          <span class="row-setting__text">
+            <span class="setting__label">{t('set_keys')}</span>
+            <span class="setting__hint">{keys === null ? '' : keys ? t('set_keys_hint', keys) : t('set_keys_none')}</span>
+          </span>
+          <span class="keys-row">
+            {keys ? <kbd class="keys">{keys}</kbd> : null}
+            <button class="btn btn--soft btn--small" onClick={onOpenShortcuts}>
+              {t('set_keys_change')}
+              <Icon name="external" size={14} />
+            </button>
+          </span>
+        </div>
+        <div class="row-setting">
+          <span class="setting__label">{t('set_quick')}</span>
+          <Segmented
+            label={t('set_quick')}
+            value={settings.quickMode}
+            options={[
+              ['video', t('set_quick_video')],
+              ['audio', t('set_quick_audio')],
+            ]}
+            onChange={(quickMode) => onChange({ quickMode })}
+          />
+        </div>
+      </Group>
+    ),
+    youtube: () => (
+      <Group title={t('set_group_youtube')} icon="skip" index={0}>
+        <Toggle label={t('set_sponsors')} hint={t('set_sponsors_hint')} checked={settings.skipSponsors} onChange={(skipSponsors) => onChange({ skipSponsors })} />
+      </Group>
+    ),
+    pages: () => (
+      <Group title={t('set_group_pages')} icon="sparkle" index={0}>
+        <Toggle label={t('set_overlay')} hint={t('set_overlay_hint')} checked={settings.overlayButton} onChange={(overlayButton) => onChange({ overlayButton })} />
+        <Toggle label={t('set_ai')} hint={t('set_ai_hint')} checked={settings.aiModels} onChange={(aiModels) => onChange({ aiModels })} />
+        <div class="row-setting row-setting--stack">
+          <span class="row-setting__text">
+            <span class="setting__label">{t('set_app')}</span>
+            <span class="setting__hint">{t('set_app_hint')}</span>
+          </span>
+          <span class="keys-row">
+            <button
+              class="btn btn--soft btn--small"
+              onClick={() => {
+                void chrome.runtime.sendMessage({ app: 'open-app', section: 'rules' }).catch(() => {});
+                window.close();
+              }}
+            >
+              <Icon name="grid" size={15} />
+              {t('set_app_open')}
+            </button>
+          </span>
+        </div>
+      </Group>
+    ),
+    updates: () => (
+      <Group title={t('set_group_updates')} icon="gift" index={0}>
+        <Toggle label={t('set_updates')} hint={t('set_updates_hint')} checked={settings.updateCheck} onChange={(updateCheck) => onChange({ updateCheck })} />
+        <div class="row-setting row-setting--stack">
+          <span class="row-setting__text">
+            <span class="setting__label">{t('set_install')}</span>
+            <span class="setting__hint">{t('set_install_hint')}</span>
+          </span>
+          <span class="install__row">
+            <button class="btn btn--soft btn--small" disabled={install?.step === 'working' || install?.step === 'done'} onClick={onInstall}>
+              <Icon name="download" size={15} />
+              {t('updateNow')}
+            </button>
+          </span>
+          <InstallStatus install={install} />
+        </div>
+      </Group>
+    ),
+  };
 
-        <Group title={t('set_group_youtube')} icon="skip" index={6}>
-          <Toggle label={t('set_sponsors')} hint={t('set_sponsors_hint')} checked={settings.skipSponsors} onChange={(skipSponsors) => onChange({ skipSponsors })} />
-        </Group>
+  return (
+    <section ref={pageRef} tabIndex={-1} class={`page${className ? ` ${className}` : ''}`} aria-labelledby="settings-title">
+      <header class="top top--page">
+        <button class="icon-btn" aria-label={cat ? t('set_backToMenu') : t('back')} title={cat ? t('set_backToMenu') : t('back')} onClick={cat ? back : onClose}>
+          <Icon name="back" />
+        </button>
+        {/* Keyed: the new title rises in. */}
+        <h2 key={cat ?? 'menu'} id="settings-title" class="page__title page__title--swap">
+          {cat ? t(`set_cat_${cat}`) : t('openSettings')}
+        </h2>
+        <span />
+      </header>
 
-        <Group title={t('set_group_pages')} icon="sparkle" index={7}>
-          <Toggle label={t('set_overlay')} hint={t('set_overlay_hint')} checked={settings.overlayButton} onChange={(overlayButton) => onChange({ overlayButton })} />
-          <Toggle label={t('set_ai')} hint={t('set_ai_hint')} checked={settings.aiModels} onChange={(aiModels) => onChange({ aiModels })} />
-          <div class="row-setting row-setting--stack">
-            <span class="row-setting__text">
-              <span class="setting__label">{t('set_app')}</span>
-              <span class="setting__hint">{t('set_app_hint')}</span>
-            </span>
-            <span class="keys-row">
-              <button
-                class="btn btn--soft btn--small"
-                onClick={() => {
-                  void chrome.runtime.sendMessage({ app: 'open-app', section: 'rules' }).catch(() => {});
-                  window.close();
-                }}
-              >
-                <Icon name="grid" size={15} />
-                {t('set_app_open')}
-              </button>
-            </span>
+      <div ref={bodyRef} class="page__body">
+        {cat ? (
+          <div key={cat} class={`scat scat--${dir}`} style={{ '--n': '3' }}>
+            {groups[cat]()}
           </div>
-        </Group>
-
-        <Group title={t('set_group_updates')} icon="gift" index={8}>
-          <Toggle label={t('set_updates')} hint={t('set_updates_hint')} checked={settings.updateCheck} onChange={(updateCheck) => onChange({ updateCheck })} />
-          <div class="row-setting row-setting--stack">
-            <span class="row-setting__text">
-              <span class="setting__label">{t('set_install')}</span>
-              <span class="setting__hint">{t('set_install_hint')}</span>
-            </span>
-            <span class="install__row">
-              <button class="btn btn--soft btn--small" disabled={install?.step === 'working' || install?.step === 'done'} onClick={onInstall}>
-                <Icon name="download" size={15} />
-                {t('updateNow')}
-              </button>
-            </span>
-            <InstallStatus install={install} />
+        ) : (
+          <div key="menu" class={`scat scat--${dir === 'back' ? 'back' : 'first'}`}>
+            <nav class="smenu" aria-label={t('openSettings')} style={{ '--n': String(CATEGORIES.length) }}>
+              {CATEGORIES.map((c, i) => (
+                <button key={c} data-cat={c} class="smenu__item" style={{ '--i': String(i) }} onClick={() => open(c)}>
+                  <span class={`smenu__icon smenu__icon--${c}`}>
+                    <Icon name={CATEGORY_ICONS[c]} size={17} />
+                  </span>
+                  <span class="smenu__text">
+                    <span class="smenu__title">{t(`set_cat_${c}`)}</span>
+                    <span class="smenu__sum">{summary(c, settings, keys)}</span>
+                  </span>
+                  <span class="smenu__chevron" aria-hidden="true">
+                    <Icon name="chevron" size={16} />
+                  </span>
+                </button>
+              ))}
+            </nav>
+            <p class="page__foot">
+              <Icon name="shield" size={14} />
+              <span>{t('set_privacy')}</span>
+              <span class="page__version">v{__VERSION__}</span>
+            </p>
           </div>
-        </Group>
-
-        <p class="page__foot">
-          <Icon name="shield" size={14} />
-          <span>{t('set_privacy')}</span>
-          <span class="page__version">v{__VERSION__}</span>
-        </p>
+        )}
       </div>
     </section>
   );

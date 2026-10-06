@@ -17,8 +17,24 @@
 
 ---
 
-<!-- release:1.10.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
-## Nouveautés de la version 1.10.0
+<!-- release:1.11.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
+## Nouveautés de la version 1.11.0
+
+- **Corrigé** : YouTube ne repasse plus en **144p** après un téléchargement. Le lecteur
+  caché de Grabby garde ses choix pour lui ; une qualité forcée par la 1.10.0 est réparée
+  toute seule à la prochaine visite de YouTube.
+- **Corrigé** : un téléchargement lancé depuis le bouton sur la vidéo n'apparaît plus en
+  double dans la fenêtre ; la vidéo et le son d'une même carte s'empilent, chacun avec
+  son étiquette.
+- **Bouton sur les vidéos** plus clair : **Télécharger** en grand, **Son seul** en toutes
+  lettres, et une coche verte animée une fois lancé.
+- **Réglages en rubriques** : un menu de 8 rubriques avec un résumé de chacune, au lieu
+  d'une longue liste.
+- **Page complète redessinée** : menu en groupes, animations partout, **téléchargements
+  en cours** détaillés dans la bibliothèque, **photo, @nom, abonnés et dernières vidéos**
+  des chaînes suivies, qualité jusqu'à **4K** pour les chaînes et playlists.
+
+**Rappel de la 1.10.0** :
 
 - **Enregistrer les directs** : flux HLS de n'importe quel site, et directs YouTube depuis
   la page ; **Arrêter et enregistrer** quand tu veux, ou une durée maximale.

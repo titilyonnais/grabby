@@ -19,6 +19,25 @@ export function captionsFromUrl(value: string | null): CapturedCaption[] {
     });
 }
 
+/**
+ * Up to 1.10.0, the hidden player recording a sound file asked YouTube for 144p, and YouTube
+ * remembered it for the user's own tabs. Once, that 144p is forgotten (YouTube goes back to
+ * choosing by itself); any other choice stays. True when something was forgotten.
+ */
+export function forgetForcedQuality(storage: Storage): boolean {
+  try {
+    const raw = storage.getItem('yt-player-quality');
+    if (!raw) return false;
+    const outer = JSON.parse(raw) as { data?: unknown };
+    const data = typeof outer.data === 'string' ? (JSON.parse(outer.data) as { quality?: unknown }) : (outer.data as { quality?: unknown } | undefined);
+    if (Number(data?.quality) !== 144) return false;
+    storage.removeItem('yt-player-quality');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export interface YouTubeInfo {
   id: string;
   title: string;

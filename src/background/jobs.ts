@@ -28,6 +28,7 @@ import { cuesOf, toSrt } from '../shared/subtitles';
 import { listItem, numbered, type YtEntry, type YtList } from '../shared/ytlist';
 import { sponsorParts, withoutSponsors } from '../shared/sponsors';
 import { cleanFinish } from '../shared/finish';
+import { jobThumb } from '../shared/title';
 
 const STORE_KEY = 'jobs';
 /** A job's download plan, kept apart (it can be big) for resuming. */
@@ -408,6 +409,7 @@ export class JobManager {
       kind: item.kind,
       startedAt: Date.now(),
       ...(item.author ? { author: item.author.slice(0, 120) } : {}),
+      ...(jobThumb(item.thumbnail) ? { thumbnail: jobThumb(item.thumbnail) } : {}),
       ...(variantId ? { variantId } : {}),
       ...(clip ? { clip } : {}),
       ...(parts ? { parts } : {}),

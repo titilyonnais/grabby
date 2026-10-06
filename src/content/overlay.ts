@@ -15,12 +15,13 @@ const ICONS = {
   down: 'M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14',
   audio: 'M9 18V6l10-2v12M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm10-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z',
   check: 'M5 12.5l4.5 4.5L19 7.5',
+  logo: 'M12 3.5v10m0 0-4-4m4 4 4-4M5.5 17.5h13',
 };
 /** An icon, built as nodes (pages with Trusted Types refuse markup strings). */
-function svg(d: string): SVGSVGElement {
+function svg(d: string, px = 16): SVGSVGElement {
   const NS = 'http://www.w3.org/2000/svg';
   const el = document.createElementNS(NS, 'svg');
-  for (const [k, v] of Object.entries({ width: '16', height: '16', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' })) el.setAttribute(k, v);
+  for (const [k, v] of Object.entries({ width: String(px), height: String(px), viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2.2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' })) el.setAttribute(k, v);
   const path = document.createElementNS(NS, 'path');
   path.setAttribute('d', d);
   el.append(path);
@@ -41,33 +42,43 @@ function styled(root: ShadowRoot) {
 
 const CSS = `
 :host { all: initial; }
-.bar { position: fixed; z-index: 2147483647; display: flex; gap: 4px; padding: 4px; border-radius: 999px;
-  background: rgba(0,0,0,.78); box-shadow: 0 4px 16px rgba(0,0,0,.35); backdrop-filter: blur(8px);
-  font: 600 12px/1 system-ui, -apple-system, 'Segoe UI', sans-serif; opacity: 0; transform: translateY(-4px) scale(.96);
-  transition: opacity .16s ease, transform .22s cubic-bezier(.2,.7,.2,1); pointer-events: none; }
+.bar { position: fixed; z-index: 2147483647; display: flex; align-items: center; gap: 6px; padding: 5px; border-radius: 999px;
+  background: rgba(14,14,16,.86); box-shadow: 0 6px 24px rgba(0,0,0,.4), inset 0 0 0 1px rgba(255,255,255,.08); backdrop-filter: blur(10px) saturate(1.4);
+  font: 600 13px/1 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; letter-spacing: .1px;
+  opacity: 0; transform: translateY(-6px) scale(.94); transform-origin: top left;
+  transition: opacity .18s ease, transform .32s cubic-bezier(.34,1.56,.64,1); pointer-events: none; }
 .bar.on { opacity: 1; transform: none; pointer-events: auto; }
-button { all: unset; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 999px;
-  color: #fff; cursor: pointer; white-space: nowrap; transition: background-color .12s ease, transform .12s ease; }
-button:hover { background: rgba(255,255,255,.16); }
+.logo { display: grid; place-items: center; width: 28px; height: 28px; margin-left: 1px; border-radius: 999px; background: #ff5b4f; color: #111; }
+button { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 14px 0 11px; border-radius: 999px;
+  color: #fff; cursor: pointer; white-space: nowrap; transition: background-color .15s ease, transform .15s ease, color .15s ease; }
+button:hover { background: rgba(255,255,255,.14); }
 button:active { transform: scale(.94); }
-button:focus-visible { outline: 2px solid #ff7a70; outline-offset: 1px; }
-button.main { background: #ff5b4f; color: #000; }
-button.main:hover { background: #ff7468; }
-button.icon { width: 28px; padding: 0; justify-content: center; }
-.yt { display: inline-flex; margin-left: 8px; }
-.yt button { height: 36px; padding: 0 16px; background: rgba(255,255,255,.1); color: inherit; font: 500 14px/1 Roboto, Arial, sans-serif; }
-.yt button:hover { background: rgba(255,255,255,.2); }
-@media (prefers-reduced-motion: reduce) { .bar { transition: none; } }
+button:focus-visible { outline: 2px solid #ff7a70; outline-offset: 2px; }
+button.main { background: #fff; color: #111; }
+button.main:hover { background: #ffe3e0; }
+button.done { background: #2fbf71 !important; color: #fff !important; }
+button.done svg { animation: tick .36s cubic-bezier(.34,1.56,.64,1); }
+.yt { display: inline-flex; margin-left: 8px; border-radius: 999px; background: rgba(127,127,127,.16); overflow: hidden; }
+.yt button { height: 36px; padding: 0 14px; border-radius: 0; color: inherit; font: 500 14px/1 Roboto, Arial, sans-serif; }
+.yt button:hover { background: rgba(127,127,127,.22); }
+.yt button + button { box-shadow: inset 1px 0 0 rgba(127,127,127,.35); }
+.yt button.done { background: #2fbf71; }
+@keyframes tick { from { transform: scale(.3) rotate(-30deg); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .bar, button { transition: none; } button.done svg { animation: none; } }
 `;
 
 function grab(src: string | undefined, mode: 'video' | 'audio') {
   void chrome.runtime.sendMessage({ type: 'grab', ...(src ? { src } : {}), mode } satisfies ContentToBg).catch(() => {});
 }
 
-/** A moment of "done" on the button pressed. */
+/** A moment of "started" on the button pressed, in green. */
 function confirm(btn: HTMLButtonElement, icon: string, text: string) {
-  fill(btn, ICONS.check, text ? say('overlayStarted') : '');
-  setTimeout(() => fill(btn, icon, text), 1800);
+  btn.classList.add('done');
+  fill(btn, ICONS.check, say('overlayStarted'));
+  setTimeout(() => {
+    btn.classList.remove('done');
+    fill(btn, icon, text);
+  }, 1800);
 }
 
 function makeButton(cls: string, icon: string, text: string, title: string, onClick: (b: HTMLButtonElement) => void): HTMLButtonElement {
@@ -79,6 +90,7 @@ function makeButton(cls: string, icon: string, text: string, title: string, onCl
   b.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
+    if (b.classList.contains('done')) return;
     onClick(b);
     confirm(b, icon, text);
   });
@@ -103,9 +115,14 @@ export function startOverlay() {
     styled(root);
     bar = document.createElement('div');
     bar.className = 'bar';
+    const logo = document.createElement('span');
+    logo.className = 'logo';
+    logo.title = 'Grabby';
+    logo.append(svg(ICONS.logo, 15));
     bar.append(
+      logo,
       makeButton('main', ICONS.down, say('overlayVideo'), say('overlayVideoTitle'), () => grab(srcOf(target), 'video')),
-      makeButton('icon', ICONS.audio, '', say('overlayAudioTitle'), () => grab(srcOf(target), 'audio')),
+      makeButton('', ICONS.audio, say('overlayAudio'), say('overlayAudioTitle'), () => grab(srcOf(target), 'audio')),
     );
     bar.addEventListener('pointerenter', () => clearTimeout(hideTimer));
     bar.addEventListener('pointerleave', () => scheduleHide());
@@ -180,7 +197,10 @@ export function startOverlay() {
     styled(root);
     const wrap = document.createElement('span');
     wrap.className = 'yt';
-    wrap.append(makeButton('', ICONS.down, say('overlayVideo'), say('overlayVideoTitle'), () => grab(undefined, 'video')));
+    wrap.append(
+      makeButton('', ICONS.down, say('overlayVideo'), say('overlayVideoTitle'), () => grab(undefined, 'video')),
+      makeButton('', ICONS.audio, say('overlayAudio'), say('overlayAudioTitle'), () => grab(undefined, 'audio')),
+    );
     root.append(wrap);
     row.append(el);
   };

@@ -82,6 +82,47 @@ export function channelIdIn(html: string): string | null {
   return null;
 }
 
+/** What a channel's page says about it: its picture, @name and subscribers. */
+export interface ChannelProfile {
+  title?: string;
+  /** Its picture, small (YouTube's image servers only). */
+  avatar?: string;
+  /** "@LofiGirl". */
+  handle?: string;
+  /** "15,8 M d’abonnés", as YouTube writes it in the browser's language. */
+  subscribers?: string;
+  description?: string;
+}
+
+const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", '#39': "'" };
+const unescapeHtml = (s: string) => s.replace(/&(amp|lt|gt|quot|apos|#39|#(\d+));/g, (_, k: string, n?: string) => (n ? String.fromCodePoint(Number(n)) : ENTITIES[k]!));
+/** YouTube wraps names in invisible direction marks. */
+const visible = (s: string) => s.replace(/[\u200e\u200f\u2066-\u2069\u202a-\u202e]/g, '').trim();
+const meta = (html: string, prop: string) => {
+  const m = new RegExp(`<meta property="og:${prop}" content="([^"]*)"`).exec(html);
+  return m ? unescapeHtml(m[1]!) : undefined;
+};
+
+/** Reads a channel's profile from its page (never anything that runs: a few strings only). */
+export function channelProfile(html: string): ChannelProfile {
+  const out: ChannelProfile = {};
+  const title = meta(html, 'title')?.trim();
+  if (title) out.title = title.slice(0, 200);
+  const image = meta(html, 'image');
+  if (image && /^https:\/\/yt\d\.(googleusercontent|ggpht)\.com\//.test(image)) out.avatar = image.replace(/=s\d+-/, '=s176-').slice(0, 500);
+  const handle = /"vanityChannelUrl":"https?:\/\/www\.youtube\.com\/(@[^"/\\]{1,100})"/.exec(html)?.[1];
+  if (handle) {
+    out.handle = handle;
+    // The header's line: "@handle • 15,8 M d'abonnés" (the page lists other channels the same way).
+    const esc = handle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const line = new RegExp(`"subtitle":\\{"content":"[^"]{0,8}${esc}[^"•]{0,8}•\\s*([^"]{1,60})"`).exec(html)?.[1];
+    if (line && /\d/.test(line)) out.subscribers = visible(line).slice(0, 60);
+  }
+  const description = meta(html, 'description')?.trim();
+  if (description) out.description = description.slice(0, 300);
+  return out;
+}
+
 /** The videos of a feed not seen yet and published since following it (a little margin). */
 export function newEntries(entries: readonly FeedEntry[], seen: readonly string[], since: number): FeedEntry[] {
   const known = new Set(seen);
@@ -107,4 +148,14 @@ export interface Watch {
   got: number;
   /** The last check failed: the feed couldn't be read. */
   error?: boolean;
+  /** A channel's picture, @name, subscribers (read from its page, now and then). */
+  avatar?: string;
+  handle?: string;
+  subscribers?: string;
+  /** When the profile was last read. */
+  profileAt?: number;
+  /** Its latest videos, newest first (the feed's). */
+  recent?: FeedEntry[];
+  /** Videos Grabby started from it (the latest ones). */
+  taken?: string[];
 }

@@ -71,9 +71,13 @@ export function Addresses({ items, send }: { items: BatchItem[]; send: (m: Popup
               </button>
             </span>
           </header>
+          <div class="progress" role="progressbar" aria-valuemin={0} aria-valuemax={items.length} aria-valuenow={done} aria-label={t('batchProgress', [String(done), String(items.length)])}>
+            <span class="progress__bar" style={{ '--p': String(items.length ? done / items.length : 0) }} />
+            <span>{t('batchProgress', [String(done), String(items.length)])}</span>
+          </div>
           <ul class="lines">
-            {items.map((i) => (
-              <li key={i.id} class={`line line--${i.status}`}>
+            {items.map((i, n) => (
+              <li key={i.id} class={`line line--${i.status}`} style={{ animationDelay: `${Math.min(n, 12) * 30}ms` }}>
                 <span class="line__icon" aria-hidden="true">
                   <Icon name={STATUS_ICON[i.status]} size={16} />
                 </span>

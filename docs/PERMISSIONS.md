@@ -52,7 +52,9 @@ après ton accord ne sont que des poids (des données), lus par ce code inclus.
   pour trouver sa plus grande taille.
 - Si tu **suis une chaîne** ou une playlist YouTube : sa page une fois, puis une requête
   par heure vers son flux public `https://www.youtube.com/feeds/videos.xml?…` (sans
-  cookie).
+  cookie), et la page publique de la chaîne une fois par jour au plus (sa photo, son @nom,
+  ses abonnés ; sans cookie). La page complète affiche ces photos et miniatures depuis
+  `https://yt3.googleusercontent.com` et `https://i.ytimg.com`.
 - Si tu demandes une **transcription** ou une **traduction** et l'acceptes : le
   téléchargement, une seule fois, des poids des modèles depuis `https://huggingface.co`
   (environ 77 Mo pour la transcription, 107 Mo par paire de langues), gardés dans le cache

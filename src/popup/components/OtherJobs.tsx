@@ -64,6 +64,14 @@ function JobRow({ job, send, move }: RowProps) {
         >
           <Icon name="grip" size={16} />
         </button>
+      ) : job.thumbnail ? (
+        // The video's picture, with what is being done on it.
+        <span class="jrow__thumb">
+          <img src={job.thumbnail} alt="" loading="lazy" referrerpolicy="no-referrer" />
+          <span class={`jrow__badge${paused ? ' jrow__badge--paused' : ''}`}>
+            <Icon name={paused ? 'pause' : job.mode === 'audio' ? 'audio' : 'download'} size={11} />
+          </span>
+        </span>
       ) : (
         <span class={`jrow__icon${paused ? ' jrow__icon--paused' : ''}`}>
           <Icon name={paused ? 'pause' : job.mode === 'audio' ? 'audio' : 'download'} size={16} />
@@ -101,16 +109,18 @@ function JobRow({ job, send, move }: RowProps) {
 }
 
 /**
- * The downloads not on this page's cards; with two or more under way, all of them: the queue,
- * whose waiting ones can be put in another order, all paused or all resumed at once.
+ * The downloads not on this page's cards. With two or more under way (`total`, cards
+ * included), the queue's head: all paused or all resumed at once; its waiting rows can be put
+ * in another order.
  */
-export function OtherJobs({ jobs, queue = false, send }: { jobs: Job[]; queue?: boolean; send: (m: PopupToBg) => void }) {
+export function OtherJobs({ jobs, queue = false, all = jobs, send }: { jobs: Job[]; queue?: boolean; all?: Job[]; send: (m: PopupToBg) => void }) {
   const [drag, setDrag] = useState<Drag | null>(null);
-  if (!jobs.length) return null;
+  if (!jobs.length && !queue) return null;
   const waiting = jobs.filter((j) => j.status === 'queued');
   const movable = queue && waiting.length > 1;
-  const anyPausable = jobs.some(canPause);
-  const anyPaused = jobs.some((j) => j.status === 'paused');
+  // "Pause all" acts on every download, those on the cards too.
+  const anyPausable = all.some(canPause);
+  const anyPaused = all.some((j) => j.status === 'paused');
 
   /** Where the dragged one lands, said as "before which" (the next waiting one, or last). */
   const landingBefore = (over: Job, after: boolean): string | null => {
@@ -144,7 +154,7 @@ export function OtherJobs({ jobs, queue = false, send }: { jobs: Job[]; queue?: 
       onDragOver={(e) => drag && e.preventDefault()}
     >
       <header class="others__head">
-        <h3 class="others__title">{queue ? t('queueCount', String(jobs.length)) : t('othersTitle')}</h3>
+        <h3 class="others__title">{queue ? t('queueCount', String(all.length)) : t('othersTitle')}</h3>
         {queue && (anyPausable || anyPaused) && (
           <button class="btn btn--soft btn--small" onClick={() => send({ type: anyPausable ? 'pause-all' : 'resume-all' })}>
             <Icon name={anyPausable ? 'pause' : 'play'} size={14} />

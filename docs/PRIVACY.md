@@ -1,6 +1,6 @@
 # Grabby — Privacy policy / Politique de confidentialité
 
-_Last updated: 2026-10-06 (1.10.0)_
+_Last updated: 2026-10-06 (1.11.0)_
 
 ## English
 
@@ -60,9 +60,17 @@ Grabby does **not** collect, store on a server, sell or share any personal data.
   (on YouTube, from `i.ytimg.com`, where the page already loads it).
 - **Followed channels (only those you follow).** When you follow a YouTube channel or
   playlist, Grabby reads its page once (to find its id), then once an hour its public feed
-  (`www.youtube.com/feeds/videos.xml?…`), without cookies, to see new videos. The list of
-  followed channels and the videos already seen stay in the extension's storage; you can
-  stop following at any time.
+  (`www.youtube.com/feeds/videos.xml?…`), without cookies, to see new videos. To show the
+  channel's picture, @name and number of subscribers, it reads the channel's public page
+  (`www.youtube.com/channel/…`, without cookies) when you follow it, then at most once a
+  day. The full page shows that picture and the thumbnails of the latest videos, loaded
+  from YouTube's image servers (`yt3.googleusercontent.com`, `i.ytimg.com`) like any
+  YouTube page does. The list of followed channels and the videos already seen stay in the
+  extension's storage; you can stop following at any time.
+- **YouTube's own settings.** The hidden player Grabby uses for YouTube keeps what it
+  chooses (quality, bandwidth) to itself and never writes it to youtube.com's storage, so
+  your own playback is never changed. Once, on your next visit to YouTube, Grabby removes
+  a quality forced to 144p by version 1.10.0 (and nothing else); nothing is read or sent.
 - **Pasted addresses.** The pages of a list you paste are opened one or two at a time in
   tabs behind yours, as if you opened them yourself, and closed once their video is
   found.
@@ -159,8 +167,18 @@ et ne la partage pas.
 - **Chaînes suivies (seulement celles que tu suis).** Quand tu suis une chaîne ou une
   playlist YouTube, Grabby lit sa page une fois (pour trouver son identifiant), puis une
   fois par heure son flux public (`www.youtube.com/feeds/videos.xml?…`), sans cookie, pour
-  voir les nouvelles vidéos. La liste des chaînes suivies et des vidéos déjà vues reste dans
-  la mémoire de l'extension ; tu peux arrêter de suivre à tout moment.
+  voir les nouvelles vidéos. Pour afficher la photo de la chaîne, son @nom et son nombre
+  d'abonnés, il lit sa page publique (`www.youtube.com/channel/…`, sans cookie) quand tu la
+  suis, puis une fois par jour au plus. La page complète affiche cette photo et les
+  miniatures des dernières vidéos, chargées depuis les serveurs d'images de YouTube
+  (`yt3.googleusercontent.com`, `i.ytimg.com`), comme n'importe quelle page de YouTube.
+  La liste des chaînes suivies et des vidéos déjà vues reste dans la mémoire de
+  l'extension ; tu peux arrêter de suivre à tout moment.
+- **Réglages de YouTube.** Le lecteur caché que Grabby utilise pour YouTube garde ses choix
+  (qualité, débit) pour lui et ne les écrit jamais dans la mémoire de youtube.com : ta
+  propre lecture n'est jamais modifiée. Une seule fois, à ta prochaine visite de YouTube,
+  Grabby efface une qualité forcée à 144p par la version 1.10.0 (et rien d'autre) ; rien
+  n'est lu ni envoyé.
 - **Liste d'adresses collée.** Les pages d'une liste que tu colles sont ouvertes une ou deux
   à la fois dans des onglets en arrière-plan, comme si tu les ouvrais toi-même, puis
   refermées une fois leur vidéo trouvée.

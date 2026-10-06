@@ -13,6 +13,79 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 ## [Non publié]
 
+## [1.11.0] — 2026-10-06
+
+Une version de finition : les bugs signalés sont corrigés (YouTube qui passait en 144p,
+doublons dans la fenêtre), le bouton sur les vidéos est plus clair, les réglages sont rangés
+en rubriques, et la page complète est entièrement redessinée, avec des animations partout.
+
+### Corrigé
+- **YouTube restait en 144p après un téléchargement** (sur le site, pas dans le fichier).
+  Le lecteur caché de Grabby partage la mémoire de youtube.com avec tes onglets ; quand il
+  enregistrait un son, il choisissait la plus petite image (inutile pour un son), et YouTube
+  retenait ce choix comme le tien. Désormais, tout ce que le lecteur caché retient
+  (qualité, débit, limites) reste dans sa propre mémoire et n'est **jamais** écrit dans
+  celle de youtube.com. Pour ceux que la 1.10.0 avait touchés, Grabby efface une seule fois,
+  à la prochaine visite de YouTube, une qualité forcée à 144p (et seulement celle-là : un
+  choix de 720p ou 1080p n'est jamais touché).
+- **Doublons dans la fenêtre** : un téléchargement lancé depuis le bouton sur la vidéo
+  apparaissait deux fois (sur la carte de la vidéo et dans la liste du dessous, intitulé
+  « YouTube », sans animation). Chaque téléchargement apparaît maintenant **une seule fois** :
+  sur la carte de sa vidéo s'il en a une, sinon dans la liste. Une carte qui a plusieurs
+  téléchargements (la vidéo et le son, par exemple) les empile, chacun avec son étiquette
+  (« Vidéo · MP4 · 1080p », « Son · M4A ») et sa propre barre.
+- **Titre « YouTube »** : un téléchargement lancé pendant qu'une vidéo YouTube se chargeait
+  pouvait s'appeler seulement « YouTube ». Grabby prend maintenant le titre du lecteur quand
+  il décrit bien cette vidéo, et ne nomme jamais un fichier juste « YouTube ».
+- **Bibliothèque sans informations** : le téléchargement en cours n'y affichait que
+  « YouTube · En pause · 9 % ». Il y a maintenant sa miniature, son titre, ce qu'il produit,
+  le site, la progression et les boutons (pause, reprise, annuler).
+- **Chaînes suivies limitées à 1080p** : on peut maintenant choisir **1440p** et
+  **2160p (4K)** (en VP9, le seul format que YouTube propose au-dessus de 1080p, gardé tel
+  quel dans le MP4). Une vidéo qui n'a pas cette qualité est prise dans sa meilleure.
+- Les boutons désactivés de la page complète (« Aucune adresse trouvée ») ne ressemblaient
+  pas assez à des boutons désactivés.
+
+### Modifié
+- **Bouton sur les vidéos** redessiné : une barre sombre et nette avec le logo, un gros
+  bouton blanc **Télécharger** (la vidéo) et un bouton **Son seul** écrit en toutes lettres
+  (l'ancienne note de musique prêtait à confusion). Après le clic, le bouton devient vert,
+  avec une coche animée et « Lancé ». Sous le lecteur YouTube, la même chose en deux
+  boutons : **Télécharger** et **Son seul**.
+- **Réglages rangés en rubriques** : au lieu d'une longue liste, un menu de 8 rubriques
+  (Apparence, Formats par défaut, Noms et dossiers, Téléchargements, Raccourci clavier,
+  YouTube, Pages et IA, Mises à jour), chacune avec son icône, sa couleur et un résumé de ce
+  qui est réglé dedans (« MP4 · M4A », « Tout de suite · notification »…). On entre dans une rubrique d'un
+  clic, on revient au menu avec la flèche ou Échap ; le passage glisse dans un sens puis
+  dans l'autre.
+- **Page complète entièrement redessinée** :
+  - un menu latéral rangé en groupes (Mes fichiers, Télécharger, Retoucher, Organiser),
+    chaque rubrique avec sa couleur, et un surlignage qui **glisse** vers la rubrique
+    choisie ;
+  - des compteurs sur le menu (téléchargements en cours, adresses en attente, chaînes
+    suivies) et, en bas, un anneau de progression de tout ce qui se télécharge ;
+  - chaque rubrique arrive avec son en-tête coloré, ses cartes qui apparaissent l'une après
+    l'autre, et des états vides qui disent quoi faire ;
+  - **Bibliothèque** : les téléchargements en cours en grand (miniature, pourcentage,
+    barre, boutons), trois chiffres (fichiers, place occupée, répartition par type, avec une
+    barre qui se dévoile), des filtres, et une grille de vignettes avec dates relatives
+    (« hier », « il y a 3 jours ») ;
+  - **Chaînes suivies** : la **photo de profil** de chaque chaîne, son **@nom**, son
+    **nombre d'abonnés**, et ses **6 dernières vidéos** en vignettes, chacune marquée
+    « Enregistrée », « En cours » (avec sa progression), « Nouvelle » ou « Avant le suivi ».
+    Le formulaire se valide avec Entrée, affiche son résultat, et « Ne plus suivre »
+    demande une confirmation ;
+  - **Liste d'adresses** : une barre de progression (« 3 sur 8 traitées ») ;
+  - thème clair et sombre soignés, mise en page adaptée aux petites fenêtres, et les
+    animations s'arrêtent si le système demande moins de mouvement.
+- **Fenêtre** : les téléchargements de la liste ont leur miniature et un badge (vidéo ou
+  son) ; chaque ligne arrive avec une animation.
+
+### Ajouté
+- Le profil d'une chaîne suivie (photo, @nom, abonnés) est lu sur sa page publique
+  YouTube quand tu la suis, puis une fois par jour au plus. Rien d'autre n'est lu et rien
+  n'est envoyé.
+
 ## [1.10.0] — 2026-10-06
 
 La plus grosse version de Grabby : enregistrer les directs, un petit éditeur, une IA qui
@@ -918,7 +991,8 @@ Première version.
 - Capture YouTube expérimentale.
 - Interface en français et en anglais, thème clair et sombre.
 
-[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.10.0...HEAD
+[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.11.0...HEAD
+[1.11.0]: https://github.com/titilyonnais/grabby/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/titilyonnais/grabby/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/titilyonnais/grabby/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/titilyonnais/grabby/compare/v1.7.0...v1.8.0

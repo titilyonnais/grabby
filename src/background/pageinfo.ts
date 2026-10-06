@@ -9,6 +9,7 @@ import type { DetectContext } from './manifests';
 import type { Registry } from './registry';
 import { listOf, type YtList } from '../shared/ytlist';
 import { clock } from '../shared/clip';
+import { ytTitle } from '../shared/title';
 
 const MIN_CAPTURE_WIDTH = 120;
 
@@ -44,7 +45,9 @@ async function upsertYouTube(registry: Registry, ctx: DetectContext, frameId: nu
     codecs: [q.avc && 'avc1', q.vp9 && 'vp9'].filter(Boolean).join(','),
   }));
   const item = captureItem(ctx, frameId, main?.index ?? 0, {
-    title: yt.title,
+    // The player's own title: the tab's still says "YouTube" for a while after moving to
+    // another video inside the site.
+    title: ytTitle(yt, p),
     experimental: true,
     formats: ['mp4', 'webm', 'mkv'],
     variants,

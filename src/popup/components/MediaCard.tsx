@@ -28,6 +28,10 @@ const MAX_ANIMATION = 30;
 interface Props {
   item: MediaItem;
   job?: Job;
+  /** Its other downloads under way (the sound while the video downloads…), shown with it. */
+  others?: Job[];
+  /** Downloads listed in the queue above the cards (by id). */
+  inQueue?: string[];
   /**
    * The open card is the big one (full-width thumbnail and its choices); the others are
    * compact rows. One open card at a time.
@@ -45,6 +49,40 @@ interface Props {
   rules?: Rule[];
   /** The local AI: whether its models may be downloaded, and agreeing to it. */
   ai?: { allowed: boolean; allow: () => void };
+}
+
+/** What a download makes, when a card has several: "Vidéo · MP4", "Son · M4A". */
+function jobKind(j: Job): string {
+  const what = j.mode === 'audio' ? t('jobKindAudio') : j.format && isImageFormat(j.format) ? t('jobKindImage') : t('jobKindVideo');
+  return [what, j.format ? FORMAT_NAMES[j.format] : '', j.mode === 'video' ? (j.quality ?? '') : ''].filter(Boolean).join(' · ');
+}
+
+/** A download shown in the queue above: the card only says so (never shown twice). */
+function InQueue({ job }: { job: Job }) {
+  return (
+    <p class="jobstack__queued">
+      <Icon name={job.status === 'paused' ? 'pause' : 'list'} size={14} />
+      {t(job.status === 'paused' ? 'jobPausedInQueue' : 'jobInQueue')}
+    </p>
+  );
+}
+
+/** The card's downloads: the last one asked for, and the others still under way above it. */
+function JobStack({ job, others, send, listed }: { job: Job; others: Job[]; send: (m: PopupToBg) => void; listed: (j: Job) => boolean }) {
+  if (!others.length) return listed(job) ? <InQueue job={job} /> : <JobBar job={job} send={send} />;
+  return (
+    <div class="jobstack">
+      {[...others, job].map((j) => (
+        <div key={j.id} class="jobstack__item">
+          <span class="jobstack__kind">
+            <Icon name={j.mode === 'audio' ? 'audio' : 'film'} size={13} />
+            {jobKind(j)}
+          </span>
+          {listed(j) ? <InQueue job={j} /> : <JobBar job={j} send={send} />}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 /** How long a live stream may be recorded (minutes). */
@@ -87,7 +125,7 @@ function Thumb({ item }: { item: MediaItem }) {
   );
 }
 
-export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, index, preferred, send, select, rules, ai }: Props) {
+export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen, onToggle: toggleOpen, index, preferred, send, select, rules, ai }: Props) {
   // The site's rule: its quality, format and subtitles are chosen already (still changeable).
   const rule = ruleFor(rules, item.pageUrl);
   const ruled = rule ? applyRule(item, rule, preferred) : undefined;
@@ -431,7 +469,7 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
                 />
               )}
               {showJob ? (
-                <JobBar job={job} send={send} />
+                <JobStack job={job} others={others} send={send} listed={(j) => inQueue.includes(j.id)} />
               ) : (
                 <button class="btn btn--primary btn--wide" onClick={start}>
                   <Icon name="record" />
@@ -558,7 +596,7 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
               )}
               {showJob ? (
                 <>
-                  <JobBar job={job} send={send} />
+                  <JobStack job={job} others={others} send={send} listed={(j) => inQueue.includes(j.id)} />
                   {job.raw && isActive(job) && <p class="hint">{t('rawNotice')}</p>}
                 </>
               ) : (

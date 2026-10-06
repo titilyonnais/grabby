@@ -212,6 +212,8 @@ export interface Job {
   liveSince?: number;
   /** What is being done to the file once it is made. */
   step?: JobStep;
+  /** The video's picture (an address, or a small picture), to show it while it downloads. */
+  thumbnail?: string;
 }
 
 /** The steps after a file is made: the model downloaded, subtitles written or translated… */

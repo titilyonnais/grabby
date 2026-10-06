@@ -226,6 +226,34 @@ function hideDroppedFrames() {
   }
 }
 
+/** What YouTube's player remembers about the viewer: quality, bandwidth, performance cap, volume… */
+export const PLAYER_MEMORY = /^yt-player-/;
+
+/**
+ * The hidden player shares youtube.com's storage with the user's own tabs. What it would
+ * remember (the quality asked for — 144p for a sound file —, the bandwidth measured at 16×,
+ * the volume it muted) is kept in memory only: YouTube plays on afterwards as it did before.
+ * What the user's tabs remembered is still read.
+ */
+export function shieldPlayerMemory(storage: Storage = window.localStorage): Map<string, string | null> {
+  const own = new Map<string, string | null>();
+  const proto = Object.getPrototypeOf(storage) as Storage;
+  const { getItem, setItem, removeItem } = proto;
+  proto.getItem = function (this: Storage, key: string) {
+    if (this === storage && PLAYER_MEMORY.test(String(key)) && own.has(String(key))) return own.get(String(key)) ?? null;
+    return getItem.call(this, key);
+  };
+  proto.setItem = function (this: Storage, key: string, value: string) {
+    if (this === storage && PLAYER_MEMORY.test(String(key))) return void own.set(String(key), String(value));
+    return setItem.call(this, key, value);
+  };
+  proto.removeItem = function (this: Storage, key: string) {
+    if (this === storage && PLAYER_MEMORY.test(String(key))) return void own.set(String(key), null);
+    return removeItem.call(this, key);
+  };
+  return own;
+}
+
 /** Restarts after a quality change, a few times at most (then keeps the longest part). */
 const MAX_RESTARTS = 6;
 
@@ -295,6 +323,11 @@ function hiddenPlayer(api: HookApi, params: URLSearchParams) {
   const begin = seconds(params.get('gyb')) ?? 0;
   const partEnd = seconds(params.get('gye'));
   const from = seconds(params.get('start')) ?? 0;
+  try {
+    shieldPlayerMemory();
+  } catch {
+    /* storage refused: nothing to remember either */
+  }
   restrictCodecs(params.get('gyv'), params.get('gya'));
   hideDroppedFrames();
   let restarts = 0;
