@@ -1,4 +1,4 @@
-import type { BgToPopup, BlockedReason, ContentToBg, OffscreenToBg, PopupState, PopupToBg } from '../shared/messages';
+import type { AppRequest, BgToPopup, BlockedReason, ContentToBg, OffscreenToBg, PopupState, PopupToBg } from '../shared/messages';
 import { getSettings, setSettings } from '../shared/settings';
 import { cleanTitle } from '../shared/title';
 import { hostOf } from '../parsers/url';
@@ -16,11 +16,16 @@ import { handlePageInfo } from './pageinfo';
 import { Registry, sessionKV } from './registry';
 import { forgetTab, rememberTabUrl, samePage, tabUrl } from './tabs';
 import { visibleItems } from './visible';
-import { putChunk } from '../shared/idb';
+import { deleteJob, listTrackMimes, putChunk } from '../shared/idb';
 import { quickDownload } from './quick';
+import { Batch, BATCH_ALARM } from './batch';
+import { exportBackup, importBackup } from './backup';
+import { addWatch, changeWatch, checkWatches, getWatches, removeWatch, syncWatchAlarm, WATCH_ALARM } from './watch';
 
 const registry = new Registry(sessionKV);
 const jobs = new JobManager(registry);
+// Pasted addresses: opened two at a time; every open page sees the list change.
+const batch = new Batch(registry, jobs, () => pushAll());
 
 // A new document replaced the page: recordings in that tab can't continue.
 startDetector(registry, (tabId) => void jobs.onTabGone(tabId));
@@ -29,6 +34,9 @@ listenNotificationClicks();
 chrome.runtime.onStartup.addListener(() => {
   void resetHeaderRules();
   void getSettings().then((s) => watchUpdates(s.updateCheck));
+  void syncWatchAlarm();
+  // Pages being opened before the browser closed: given up, the next ones opened.
+  void batch.pump();
 });
 chrome.runtime.onInstalled.addListener(() => {
   void resetHeaderRules();
@@ -55,6 +63,8 @@ chrome.commands.onCommand.addListener((command, tab) => {
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === 'grabby-resume' || a.name === SCHEDULE_ALARM) void jobs.wake();
   if (a.name === UPDATE_ALARM) void checkUpdate();
+  if (a.name === WATCH_ALARM) void checkWatches(jobs);
+  if (a.name === BATCH_ALARM) void batch.pump();
 });
 // Wi-Fi only: the connection changed (only some systems tell its type).
 (navigator as Navigator & { connection?: EventTarget }).connection?.addEventListener?.('change', () => void jobs.wake());
@@ -83,6 +93,7 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
+  void batch.onTabRemoved(tabId);
   forgetTab(tabId);
   forgetRedo(tabId);
   void registry.remove(tabId);
@@ -107,13 +118,16 @@ async function buildState(tabId: number): Promise<PopupState> {
   // An invalid id throws synchronously (not a rejected promise).
   const tab = await (async () => chrome.tabs.get(tabId))().catch(() => undefined);
   const tabTitle = tab?.title ? cleanTitle(tab.title, hostOf(tab.url ?? pageUrl)) : undefined;
-  const [items, history, settings, asks, update, ytList] = await Promise.all([
+  const [items, history, settings, asks, update, ytList, watches, pasted] = await Promise.all([
     registry.get(tabId, tabTitle),
     historyWithPresence(),
     getSettings(),
     chrome.storage.local.get(BROWSER_ASKS_KEY),
     updateNotice().catch(() => undefined),
     blocked ? undefined : registry.ytList(tabId),
+    getWatches(),
+    // The pasted addresses: only the full page shows them.
+    tabId < 0 ? batch.list() : undefined,
   ]);
   return {
     tabId,
@@ -128,6 +142,8 @@ async function buildState(tabId: number): Promise<PopupState> {
     ...(update ? { update } : {}),
     ...(installState() ? { install: installState() } : {}),
     ...(ytList ? { ytList } : {}),
+    ...(watches.length ? { watches } : {}),
+    ...(pasted?.length ? { batch: pasted } : {}),
   };
 }
 
@@ -161,11 +177,17 @@ function pushTab(tabId: number) {
   for (const [port, t] of ports) if (t === tabId) schedulePush(port);
 }
 
+function pushAll() {
+  for (const port of ports.keys()) schedulePush(port);
+}
+
 registry.onChange((tabId) => {
   void registry.get(tabId).then((items) => updateBadge(tabId, items));
   pushTab(tabId);
   // A page opened again from the history: its download starts once its video is found.
   void redoIfWaiting(tabId, registry, jobs);
+  // One of the pasted addresses may have shown its video.
+  void batch.onTab(tabId);
 });
 
 jobs.onChange(() => {
@@ -175,7 +197,7 @@ jobs.onChange(() => {
 
 // The browser was found asking where to save: open popups explain it right away.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && BROWSER_ASKS_KEY in changes) for (const port of ports.keys()) schedulePush(port);
+  if (area === 'local' && (BROWSER_ASKS_KEY in changes || 'watches' in changes)) pushAll();
 });
 
 chrome.tabs.onActivated.addListener(({ tabId }) => void paintTab(tabId));
@@ -285,16 +307,84 @@ async function onPopupMessage(port: chrome.runtime.Port, msg: PopupToBg) {
       }
       schedulePush(port);
       return;
+    case 'batch-remove':
+      return batch.remove(msg.id);
+    case 'batch-retry':
+      return batch.retry(msg.id);
+    case 'batch-clear':
+      return batch.clear(msg.all);
+    case 'watch-remove':
+      return removeWatch(msg.id);
+    case 'watch-change':
+      return changeWatch(msg.id, msg.patch);
+  }
+}
+
+/** The full page's (or the popup's) questions, answered. */
+async function onAppRequest(msg: AppRequest): Promise<unknown> {
+  switch (msg.app) {
+    case 'watch-add':
+      return addWatch(msg.url, { mode: msg.mode, quality: msg.quality, ...(msg.format ? { format: msg.format } : {}) });
+    case 'watch-check':
+      return checkWatches(jobs, msg.id);
+    case 'batch-add':
+      return batch.add(msg.text, msg.mode);
+    case 'export':
+      return exportBackup();
+    case 'import': {
+      const done = await importBackup(msg.data);
+      if (done) {
+        const s = await getSettings();
+        await watchUpdates(s.updateCheck);
+        pushAll();
+      }
+      return done;
+    }
+    case 'open-app': {
+      const base = chrome.runtime.getURL('app.html');
+      const url = `${base}${msg.section ? `#${encodeURIComponent(msg.section)}` : ''}`;
+      // Already open: shown again, on the section asked for.
+      const [open] = await chrome.tabs.query({ url: `${base}*` });
+      if (open?.id !== undefined) {
+        await chrome.tabs.update(open.id, { active: true, ...(msg.section ? { url } : {}) });
+        if (open.windowId !== undefined) await chrome.windows.update(open.windowId, { focused: true }).catch(() => {});
+      } else await chrome.tabs.create({ url });
+      return true;
+    }
+    case 'file-paths': {
+      const ids = msg.ids.filter((n) => Number.isInteger(n)).slice(0, 500);
+      const found = ids.length ? await Promise.all(ids.map((id) => chrome.downloads.search({ id }).then((r) => r[0]))) : [];
+      return found.filter((d): d is chrome.downloads.DownloadItem => !!d).map((d) => ({ id: d.id, path: d.filename, exists: d.exists, mime: d.mime }));
+    }
   }
 }
 
 /* --------------------------------------------- content scripts & offscreen */
 
-chrome.runtime.onMessage.addListener((msg: ContentToBg | OffscreenToBg, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg: ContentToBg | OffscreenToBg | AppRequest, sender, sendResponse) => {
+  if ('app' in msg) {
+    // Only Grabby's own pages ask (never a web page's content script).
+    if (sender.id !== chrome.runtime.id || sender.tab?.url?.startsWith('http') || !sender.url?.startsWith(chrome.runtime.getURL(''))) return;
+    onAppRequest(msg).then(sendResponse, (e) => {
+      console.warn('[grabby] request failed', msg.app, e);
+      sendResponse(null);
+    });
+    return true;
+  }
   if ('target' in msg) {
     if (msg.target !== 'bg') return;
     if (msg.type === 'sink-check') {
-      void jobs.ready.then(() => sendResponse(jobs.isCapturing(msg.jobId)));
+      void (async () => {
+        await jobs.ready;
+        if (!jobs.isCapturing(msg.jobId)) return sendResponse(false);
+        // The frame wrote a probe: when Grabby can't see it, the frame's storage is walled
+        // off from the extension's (Brave keeps third-party frames apart): the recording
+        // then goes through the port instead.
+        if (typeof msg.probe !== 'string' || !/^probe-[\w-]{8,64}$/.test(msg.probe)) return sendResponse(true);
+        const seen = (await listTrackMimes(msg.probe).catch(() => [])).length > 0;
+        await deleteJob(msg.probe).catch(() => {});
+        sendResponse(seen ? true : 'partitioned');
+      })();
       return true;
     }
     void jobs.onOffscreenMessage(msg);
@@ -318,6 +408,10 @@ chrome.runtime.onMessage.addListener((msg: ContentToBg | OffscreenToBg, sender, 
     case 'capture-done':
     case 'capture-error':
       void jobs.onContentMessage(msg);
+      break;
+    case 'grab':
+      // The button over a video: that video, straight away.
+      void quickDownload(registry, jobs, tabId, msg.src, msg.mode);
       break;
     case 'show-download':
       // Only downloads Grabby made can be shown from a page.

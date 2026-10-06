@@ -5,6 +5,22 @@ export interface CapturedTrack {
   mime: string;
   kind: 'video' | 'audio';
   data: Uint8Array;
+  /** A live stream whose player appends whole little files (YouTube): each one, in order. */
+  pieces?: Uint8Array[];
+}
+
+/**
+ * A live stream's recorded track, cut where each little file starts (each one begins with its
+ * own header). One run only when the player appended a single header (most players).
+ */
+export function liveRuns(chunks: StoredChunk[]): StoredChunk[][] {
+  const runs: StoredChunk[][] = [];
+  for (const c of chunks) {
+    const run = runs[runs.length - 1];
+    if (c.init || !run) runs.push([c]);
+    else run.push(c);
+  }
+  return runs.filter((r) => r[0]!.init);
 }
 
 /**
@@ -62,13 +78,13 @@ function concat(chunks: StoredChunk[]): Uint8Array {
  * Rebuilds each recorded track, session by session (a recording paused or cut, then carried
  * on). `keep` limits a session to the tracks of the video itself when it names some of them.
  */
-export async function assembleSessions(jobId: string, keep?: number[]): Promise<{ session: number; tracks: CapturedTrack[] }[]> {
+export async function assembleSessions(jobId: string, keep?: number[], live = false): Promise<{ session: number; tracks: CapturedTrack[] }[]> {
   const all = (await readTracks(jobId)).filter((t) => !isCaptionTrack(t.track));
   const sessions = [...new Set(all.map((t) => sessionOf(t.track)))].sort((a, b) => a - b);
   const out: { session: number; tracks: CapturedTrack[] }[] = [];
   for (const n of sessions) {
     const own = keep?.filter((k) => sessionOf(k) === n) ?? [];
-    const tracks = await assembleCapture(jobId, own, all.filter((t) => sessionOf(t.track) === n));
+    const tracks = await assembleCapture(jobId, own, all.filter((t) => sessionOf(t.track) === n), live);
     if (tracks.length) out.push({ session: n, tracks });
   }
   return out;
@@ -83,7 +99,7 @@ export async function capturedCaptions(jobId: string, k = 0): Promise<Uint8Array
 }
 
 /** Rebuilds each recorded track; `keep` limits it to the tracks of the video itself. */
-export async function assembleCapture(jobId: string, keep?: number[], from?: Awaited<ReturnType<typeof readTracks>>): Promise<CapturedTrack[]> {
+export async function assembleCapture(jobId: string, keep?: number[], from?: Awaited<ReturnType<typeof readTracks>>, live = false): Promise<CapturedTrack[]> {
   const all = (from ?? (await readTracks(jobId))).filter((t) => !isCaptionTrack(t.track));
   const tracks = all.filter((t) => !keep?.length || keep.includes(t.track));
   // Diagnostic summary (visible in the offscreen document's console).
@@ -104,7 +120,13 @@ export async function assembleCapture(jobId: string, keep?: number[], from?: Awa
     }),
   );
   return tracks
-    .map((t) => {
+    .map((t): CapturedTrack => {
+      const kind = t.mime.toLowerCase().startsWith('audio/') ? ('audio' as const) : ('video' as const);
+      if (live) {
+        // Each little file of a live stream kept, to be put end to end.
+        const runs = liveRuns(t.chunks);
+        if (runs.length > 1) return { mime: t.mime, kind, data: concat(runs[0]!), pieces: runs.map(concat) };
+      }
       const run = bestRun(t.chunks);
       return {
         mime: t.mime,

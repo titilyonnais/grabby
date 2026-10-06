@@ -45,5 +45,6 @@ export function findVisible(items: MediaItem[], id: string): MediaItem | undefin
   return visibleItems(items).find((i) => i.id === id) ?? items.find((i) => i.id === id);
 }
 
+/** What can be saved: not protected; a live stream when it can be recorded (not live DASH). */
 export const downloadableCount = (items: MediaItem[]): number =>
-  visibleItems(items).filter((i) => i.protection === 'none' && !i.live).length;
+  visibleItems(items).filter((i) => i.protection === 'none' && !(i.live && i.kind === 'dash')).length;

@@ -98,3 +98,13 @@ export function folderFor(mode: FolderMode, ctx: { site: string; kind: 'video' |
   if (mode === 'type') return `Grabby/${names[ctx.kind]}`;
   return undefined;
 }
+
+/**
+ * Where a piece of a file split in several goes (one per chapter): in a folder named like the
+ * file, "Musique/Titre/01 - Intro.mp3" for "Musique/Titre.mp3".
+ */
+export function pieceFilename(file: string, name: string, ext: string): string {
+  const dot = file.lastIndexOf('.');
+  const folder = (dot > 0 ? file.slice(0, dot) : file).replace(/[. ]+$/, '');
+  return `${folder}/${sanitizeFilename(name, 'part', 120)}.${ext}`;
+}

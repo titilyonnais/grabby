@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { BgToPopup, PopupState, PopupToBg } from '../shared/messages';
 
-async function currentTabId(): Promise<number> {
+async function currentTabId(fixed?: number): Promise<number> {
+  if (fixed !== undefined) return fixed;
   const forced = new URLSearchParams(location.search).get('tab');
   if (forced) return Number(forced);
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -9,7 +10,7 @@ async function currentTabId(): Promise<number> {
 }
 
 /** Live popup state pushed by the service worker over a long-lived port. */
-export function useGrabby() {
+export function useGrabby(fixedTab?: number) {
   const [state, setState] = useState<PopupState | null>(null);
   const port = useRef<chrome.runtime.Port | null>(null);
 
@@ -17,7 +18,7 @@ export function useGrabby() {
     let disposed = false;
     let p: chrome.runtime.Port;
     const connect = async () => {
-      const tabId = await currentTabId();
+      const tabId = await currentTabId(fixedTab);
       if (disposed) return;
       p = chrome.runtime.connect({ name: 'popup' });
       port.current = p;

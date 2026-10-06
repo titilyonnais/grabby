@@ -156,6 +156,17 @@ export function App() {
                 <Icon name={dark ? 'sun' : 'moon'} />
               </span>
             </button>
+            <button
+              class="icon-btn"
+              aria-label={t('openApp')}
+              title={t('openApp')}
+              onClick={() => {
+                void chrome.runtime.sendMessage({ app: 'open-app' }).catch(() => {});
+                window.close();
+              }}
+            >
+              <Icon name="grid" />
+            </button>
             <button ref={gear} class="icon-btn" aria-label={t('openSettings')} title={t('openSettings')} onClick={openSettings}>
               <Icon name="settings" />
             </button>
@@ -210,7 +221,7 @@ export function App() {
                   {state.update && <UpdateNotice release={state.update} install={state.install} send={send} />}
                   <OtherJobs jobs={queue ? active : elsewhere} queue={queue} send={send} />
                   {/* A playlist or a channel page: its videos first. Under a video being watched, the list it belongs to comes after it, folded. */}
-                  {state.ytList && !state.blocked && !items.length && <Playlist key={state.ytList.title} list={state.ytList} preferred={prefs} send={send} />}
+                  {state.ytList && !state.blocked && !items.length && <Playlist key={state.ytList.title} list={state.ytList} pageUrl={state.pageUrl} preferred={prefs} send={send} />}
                   {state.blocked === 'restricted' ? (
                     <StateCard icon="lock" title={t('restrictedTitle')} body={t('restrictedBody')} />
                   ) : !items.length ? (
@@ -229,6 +240,8 @@ export function App() {
                           open={i.id === openCard}
                           onToggle={() => setOpenId(i.id === openCard ? '' : i.id)}
                           preferred={prefs}
+                          rules={settings!.rules}
+                          ai={{ allowed: settings!.aiModels, allow: () => send({ type: 'settings', patch: { aiModels: true } }) }}
                           send={send}
                           select={
                             picked
@@ -254,7 +267,7 @@ export function App() {
                     </section>
                   )}
                   {state.ytList && !state.blocked && items.length > 0 && !picked && (
-                    <Playlist key={state.ytList.title} list={state.ytList} preferred={prefs} send={send} compact />
+                    <Playlist key={state.ytList.title} list={state.ytList} pageUrl={state.pageUrl} preferred={prefs} send={send} compact />
                   )}
                 </>
               )}

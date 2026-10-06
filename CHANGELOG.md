@@ -13,6 +13,169 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 ## [Non publié]
 
+## [1.10.0] — 2026-10-06
+
+La plus grosse version de Grabby : enregistrer les directs, un petit éditeur, une IA qui
+travaille sur ton ordinateur (transcription, traduction, résumé), des chaînes YouTube
+suivies, une liste d'adresses à télécharger d'un coup, et une page complète avec
+bibliothèque, atelier et assemblage de vidéos.
+
+### Ajouté
+
+#### Téléchargement
+- **Enregistrer les directs** : une vidéo en direct n'est plus refusée. Sa carte propose
+  **Enregistrer le direct**, une durée maximale (30 min, 1 h, 2 h, 4 h, 8 h ou 12 h) et le
+  format. La barre affiche « Direct · 12:34 » ; **Arrêter et enregistrer** termine le
+  fichier à tout moment (sinon il se termine seul à la durée choisie, ou quand le direct
+  s'arrête).
+  - **Flux HLS** (la plupart des sites) : Grabby relit la liste du direct toutes les
+    quelques secondes et récupère chaque nouveau morceau, sans réencoder. La pause et la
+    reprise après une coupure fonctionnent comme pour le reste.
+  - **YouTube** : le direct est enregistré depuis le lecteur de la page, à vitesse normale
+    (l'onglet doit rester ouvert). Aucune adresse de flux de YouTube n'est utilisée. Le
+    lecteur envoie le direct en petits fichiers de quelques secondes, chacun réglé sur
+    l'horloge du direct : Grabby les remet bout à bout, fait commencer le son et l'image
+    ensemble et garde la bonne durée.
+  - La vignette d'un direct affiche **En direct** au lieu d'une durée (celle d'un direct
+    n'est que ce que la page a chargé pour l'instant).
+  - Un direct au format DASH ne peut pas être enregistré : la carte le dit.
+- **Compresser à une taille** : dans « Retouches et IA », **Taille du fichier** choisit
+  10 Mo (Discord, WhatsApp), 25 Mo (e-mail), 50 Mo ou 100 Mo. Grabby calcule le débit qui
+  tient dans cette taille selon la durée, garde un son clair et réduit la hauteur de l'image
+  quand le débit ne suffit plus (1080p, 720p, 480p, 360p, 240p) : une image plus petite
+  reste plus nette qu'une grande image affamée. Marche aussi pour les fichiers son (MP3,
+  M4A, Opus, OGG ; FLAC et WAV deviennent du M4A).
+- **Suivre des chaînes YouTube** : sous une vidéo YouTube (et une playlist), **Suivre la
+  chaîne**. Toutes les heures, Grabby lit le flux public de la chaîne (le flux RSS que
+  YouTube offre à tous : sans compte, sans clé, sans cookie) et enregistre chaque **nouvelle**
+  vidéo avec le lecteur caché, dans la qualité et le format choisis. Les vidéos déjà
+  publiées ne sont jamais prises. La page complète liste les chaînes suivies (dernière
+  vérification, nombre de vidéos enregistrées), permet de changer la qualité ou le format,
+  de **vérifier maintenant** ou de **ne plus suivre**. On peut aussi y coller l'adresse d'une
+  chaîne (`@nom`, `/channel/…`), d'une playlist ou d'une de leurs vidéos. 50 chaînes au plus.
+- **Coller une liste d'adresses** : dans la page complète, un texte où se trouvent des
+  adresses (une par ligne, ou mêlées à du texte : Grabby les trouve, chacune une fois). Les
+  pages s'ouvrent **deux à la fois, en arrière-plan** ; dès que leur vidéo apparaît, elle
+  est téléchargée (selon la règle du site, sinon tes réglages, ou forcée en vidéo ou en son),
+  puis l'onglet se ferme. Chaque adresse a son état (en attente, ouverture, lancée, échec
+  avec la raison : pas de vidéo, protégée, direct…), **Réessayer** et **Retirer**. 500
+  adresses au plus.
+
+#### Édition
+- **Petit éditeur**, dans le nouveau panneau **Retouches et IA** de chaque carte :
+  - **Recadrer** : un cadre à déplacer et à redimensionner sur l'image de la vidéo (ou à
+    tracer), aux formes libres, 16:9, 1:1, 9:16 ou 4:3, réglable aussi au clavier (flèches,
+    Maj pour aller plus vite) ;
+  - **Tourner** de 90°, 180° ou 270°, et **Miroir** gauche-droite ;
+  - **Vitesse** de 0,5× à 2× (le son suit sans changer de hauteur ; les chapitres et les
+    sous-titres sont recalés) ;
+  - **Sans le son**.
+  Le panneau replié garde ses choix : son bouton dit combien (« Retouches et IA (3) »).
+  L'image est alors refaite en H.264 dans ton navigateur : compte à peu près la durée de la
+  vidéo.
+- **Un fichier par chapitre** : chaque chapitre devient son propre fichier, copié sans
+  réencodage, numéroté (« 01 - Intro.mp4 ») et rangé dans un dossier au nom de la vidéo.
+  Les fichiers son reçoivent leur numéro de piste (« 3/12 »), l'album et l'artiste : un
+  album ou un podcast se découpe tout seul. Quand la vidéo n'a pas de chapitres, ceux que
+  propose le résumé (voir plus bas) peuvent servir.
+- **Sous-titres incrustés** : les sous-titres choisis (ou ceux de l'IA) sont écrits dans
+  l'image, lisibles partout, même sur un lecteur qui ne sait pas afficher de sous-titres.
+  Police Noto Sans incluse dans Grabby (accents, cyrillique, grec), contour noir, en bas de
+  l'image, toujours à l'endroit même si la vidéo est tournée.
+- **Aperçu avant de télécharger** : **Aperçu** lit dans la popup l'extrait choisi (ou toute
+  la vidéo) pour vérifier que c'est le bon ; pour un flux ou une vidéo que le site ne laisse
+  pas lire ailleurs, c'est le lecteur de la page qui se place au début de l'extrait.
+
+#### IA locale
+- **Transcription hors ligne** : **Transcrire** écrit les sous-titres de ce qui est dit,
+  dans la langue choisie ou détectée, avec Whisper (modèle « base » d'OpenAI) qui tourne
+  **dans ton navigateur**. Le son est découpé aux silences pour ne couper aucun mot, les
+  lignes trop longues sont partagées, les « [Musique] » et répétitions écartés. Les
+  sous-titres sont enregistrés en `.srt` à côté de la vidéo, et peuvent être incrustés.
+- **Traduire les sous-titres** dans 20 langues : avec le traducteur intégré au navigateur
+  quand il en a un (Chrome récent), sinon avec de petits modèles Opus-MT, en passant par
+  l'anglais quand une paire n'a pas de modèle direct. Le texte traduit est une nouvelle
+  piste, enregistrée en `.srt` à côté de la vidéo (et incrustable).
+- **Résumé et mots-clés** : un fichier texte à côté de la vidéo avec les phrases qui
+  comptent le plus (horodatées), les mots-clés et les chapitres. Le résumé est fait sur ton
+  ordinateur à partir des sous-titres (ou de la transcription) ; quand la vidéo n'a pas de
+  chapitres et dure plus de 6 minutes, Grabby en **propose** là où le sujet change, nommés
+  par leurs mots-clés, et les écrit aussi dans le fichier vidéo.
+- **Rien n'est envoyé** : les modèles sont téléchargés **une seule fois**, seulement si tu
+  l'acceptes (bouton dans le panneau, ou réglage **IA locale**), depuis Hugging Face :
+  environ 77 Mo pour la transcription, 107 Mo par paire de langues. Ce sont des données
+  (des poids), pas du code : le moteur (ONNX Runtime) est inclus dans Grabby.
+- **Règles automatiques** : pour un site (ou tous), ce que Grabby choisit tout seul : vidéo
+  ou son, format, qualité (la meilleure, la plus petite ou au plus 1080p, 720p…), langues de
+  sous-titres et dossier. La carte arrive déjà réglée (« Choisi par ta règle pour
+  youtube.com : tu peux les changer ») ; le clic droit, le raccourci, le bouton sur les
+  vidéos et la liste d'adresses les suivent aussi. La règle la plus précise gagne
+  (`m.youtube.com` avant `youtube.com`).
+
+#### Interface
+- **Page complète** (bouton en haut de la popup, ou depuis les réglages) avec ses sections :
+  - **Bibliothèque** : tout ce que Grabby a enregistré en grande grille, la place prise par
+    type, filtres par type et par site, recherche, et un **lecteur** pour regarder ou
+    écouter sans quitter la page (il faut autoriser l'accès aux fichiers dans la page de
+    l'extension : la bibliothèque l'explique) ;
+  - **Liste d'adresses**, **Chaînes suivies**, **Règles automatiques** et **Sauvegarde** (voir
+    plus haut et plus bas) ;
+  - **Atelier** : une vidéo ou un son **de ton ordinateur**, avec les mêmes retouches et la
+    même IA, et un aperçu en direct (l'image tourne, se recadre, accélère pendant qu'on
+    règle) ; on peut y joindre un fichier de sous-titres (`.srt`, `.vtt`) à incruster ou à
+    traduire ;
+  - **Assembler** : plusieurs vidéos ou sons mis bout à bout dans l'ordre choisi (flèches
+    pour réordonner). S'ils se ressemblent (mêmes codecs, même taille d'image), ils sont
+    copiés tels quels, instantanément et sans perte ; sinon chacun est ajusté à l'image du
+    premier (bandes noires, jamais déformé) et refait en H.264. Un son au milieu de vidéos
+    passe sur une image noire.
+- **Bouton sur les vidéos** : au survol d'une vidéo de n'importe quel site, une petite barre
+  **Télécharger** (et une note de musique pour le son seul) la télécharge d'un clic, sans
+  ouvrir la popup, avec tes règles et tes réglages. Sur YouTube, un bouton **Télécharger**
+  se place aussi sous le lecteur, à côté de « Partager ». Le clic ne met pas la vidéo en
+  pause. Désactivable (réglage **Bouton sur les vidéos**).
+- **Sauvegarder ses réglages** : un fichier JSON lisible avec tes réglages, tes règles, ton
+  historique et tes chaînes suivies, pour un autre ordinateur ou un autre navigateur. La
+  restauration **fusionne** (rien de ce qui est déjà là n'est perdu) et ne lit que ce qui a
+  du sens : un fichier qui n'est pas de Grabby est refusé.
+- La barre de progression dit **l'étape** en cours : téléchargement des modèles,
+  transcription, traduction, résumé, encodage, découpage.
+- Nouveau groupe de réglages **Pages et IA** (bouton sur les vidéos, IA locale, ouvrir la
+  page complète).
+
+### Modifié
+- Les **directs** comptent dans le nombre affiché sur l'icône, puisqu'ils s'enregistrent.
+- Un fichier qui doit être retouché passe toujours par ffmpeg, même quand il aurait été
+  enregistré tel quel.
+- Les menus de taille et de vitesse suivent la langue du navigateur (« 25 Mo », « 1,5× » ;
+  « 25 MB », « 1.5× » en anglais).
+
+### Corrigé
+- **Brave** : le mode capture (YouTube, lecteurs Media Source) pouvait échouer avec
+  « capture impossible », parce que Brave isole la mémoire du cadre invisible qui reçoit
+  les données. Grabby vérifie maintenant que ce cadre écrit bien au bon endroit ; sinon il
+  envoie les données par un autre chemin, et l'enregistrement aboutit.
+
+### Limites connues
+- **Le réencodage se fait dans le navigateur**, sur un seul cœur : recadrer, tourner,
+  changer la vitesse, compresser ou incruster des sous-titres prend à peu près la durée de
+  la vidéo en 720p (davantage en 1080p et au-delà).
+- **Incrustation** : la police incluse dessine les alphabets latin, grec et cyrillique. Des
+  sous-titres en chinois, japonais, coréen, arabe, hindi… ne sont pas incrustés (ils
+  s'afficheraient en carrés) : ils restent en `.srt`, et le panneau le dit.
+- **Atelier et Assembler** acceptent des fichiers de 1,5 Go au plus (la mémoire du
+  navigateur).
+- **Transcription** : Whisper « base » est un petit modèle ; il comprend bien une voix
+  claire, moins un brouhaha ou de la musique forte. Compte à peu près la durée de la vidéo.
+- **Résumé** : sans le résumeur intégré au navigateur, c'est un résumé par **extraits** (les
+  phrases les plus représentatives de la vidéo), pas un texte réécrit.
+- **Directs YouTube** : enregistrés à vitesse réelle depuis la page, qui doit rester
+  ouverte ; un direct HLS commence là où il en est (pas de retour en arrière).
+- **Chaînes suivies** : vérifiées une fois par heure **quand le navigateur est ouvert** ; le
+  flux de YouTube ne montre que les 15 dernières vidéos.
+- Le **lecteur de la bibliothèque** a besoin de l'autorisation « Accès aux URL de fichier »,
+  que seul toi peux donner dans la page des extensions.
+
 ## [1.9.0] — 2026-10-06
 
 Mise à jour en un clic, file d'attente réordonnable, sous-titres enfin lisibles, sponsors
@@ -755,7 +918,8 @@ Première version.
 - Capture YouTube expérimentale.
 - Interface en français et en anglais, thème clair et sombre.
 
-[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.9.0...HEAD
+[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.10.0...HEAD
+[1.10.0]: https://github.com/titilyonnais/grabby/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/titilyonnais/grabby/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/titilyonnais/grabby/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/titilyonnais/grabby/compare/v1.6.0...v1.7.0

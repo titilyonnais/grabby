@@ -48,9 +48,12 @@ describe('describeFormats', () => {
     expect(info.qualities[0]!.label).toBe('1080p60');
   });
 
-  it('ignores live streams and empty responses', () => {
+  it('ignores empty responses and marks live streams (recorded from the page)', () => {
     expect(describeFormats({})).toBeNull();
-    expect(describeFormats(response([AAC], { videoDetails: { videoId: 'x', isLive: true } }))).toBeNull();
+    const live = describeFormats(response([AAC], { videoDetails: { videoId: 'x', title: 'Direct', isLive: true } }))!;
+    expect(live.live).toBe(true);
+    expect(live.qualities).toEqual([]);
+    expect(live.embeddable).toBe(false);
   });
 
   it('flags videos their owner keeps off other sites', () => {

@@ -4,6 +4,7 @@
  * from the MAIN-world hook, and streams capture chunks into the extension's storage.
  */
 import { showToast } from './toast';
+import { startOverlay } from './overlay';
 import { hiddenJobFromUrl, hiddenSessionFromUrl, readYouTubeInfo } from '../features/youtube';
 import { SESSION_SPAN } from '../shared/idb';
 import { deepVideos } from '../shared/dom';
@@ -360,9 +361,15 @@ function iframeSink(jobId: string): Promise<Sink> {
       if (e.source !== frame.contentWindow || e.origin !== origin) return;
       const d = e.data as { grabbySink?: string } | null;
       if (d?.grabbySink === 'ready') {
-        clearTimeout(timeout);
         frame.contentWindow!.postMessage({ type: 'open', jobId }, origin);
+      } else if (d?.grabbySink === 'opened') {
+        clearTimeout(timeout);
         resolve(sink);
+      } else if (d?.grabbySink === 'partitioned' || d?.grabbySink === 'refused') {
+        // Its storage isn't the extension's (or the job isn't recording): the port instead.
+        clearTimeout(timeout);
+        cleanup();
+        reject(new Error(`sink ${d.grabbySink}`));
       } else if (d?.grabbySink === 'ack') {
         pending--;
         if (pending === 0) {
@@ -426,11 +433,11 @@ function portSink(jobId: string): Sink {
   };
 }
 
-async function startCapture(jobId: string, videoIndex: number, clip?: { start: number; end: number }, n = 0, from?: number) {
+async function startCapture(jobId: string, videoIndex: number, clip?: { start: number; end: number }, n = 0, from?: number, live = false) {
   session?.sink.close();
   const sink = await iframeSink(jobId).catch(() => portSink(jobId));
   session = { jobId, offset: n * SESSION_SPAN, bytes: 0, seq: new Map(), tracks: new Map(), sink };
-  hook.postMessage({ type: 'arm', videoIndex, ...(clip ? { clip } : {}), ...(from !== undefined ? { from } : {}) });
+  hook.postMessage({ type: 'arm', videoIndex, ...(clip ? { clip } : {}), ...(from !== undefined ? { from } : {}), ...(live ? { live: true } : {}) });
 }
 
 /** Paused: the recording stops, what it stored stays for the session that carries on. */
@@ -480,6 +487,8 @@ function openSession(jobId: string, n: number): Session {
 }
 
 if (hiddenJob) session = openSession(hiddenJob, hiddenSessionFromUrl(location.href));
+// The button over videos: on the pages the user looks at (never in a hidden player).
+else startOverlay();
 
 let lastProgress = 0;
 hook.onmessage = (e: MessageEvent) => {
@@ -545,7 +554,10 @@ chrome.runtime.onMessage.addListener((msg: BgToContent) => {
       report(true);
       break;
     case 'capture-start':
-      void startCapture(msg.jobId, msg.videoIndex, msg.clip, Number.isInteger(msg.session) ? msg.session! : 0, msg.from);
+      void startCapture(msg.jobId, msg.videoIndex, msg.clip, Number.isInteger(msg.session) ? msg.session! : 0, msg.from, msg.live === true);
+      break;
+    case 'preview':
+      hook.postMessage({ type: 'preview', videoIndex: msg.videoIndex, start: msg.start, ...(msg.end !== undefined ? { end: msg.end } : {}) });
       break;
     case 'capture-stop':
       if (session?.jobId !== msg.jobId) break;

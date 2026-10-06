@@ -342,7 +342,30 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
           <Toggle label={t('set_sponsors')} hint={t('set_sponsors_hint')} checked={settings.skipSponsors} onChange={(skipSponsors) => onChange({ skipSponsors })} />
         </Group>
 
-        <Group title={t('set_group_updates')} icon="gift" index={7}>
+        <Group title={t('set_group_pages')} icon="sparkle" index={7}>
+          <Toggle label={t('set_overlay')} hint={t('set_overlay_hint')} checked={settings.overlayButton} onChange={(overlayButton) => onChange({ overlayButton })} />
+          <Toggle label={t('set_ai')} hint={t('set_ai_hint')} checked={settings.aiModels} onChange={(aiModels) => onChange({ aiModels })} />
+          <div class="row-setting row-setting--stack">
+            <span class="row-setting__text">
+              <span class="setting__label">{t('set_app')}</span>
+              <span class="setting__hint">{t('set_app_hint')}</span>
+            </span>
+            <span class="keys-row">
+              <button
+                class="btn btn--soft btn--small"
+                onClick={() => {
+                  void chrome.runtime.sendMessage({ app: 'open-app', section: 'rules' }).catch(() => {});
+                  window.close();
+                }}
+              >
+                <Icon name="grid" size={15} />
+                {t('set_app_open')}
+              </button>
+            </span>
+          </div>
+        </Group>
+
+        <Group title={t('set_group_updates')} icon="gift" index={8}>
           <Toggle label={t('set_updates')} hint={t('set_updates_hint')} checked={settings.updateCheck} onChange={(updateCheck) => onChange({ updateCheck })} />
           <div class="row-setting row-setting--stack">
             <span class="row-setting__text">

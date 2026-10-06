@@ -13,15 +13,18 @@ import { cutBefore } from '../shared/mediatime';
 import { deleteParts, putPart, storedBlobs, storedSizes } from '../shared/parts';
 import { imageAttempts, inputExt, muxAttempts, type Attempt, type ClipArgs, type MuxInputs } from './args';
 import { assembleSessions, capturedCaptions, type CapturedTrack } from './capture';
+import { liveList, livePieces, type LivePiece } from '../shared/join';
 import { fetchAll, HttpError, limiter, rangeSupport, rangesOf, streamFile } from './fetcher';
 import { type FFmpeg, getFFmpeg } from './muxer';
 import { Pacer } from './pacer';
 import { clipCues, cuesOf, toSrt, type Cue } from '../shared/subtitles';
 import { startHiddenPlayer, stopHiddenPlayer } from '../features/youtube-player';
+import { finishFile, type FinishStep, type TextTrack } from './finish';
+import { recordLive, stopLive } from './live';
 
 const controllers = new Map<string, AbortController>();
 const HEARTBEAT_MS = 10_000;
-const blobUrls = new Map<string, string>();
+const blobUrls = new Map<string, string[]>();
 
 const MIME: Record<string, string> = {
   mp4: 'video/mp4',
@@ -52,7 +55,7 @@ function reporter(jobId: string) {
   const start = performance.now();
   let last = 0;
   let bytes = 0;
-  let state: { status: JobStatus; progress: number } = { status: 'downloading', progress: 0 };
+  let state: { status: JobStatus; progress: number; step?: FinishStep } = { status: 'downloading', progress: 0 };
   return {
     addBytes(n: number) {
       bytes += n;
@@ -60,8 +63,8 @@ function reporter(jobId: string) {
     get bytes() {
       return bytes;
     },
-    send(status: JobStatus, progress: number, force = false) {
-      state = { status, progress: Math.max(0, Math.min(1, progress)) };
+    send(status: JobStatus, progress: number, force = false, step?: FinishStep) {
+      state = { status, progress: Math.max(0, Math.min(1, progress)), ...(step ? { step } : {}) };
       const now = performance.now();
       if (!force && now - last < 250) return;
       last = now;
@@ -265,17 +268,77 @@ async function keyframeLead(f: FFmpeg, dir: string, path: string, at: number, si
   }
 }
 
-/** Where a file's timestamps start, in seconds, as ffmpeg reads it (0 when it can't tell). */
-async function startOf(f: FFmpeg, path: string, signal: AbortSignal): Promise<number> {
+/** Where a file's timestamps start, in seconds, as ffmpeg reads it (undefined when it can't tell). */
+async function startIn(f: FFmpeg, path: string, signal?: AbortSignal): Promise<number | undefined> {
   await f.exec(['-hide_banner', '-i', path], undefined, signal);
   const m = /Duration:[^\n]*?start:\s*(-?\d+(?:\.\d+)?)/.exec(f.lastLogs());
-  return m ? Number(m[1]) : 0;
+  return m ? Number(m[1]) : undefined;
+}
+
+/** Where a file's timestamps start, in seconds, as ffmpeg reads it (0 when it can't tell). */
+async function startOf(f: FFmpeg, path: string, signal: AbortSignal): Promise<number> {
+  return (await startIn(f, path, signal)) ?? 0;
+}
+
+/** A live stream's little files written into ffmpeg's memory, each with where it starts (one without a picture or sound is left out). */
+async function writePieces(f: FFmpeg, stem: string, ext: string, pieces: Uint8Array[], rep: Reporter): Promise<LivePiece[]> {
+  const out: LivePiece[] = [];
+  for (const [i, piece] of pieces.entries()) {
+    const path = `${stem}-${i}.${ext}`;
+    await f.create(path);
+    await f.append(path, piece);
+    rep.addBytes(piece.byteLength);
+    const start = await startIn(f, path);
+    if (start !== undefined) out.push({ path, start });
+  }
+  return out;
+}
+
+/**
+ * A live stream's pieces put end to end (copied) in one file, on a clock starting at 0, or
+ * still on the stream's clock when `clock` is set.
+ */
+async function joinPieces(f: FFmpeg, stem: string, pieces: LivePiece[], clock: boolean): Promise<string | null> {
+  const list = `${stem}-list.txt`;
+  await f.create(list);
+  await f.append(list, new TextEncoder().encode(liveList(pieces)));
+  const out = `${stem}.mkv`;
+  if ((await f.exec(['-y', '-f', 'concat', '-safe', '0', '-i', list, '-map', '0', '-c', 'copy', ...(clock ? ['-output_ts_offset', pieces[0]!.start.toFixed(6)] : []), out])) === 0) return out;
+  console.warn('[grabby] live pieces not joined', f.lastLogs());
+  return null;
+}
+
+/**
+ * A live stream's tracks, each made of little files on the stream's clock: both start
+ * together, are put end to end, then in one file, the sound shifted by as much as it started
+ * after the picture. With `clock`, the file stays on the stream's clock (a recording in
+ * several sessions is joined on it).
+ */
+async function loadLive(f: FFmpeg, dir: string, name: string, video: CapturedTrack | undefined, audio: CapturedTrack | undefined, rep: Reporter, clock: boolean): Promise<MuxInputs | null> {
+  const ext = (t: CapturedTrack) => (t.mime.includes('webm') ? 'webm' : 'mp4');
+  const v = video ? await writePieces(f, `${dir}/${name}v`, ext(video), video.pieces ?? [video.data], rep) : [];
+  const a = audio ? await writePieces(f, `${dir}/${name}a`, ext(audio), audio.pieces ?? [audio.data], rep) : [];
+  const vk = livePieces(v, a[0]?.start);
+  const ak = livePieces(a, vk[0]?.start);
+  const vOut = vk.length ? await joinPieces(f, `${dir}/${name}v`, vk, clock) : null;
+  const aOut = ak.length ? await joinPieces(f, `${dir}/${name}a`, ak, clock) : null;
+  if (!vOut) return aOut ? { audio: aOut } : null;
+  if (!aOut) return { video: vOut };
+  const out = `${dir}/${name}live.mkv`;
+  const shift = (ak[0]!.start - vk[0]!.start).toFixed(6);
+  const code = await f.exec(['-y', ...(clock ? ['-copyts', '-i', vOut] : ['-i', vOut, '-itsoffset', shift]), '-i', aOut, '-map', '0', '-map', '1', '-c', 'copy', out]);
+  if (code === 0) return { video: out };
+  console.warn('[grabby] live tracks not put together', f.lastLogs());
+  return { video: vOut, audio: aOut };
 }
 
 /** Writes the tracks of one recording session into ffmpeg's memory, video and audio apart. */
-async function loadCaptured(f: FFmpeg, dir: string, name: string, tracks: CapturedTrack[], audioOnly: boolean, rep: Reporter) {
-  const inputs: MuxInputs = {};
-  for (const t of tracks) {
+async function loadCaptured(f: FFmpeg, dir: string, name: string, tracks: CapturedTrack[], audioOnly: boolean, rep: Reporter, clock = false) {
+  const live = tracks.some((t) => t.pieces && t.pieces.length > 1)
+    ? await loadLive(f, dir, name, audioOnly ? undefined : tracks.find((t) => t.kind !== 'audio'), tracks.find((t) => t.kind === 'audio'), rep, clock)
+    : null;
+  const inputs: MuxInputs = live ?? {};
+  for (const t of live ? [] : tracks) {
     const ext = t.mime.includes('webm') ? 'webm' : 'mp4';
     const key = t.kind === 'audio' && !inputs.audio ? 'audio' : !inputs.video ? 'video' : null;
     if (!key) continue;
@@ -329,7 +392,7 @@ async function joinSessions(
 ): Promise<{ inputs: MuxInputs; base: number }> {
   const files: { path: string; start: number; joint: number }[] = [];
   for (const [k, s] of sessions.entries()) {
-    const ins = await loadCaptured(f, dir, `s${k}`, s.tracks, plan.audioOnly, rep);
+    const ins = await loadCaptured(f, dir, `s${k}`, s.tracks, plan.audioOnly, rep, true);
     const list = [ins.video, ins.audio].filter((x): x is string => !!x);
     const starts: number[] = [];
     for (const i of list) starts.push(await startOf(f, i, signal));
@@ -476,6 +539,11 @@ async function run(jobId: string, plan: Plan) {
     const inputs: MuxInputs = {};
     /** Subtitles saved next to the file. */
     let apart: { srt: string; lang?: string }[] = [];
+    /** Every subtitle track, on the clock of what is saved (for what is done afterwards). */
+    const texts: TextTrack[] = [];
+    let notes: { text: string; tag: string }[] = [];
+    let pieces: { blobUrl: string; name: string }[] = [];
+    let firstName: string | undefined;
 
     if (plan.kind !== 'capture') {
       const tracks = [
@@ -494,6 +562,27 @@ async function run(jobId: string, plan: Plan) {
         return Math.min(1, size ? Math.max(byParts, rep.bytes / size) : byParts) * fetched;
       };
       const pacer = new Pacer();
+      if (plan.live) {
+        // A live stream: every track read at the same time, until it is stopped.
+        rep.send('downloading', 0, true);
+        await Promise.all(
+          tracks.map(({ n, t }) =>
+            t.live
+              ? recordLive(jobId, n, t, {
+                  signal,
+                  pacer,
+                  max: plan.live!.max,
+                  onBytes: (b) => {
+                    rep.addBytes(b);
+                    rep.send('downloading', 0);
+                  },
+                })
+              : Promise.resolve(),
+          ),
+        );
+        if (signal.aborted) throw signal.reason;
+        tracks.length = 0;
+      }
       for (const [k, { n, t }] of tracks.entries()) {
         await fetchTrack(jobId, n, t, {
           signal,
@@ -528,7 +617,7 @@ async function run(jobId: string, plan: Plan) {
       await f.mkdir(dir);
       if (plan.kind === 'capture') {
         rep.send('processing', 0, true);
-        const sessions = await assembleSessions(jobId, plan.keepTracks);
+        const sessions = await assembleSessions(jobId, plan.keepTracks, !!plan.live);
         if (!sessions.length) throw Object.assign(new Error('capture'), { code: 'capture_failed' });
         if (sessions.length === 1) {
           Object.assign(inputs, await loadCaptured(f, dir, '', sessions[0]!.tracks, plan.audioOnly, rep));
@@ -595,6 +684,7 @@ async function run(jobId: string, plan: Plan) {
         for (const [i, { sub, cues }] of subs.entries()) {
           const srt = srtOf(cues, spans);
           if (!srt) continue;
+          texts.push({ cues: cuesFor(cues, spans), label: sub.label, separate: sub.separate, ...(sub.lang ? { lang: sub.lang } : {}) });
           if (sub.separate) {
             apart.push({ srt, ...(sub.lang ? { lang: sub.lang } : {}) });
             continue;
@@ -625,6 +715,18 @@ async function run(jobId: string, plan: Plan) {
             apart.push({ srt, ...(s.lang ? { lang: s.lang } : {}) });
           }
         }
+        // What is done to the file afterwards: AI, editor, size, one file per chapter.
+        if (plan.finish) {
+          const fin = await finishFile(f, dir, made, { plan, texts, apart, signal, report: (step, p) => rep.send('processing', p, false, step) });
+          made = fin;
+          apart = fin.apart;
+          notes = fin.notes;
+          firstName = fin.name;
+          for (const p of fin.pieces ?? []) {
+            const bytes = await f.read(p.path);
+            pieces.push({ blobUrl: URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: MIME[made.ext] ?? 'application/octet-stream' })), name: p.name });
+          }
+        }
       }
       const data = await f.read(made.out);
       await f.rmdir(dir);
@@ -633,9 +735,18 @@ async function run(jobId: string, plan: Plan) {
 
     if (signal.aborted) throw signal.reason;
     const url = URL.createObjectURL(result.blob);
-    blobUrls.set(jobId, url);
+    blobUrls.set(jobId, [url, ...pieces.map((p) => p.blobUrl)]);
     rep.send('saving', 1, true);
-    await toBg({ type: 'job-ready', jobId, blobUrl: url, ext: result.ext as OutputFormat, size: result.blob.size, ...(apart.length ? { subtitles: apart } : {}) });
+    await toBg({
+      type: 'job-ready',
+      jobId,
+      blobUrl: url,
+      ext: result.ext as OutputFormat,
+      size: result.blob.size,
+      ...(apart.length ? { subtitles: apart } : {}),
+      ...(pieces.length ? { pieces, ...(firstName ? { name: firstName } : {}) } : {}),
+      ...(notes.length ? { notes } : {}),
+    });
   } catch (e) {
     if (ff) await ff.rmdir(dir).catch(() => {});
     if (pausing.has(jobId)) {
@@ -674,13 +785,15 @@ chrome.runtime.onMessage.addListener((msg: BgToOffscreen) => {
       }
       break;
     case 'release': {
-      const url = blobUrls.get(msg.jobId);
-      if (url) URL.revokeObjectURL(url);
+      for (const url of blobUrls.get(msg.jobId) ?? []) URL.revokeObjectURL(url);
       blobUrls.delete(msg.jobId);
       void deleteJob(msg.jobId).catch(() => {});
       void deleteParts(msg.jobId).catch(() => {});
       break;
     }
+    case 'live-stop':
+      stopLive(msg.jobId);
+      break;
     case 'yt-start':
       startHiddenPlayer(msg.jobId, msg.src);
       break;

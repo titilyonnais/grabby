@@ -7,6 +7,8 @@ export class FFmpeg {
   private pending = new Map<number, Pending>();
   private lock: Promise<unknown> = Promise.resolve();
   private logs: string[] = [];
+  /** The first lines of the last run: what ffmpeg says about its inputs (length, picture size). */
+  private head: string[] = [];
   private progressCb: ((p: number) => void) | null = null;
   private loaded: Promise<void>;
   /** Set once the wasm module aborted (e.g. out of memory): it can't be reused. */
@@ -20,6 +22,7 @@ export class FFmpeg {
       const d = e.data as { id?: number; ok?: boolean; res?: unknown; error?: string; type?: string; message?: string; progress?: number };
       if (d.type === 'log') {
         this.logs.push(d.message ?? '');
+        if (this.head.length < 400) this.head.push(d.message ?? '');
         if (this.logs.length > 40) this.logs.shift();
         return;
       }
@@ -97,6 +100,7 @@ export class FFmpeg {
       const aborted = () => signal?.reason ?? new DOMException('Aborted', 'AbortError');
       if (signal?.aborted) throw aborted();
       this.logs = [];
+      this.head = [];
       this.progressCb = onProgress ?? null;
       const stop = () => this.users <= 1 && this.terminate();
       signal?.addEventListener('abort', stop, { once: true });
@@ -116,6 +120,10 @@ export class FFmpeg {
 
   lastLogs(): string {
     return this.logs.join('\n');
+  }
+
+  firstLogs(): string {
+    return this.head.join('\n');
   }
 
   private fail(err: Error) {

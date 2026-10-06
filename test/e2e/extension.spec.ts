@@ -1346,3 +1346,290 @@ test('sound evened out: the file is encoded with the loudness filter, and plays'
   const m = /I:\s+(-?[\d.]+) LUFS/.exec(String(run.stderr ?? '').split('Summary:').pop() ?? '');
   if (m) expect(Math.abs(Number(m[1]) + 14)).toBeLessThan(2.5);
 });
+
+// ——— 1.10: retouching, local AI, live streams, the button on videos, the full page ———
+
+/** Opens the card's "Retouch and AI" panel. */
+async function openRetouch(popup: Page) {
+  await popup.getByRole('button', { name: /^Retouch and AI/ }).click();
+  await expect(popup.getByRole('heading', { name: 'Speed and size' })).toBeVisible();
+}
+
+/** Width × height of the first video stream (null without ffprobe). */
+function videoSize(file: string): { w: number; h: number } | null {
+  try {
+    const out = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', file], { encoding: 'utf8' }).trim();
+    const [w, h] = out.split(',').map(Number);
+    return w && h ? { w, h } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The files of the latest completed downloads, newest first. */
+const latestFiles = (sw: Worker, n: number) =>
+  sw.evaluate(async (k) => (await chrome.downloads.search({ orderBy: ['-startTime'], limit: k, state: 'complete' })).map((d) => d.filename), n);
+
+test('retouch: turned, mirrored, twice as fast, without sound: the file is made again', async ({ context, sw, extId }) => {
+  const { tabId } = await openFixture(context, sw, 'direct.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  await openRetouch(popup);
+  await popup.getByRole('radio', { name: '90°' }).click();
+  await popup.getByRole('switch', { name: /Mirror/ }).check();
+  await pick(popup, 'Speed', '2×');
+  await popup.getByRole('switch', { name: 'Without sound' }).check();
+  await popup.getByRole('button', { name: 'Close retouching' }).click();
+  await expect(popup.getByRole('button', { name: 'Retouch and AI (4)' })).toBeVisible();
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
+  await expect(popup.getByText('Saved')).toBeVisible({ timeout: 90_000 });
+  const { filename } = await lastDownload(sw);
+  const info = probe(filename);
+  if (info) {
+    expect(info.streams).toEqual(['video']);
+    expect(info.duration).toBeGreaterThan(2.5);
+    expect(info.duration).toBeLessThan(3.5);
+    expect(videoSize(filename)).toEqual({ w: 360, h: 640 });
+  }
+});
+
+test('retouch: cropped to a square and made to fit a size', async ({ context, sw, extId }) => {
+  const { tabId } = await openFixture(context, sw, 'direct.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  await openRetouch(popup);
+  await popup.getByRole('button', { name: 'Crop' }).click();
+  // A square in the middle of the picture.
+  await popup.getByRole('radio', { name: '1:1' }).click();
+  await expect(popup.getByRole('slider', { name: 'Part kept' })).toHaveAttribute('aria-valuetext', '56 % × 100 %');
+  await pick(popup, 'File size', '10 MB');
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
+  await expect(popup.getByText('Saved')).toBeVisible({ timeout: 90_000 });
+  const { filename, bytes } = await lastDownload(sw);
+  expect(bytes.length).toBeLessThan(10 * 1024 * 1024);
+  const size = videoSize(filename);
+  if (size) {
+    expect(size.h).toBe(360);
+    expect(Math.abs(size.w - 360)).toBeLessThanOrEqual(2);
+  }
+});
+
+test('one file per chapter: each one in a folder named like the video, numbered', async ({ context, sw, extId }) => {
+  const { tabId } = await openFixture(context, sw, 'chapters.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const asked = await recordDownloads(sw);
+  const popup = await openPopup(context, extId, tabId);
+  await openRetouch(popup);
+  await popup.getByRole('switch', { name: /One file per chapter/ }).check();
+  const before = await completed(sw);
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
+  await expect.poll(() => completed(sw), { timeout: 90_000 }).toBe(before + 3);
+  const names = (await asked()).slice(-3).map((o) => (o.filename ?? '').split('/').slice(-2).join('/'));
+  expect(names.sort()).toEqual(['File with chapters test/01 - Début.mp4', 'File with chapters test/02 - Milieu.mp4', 'File with chapters test/03 - Fin.mp4']);
+  const lengths = (await latestFiles(sw, 3)).map((f) => probe(f)?.duration).filter((d): d is number => d !== undefined);
+  if (lengths.length) expect(lengths.reduce((a, b) => a + b, 0)).toBeGreaterThan(5);
+});
+
+test('burned subtitles and a summary: written into the picture, the summary in a text file', async ({ context, sw, extId }) => {
+  const { tabId } = await openFixture(context, sw, 'track.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const asked = await recordDownloads(sw);
+  const popup = await openPopup(context, extId, tabId);
+  await pick(popup, 'Subtitles', 'French');
+  await openRetouch(popup);
+  await popup.getByRole('switch', { name: 'Burn the subtitles into the picture' }).check();
+  await popup.getByRole('switch', { name: /Summary and keywords/ }).check();
+  const before = await completed(sw);
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
+  await expect.poll(() => completed(sw), { timeout: 90_000 }).toBe(before + 2);
+  const files = (await asked()).slice(-2).map((o) => o.filename ?? '');
+  expect(files[0]).toMatch(/\.mp4$/);
+  expect(files[1]).toMatch(/\.txt$/);
+  const saved = await latestFiles(sw, 2);
+  // The text file starts with its byte order mark.
+  const txt = saved.find((f) => readFileSync(f).subarray(0, 3).toString('hex') === 'efbbbf')!;
+  const video = saved.find((f) => f !== txt)!;
+  const text = readFileSync(txt, 'utf8');
+  expect(text).toContain('File with subtitles test');
+  expect(text).toMatch(/\[0:00\] Bonjour le monde Au revoir Fin/);
+  // Written into the picture: no subtitle track left.
+  const info = probe(video);
+  if (info) expect(info.streams).toEqual(['audio', 'video']);
+});
+
+test('a live stream is recorded until "Stop and save", then made into one file', async ({ context, sw, extId }) => {
+  const { tabId } = await openFixture(context, sw, 'live.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  await expect(popup.getByRole('button', { name: /^At most/ })).toBeVisible();
+  await popup.getByRole('button', { name: 'Record the live stream' }).click();
+  await expect(popup.getByText(/Live · 0:0[4-9]/).first()).toBeVisible({ timeout: 30_000 });
+  await popup.getByRole('button', { name: 'Stop and save' }).click();
+  await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
+  const { filename, bytes } = await lastDownload(sw);
+  expect(isMp4(bytes)).toBe(true);
+  const info = probe(filename);
+  if (info) {
+    expect(info.streams).toEqual(['audio', 'video']);
+    expect(info.duration).toBeGreaterThan(3);
+  }
+});
+
+test('the button on videos downloads the one under the pointer; it can be turned off', async ({ context, sw }) => {
+  const { page, tabId } = await openFixture(context, sw, 'direct.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const box = (await page.locator('video').boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await expect.poll(() => page.evaluate(() => !!document.querySelector('grabby-overlay'))).toBe(true);
+  const before = await completed(sw);
+  // The bar is in a closed shadow root, at the video's top left corner: its first button.
+  await page.mouse.move(box.x + 34, box.y + 28);
+  await page.mouse.click(box.x + 34, box.y + 28);
+  const { bytes } = await nextDownload(sw, before);
+  expect(isMp4(bytes)).toBe(true);
+  // The video itself didn't get the click.
+  expect(await page.evaluate(() => document.querySelector('video')!.paused)).toBe(true);
+
+  await setSettings(sw, { overlayButton: false });
+  const again = await context.newPage();
+  await again.goto(`${origin}/pages/direct.html`);
+  const b2 = (await again.locator('video').boundingBox())!;
+  await again.mouse.move(b2.x + b2.width / 2, b2.y + b2.height / 2);
+  await again.waitForTimeout(800);
+  await again.mouse.move(b2.x + b2.width / 3, b2.y + b2.height / 3);
+  await again.waitForTimeout(300);
+  expect(await again.evaluate(() => !!document.querySelector('grabby-overlay'))).toBe(false);
+});
+
+test('preview: the part chosen plays in the popup before downloading', async ({ context, sw, extId }) => {
+  const { tabId } = await openFixture(context, sw, 'direct.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  await cutClip(popup, '0:02', '0:04');
+  await popup.getByRole('button', { name: 'Preview' }).click();
+  const video = popup.locator('video.preview');
+  await expect(video).toBeVisible();
+  expect(await video.getAttribute('src')).toMatch(/#t=2,4$/);
+  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.currentTime), { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
+});
+
+async function openApp(context: BrowserContext, extId: string, section: string): Promise<Page> {
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extId}/app.html#${section}`);
+  return page;
+}
+
+test('full page: rules made there apply in the popup', async ({ context, sw, extId }) => {
+  await setSettings(sw, { firstRunAck: true });
+  const app = await openApp(context, extId, 'rules');
+  await expect(app.getByRole('heading', { name: 'Automatic rules' })).toBeVisible();
+  await expect(app.getByText('No rules: every download follows your settings.')).toBeVisible();
+  await app.getByRole('button', { name: 'Add a rule' }).click();
+  const site = app.getByRole('textbox', { name: 'Site' });
+  await site.fill('http://127.0.0.1/');
+  await site.press('Enter');
+  await app.getByRole('radio', { name: 'Sound' }).click();
+  await expect
+    .poll(() => sw.evaluate(async () => ((await chrome.storage.local.get('settings')) as { settings?: { rules?: { site: string; mode: string }[] } }).settings?.rules?.map((r) => `${r.site} ${r.mode}`)))
+    .toEqual(['127.0.0.1 audio']);
+  const { tabId } = await openFixture(context, sw, 'direct.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  await expect(popup.getByText('Chosen by your rule for 127.0.0.1: you can change them.')).toBeVisible();
+  // Sound, in the settings' sound format.
+  await expect(popup.getByRole('button', { name: /^Format\s*M4A/ }).first()).toBeVisible();
+});
+
+test('full page: a backup is saved, and read back after everything was forgotten', async ({ context, sw, extId }) => {
+  await setSettings(sw, { overlayButton: false, firstRunAck: true, rules: [{ id: 'r1', site: 'vimeo.com', mode: 'audio', quality: 'best', subs: [], folder: 'Sons' }] });
+  const app = await openApp(context, extId, 'backup');
+  const before = await completed(sw);
+  await app.getByRole('button', { name: 'Save the file' }).click();
+  await expect(app.getByText(/^Backup saved: grabby-\d{4}-\d{2}-\d{2}\.json$/)).toBeVisible();
+  const { bytes } = await nextDownload(sw, before);
+  const data = JSON.parse(bytes.toString('utf8')) as { app: string; settings: { overlayButton: boolean } };
+  expect(data.app).toBe('grabby');
+  expect(data.settings.overlayButton).toBe(false);
+
+  // Everything forgotten, then read back from the file.
+  await sw.evaluate(() => chrome.storage.local.clear());
+  await app.reload();
+  await app.locator('input[type=file]').setInputFiles({ name: 'grabby.json', mimeType: 'application/json', buffer: bytes });
+  await expect(app.getByText(/^Restored: \d+ settings, 1 rules, 0 history entries, 0 followed channels\.$/)).toBeVisible();
+  const s = await sw.evaluate(async () => ((await chrome.storage.local.get('settings')) as { settings: { overlayButton: boolean; rules: { site: string }[] } }).settings);
+  expect(s.overlayButton).toBe(false);
+  expect(s.rules.map((r) => r.site)).toEqual(['vimeo.com']);
+  // Not one of ours: refused.
+  await app.locator('input[type=file]').setInputFiles({ name: 'x.json', mimeType: 'application/json', buffer: Buffer.from('{"hello":1}') });
+  await expect(app.getByText("This file isn't a Grabby backup.")).toBeVisible();
+});
+
+test('full page: pasted addresses are opened behind, two at a time, and each video saved', async ({ context, sw, extId }) => {
+  // A page without a video gives up after a minute.
+  test.setTimeout(180_000);
+  await setSettings(sw, { firstRunAck: true });
+  const app = await openApp(context, extId, 'batch');
+  const before = await completed(sw);
+  await app.getByRole('textbox', { name: 'Addresses to download' }).fill(`Voici : ${origin}/pages/direct.html, puis ${origin}/pages/hls.html\net ${origin}/pages/encrypted.html`);
+  await app.getByRole('button', { name: 'Add the addresses (3)' }).click();
+  await expect(app.getByText(/^Added: 3\./)).toBeVisible();
+  await expect.poll(() => completed(sw), { timeout: 90_000 }).toBe(before + 2);
+  await expect(app.getByText('Failed')).toBeVisible({ timeout: 90_000 });
+  await expect(app.getByText('Started')).toHaveCount(2);
+  // The pages it opened are closed again.
+  await expect.poll(() => sw.evaluate(async (o) => (await chrome.tabs.query({})).filter((t) => t.url?.startsWith(`${o}/pages/encrypted`)).length, origin)).toBe(0);
+});
+
+test('full page: two videos joined end to end, copied as they are', async ({ context, extId, sw }) => {
+  const app = await openApp(context, extId, 'join');
+  const mp4 = readFileSync('test/fixtures/media/sample.mp4');
+  await app.locator('input[type=file]').setInputFiles([
+    { name: 'un.mp4', mimeType: 'video/mp4', buffer: mp4 },
+    { name: 'deux.mp4', mimeType: 'video/mp4', buffer: mp4 },
+  ]);
+  await expect(app.getByText(/^The files are alike/)).toBeVisible({ timeout: 30_000 });
+  const before = await completed(sw);
+  await app.getByRole('button', { name: 'Join the 2 files' }).click();
+  await expect(app.getByText('Saved: un (2).mp4')).toBeVisible({ timeout: 60_000 });
+  const { filename } = await nextDownload(sw, before);
+  const info = probe(filename);
+  if (info) expect(info.duration).toBeGreaterThan(11);
+});
+
+test('full page: the workshop turns a file of the computer and saves it', async ({ context, extId, sw }) => {
+  const app = await openApp(context, extId, 'workshop');
+  await app.locator('input[type=file]').first().setInputFiles({ name: 'clip.webm', mimeType: 'video/webm', buffer: readFileSync('test/fixtures/media/sample.webm') });
+  await app.getByRole('radio', { name: '180°' }).click();
+  const before = await completed(sw);
+  await app.getByRole('button', { name: 'Apply and save' }).click();
+  await expect(app.getByText(/^Done: files saved in Downloads\/Grabby/)).toBeVisible({ timeout: 90_000 });
+  const { filename } = await nextDownload(sw, before);
+  if (probe(filename)) expect(videoSize(filename)).toEqual({ w: 640, h: 360 });
+});
+
+test('full page: the library lists what was saved, and followed channels can be managed', async ({ context, sw, extId }) => {
+  await setSettings(sw, { firstRunAck: true });
+  const { tabId } = await openFixture(context, sw, 'direct.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
+  await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
+  const app = await openApp(context, extId, 'library');
+  await expect(app.getByRole('heading', { name: 'Library' })).toBeVisible();
+  await expect(app.getByText('Sample: direct clip').first()).toBeVisible();
+  await expect(app.getByText(/^1 file · /)).toBeVisible();
+  await app.getByRole('radio', { name: 'Sounds' }).click();
+  await expect(app.getByText('Sample: direct clip')).toHaveCount(0);
+
+  await sw.evaluate(() =>
+    chrome.storage.local.set({
+      watches: [{ id: 'w1', kind: 'channel', key: 'UCxxxxxxxxxxxxxxxxxxxxxx', title: 'Ma chaîne', mode: 'video', quality: 'hd1080', since: Date.now(), seen: [], got: 2 }],
+    }),
+  );
+  await app.getByRole('link', { name: /Followed channels/ }).click();
+  await expect(app.getByText('Ma chaîne')).toBeVisible();
+  await expect(app.getByText(/videos saved: 2/)).toBeVisible();
+  await app.getByRole('button', { name: 'Unfollow' }).click();
+  await expect(app.getByText('Ma chaîne')).toHaveCount(0);
+  await expect.poll(() => sw.evaluate(async () => ((await chrome.storage.local.get('watches')) as { watches?: unknown[] }).watches?.length)).toBe(0);
+});

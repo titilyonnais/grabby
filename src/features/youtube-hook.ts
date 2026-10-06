@@ -90,7 +90,10 @@ const size = (f?: Format) => Number(f?.contentLength) || 0;
 export function describeFormats(r: PlayerResponse): YtInfo | null {
   const d = r.videoDetails;
   const formats = r.streamingData?.adaptiveFormats ?? [];
-  if (!d?.videoId || !formats.length || d.isLive) return null;
+  if (!d?.videoId) return null;
+  // A live stream: recorded from the page's own player, as it plays.
+  if (d.isLive) return { id: d.videoId, title: d.title ?? '', duration: 0, embeddable: false, qualities: [], live: true, ...(d.author ? { author: d.author } : {}) };
+  if (!formats.length) return null;
   const video = formats.filter((f) => f.mimeType.startsWith('video/') && lines(f) > 0);
   const audio = formats.filter((f) => f.mimeType.startsWith('audio/'));
   const aac = audio.find((f) => f.itag === 140) ?? audio.find((f) => f.mimeType.includes('mp4a'));

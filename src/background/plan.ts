@@ -10,6 +10,7 @@ import { SUB_CODEC, type SubsClock } from '../shared/subtitles';
 import type { Settings } from '../shared/settings';
 import { scaleBox, scaleSource } from '../shared/scale';
 import type { JobMode, MediaItem, Variant } from '../shared/types';
+import { finishWords, type Finish } from '../shared/finish';
 
 /**
  * From this size a file saved as is is fetched by Grabby in several ranges at once (and can
@@ -44,6 +45,10 @@ export interface PlanOptions {
   at?: number;
   /** A contact sheet (JPEG): a picture every so many seconds (0: chosen from its length). */
   sheet?: number;
+  /** What is done to the file once it is made. */
+  finish?: Finish;
+  /** A live stream: recorded until stopped, at most this many minutes. */
+  live?: number;
   settings: Settings;
   fetchText: (url: string) => Promise<string>;
 }
@@ -73,16 +78,18 @@ function scaled(o: PlanOptions, source: Variant | undefined, estimatedSize: numb
   return { scale: scaleBox(lines, source) };
 }
 
-async function hlsTrack(url: string, fetchText: PlanOptions['fetchText']): Promise<{ track: TrackPlan; media: HlsMedia }> {
+async function hlsTrack(url: string, fetchText: PlanOptions['fetchText'], live = false): Promise<{ track: TrackPlan; media: HlsMedia }> {
   const parsed = parseHls(await fetchText(url), url);
   if (parsed.type !== 'media') {
     // A master where we expected a media playlist: follow its best variant.
     const best = parsed.variants.filter((v) => reachableFrom(url, v.url)).sort((a, b) => b.bandwidth - a.bandwidth)[0];
     if (!best || parsed.encrypted) throw new PlanError(parsed.encrypted ? 'protected' : 'unknown');
-    return hlsTrack(best.url, fetchText);
+    return hlsTrack(best.url, fetchText, live);
   }
   if (parsed.encrypted) throw new PlanError('protected');
-  if (!parsed.endList) throw new PlanError('live');
+  if (!parsed.endList && !live) throw new PlanError('live');
+  // A live stream: its playlist is read again and again while it is recorded.
+  if (!parsed.endList) return { track: { segments: [], container: parsed.map ? 'fmp4' : 'ts', ...(parsed.map ? { init: parsed.map } : {}), live: url }, media: parsed };
   const track: TrackPlan = {
     segments: parsed.segments.map(({ url, range, duration }) => ({ url, ...(range ? { range } : {}), ...(duration > 0 ? { dur: duration } : {}) })),
     container: parsed.map ? 'fmp4' : 'ts',
@@ -102,16 +109,16 @@ async function planHls(item: MediaItem, o: PlanOptions): Promise<Plan> {
     const chosen = o.audios?.[0] ? hlsRendition(item, o.audios[0], variant?.audioGroup) : undefined;
     const audioTrack = chosen ?? group.find((a) => a.isDefault) ?? group[0];
     if (audioTrack) {
-      const { track } = await hlsTrack(audioTrack.url, o.fetchText);
+      const { track } = await hlsTrack(audioTrack.url, o.fetchText, !!o.live);
       return { ...common, audio: track, output: audioOut(o), raw: false, audioOnly: true };
     }
     const lightest = [...variants].sort((a, b) => (a.bandwidth ?? 0) - (b.bandwidth ?? 0))[0];
-    const { track } = await hlsTrack(lightest?.url ?? item.url, o.fetchText);
+    const { track } = await hlsTrack(lightest?.url ?? item.url, o.fetchText, !!o.live);
     return { ...common, video: track, output: audioOut(o), raw: false, audioOnly: true };
   }
 
   const variant = chosenVariant(variants, o);
-  const { track: video, media } = await hlsTrack(variant?.url ?? item.url, o.fetchText);
+  const { track: video, media } = await hlsTrack(variant?.url ?? item.url, o.fetchText, !!o.live);
   let audio: TrackPlan | undefined;
   let audioInfo: Plan['audioInfo'];
   const audios: NonNullable<Plan['audios']> = [];
@@ -120,7 +127,7 @@ async function planHls(item: MediaItem, o: PlanOptions): Promise<Plan> {
     for (const id of o.audios) {
       const r = hlsRendition(item, id, variant?.audioGroup);
       if (!r) continue;
-      const { track } = await hlsTrack(r.url, o.fetchText);
+      const { track } = await hlsTrack(r.url, o.fetchText, !!o.live);
       if (!audio) {
         audio = track;
         audioInfo = { label: r.label, ...(r.lang ? { lang: r.lang } : {}) };
@@ -130,7 +137,7 @@ async function planHls(item: MediaItem, o: PlanOptions): Promise<Plan> {
     const group = item.audioTracks.filter((a) => a.groupId === variant.audioGroup && a.url);
     const choice = group.find((a) => a.isDefault) ?? group[0];
     if (choice) {
-      audio = (await hlsTrack(choice.url, o.fetchText)).track;
+      audio = (await hlsTrack(choice.url, o.fetchText, !!o.live)).track;
       audioInfo = { label: choice.label, ...(choice.lang ? { lang: choice.lang } : {}) };
     }
   }
@@ -422,7 +429,12 @@ async function imagePlan(item: MediaItem, o: PlanOptions): Promise<Plan> {
 /** Turns a detected item + user choice into a concrete download plan. */
 export async function buildPlan(item: MediaItem, o: PlanOptions): Promise<Plan> {
   if (item.protection !== 'none') throw new PlanError('protected');
-  if (item.live) throw new PlanError('live');
+  if (item.live) {
+    // A live stream is recorded as it goes: a stream whose playlist grows, or the page's player.
+    if (!o.live || item.kind === 'dash' || isImageFormat(o.format)) throw new PlanError('live');
+    const plan = await planFor(item, o);
+    return withMeta(withFinish({ ...plan, live: { max: Math.round(o.live * 60) } }, item, o), item, o);
+  }
   if (isImageFormat(o.format)) {
     if (item.audioOnly) throw new PlanError('unknown');
     return imagePlan(item, o);
@@ -432,9 +444,25 @@ export async function buildPlan(item: MediaItem, o: PlanOptions): Promise<Plan> 
   if (parts) {
     const hull = { start: parts[0]!.start, end: parts[parts.length - 1]!.end };
     const plan = await clipped(item, o, hull);
-    if (plan.clip) return withMeta(await withSubs({ ...plan, parts }, item, o), item, o);
+    if (plan.clip) return withMeta(withFinish(await withSubs({ ...plan, parts }, item, o), item, o), item, o);
   }
-  return withMeta(await withSubs(await clipped(item, o), item, o), item, o);
+  // Processing first: a file it makes go through ffmpeg gets its title and tags too.
+  return withMeta(withFinish(await withSubs(await clipped(item, o), item, o), item, o), item, o);
+}
+
+/** What is done to the file afterwards needs ffmpeg: never a file saved as it is. */
+function withFinish(plan: Plan, item: MediaItem, o: PlanOptions): Plan {
+  if (!o.finish || plan.image) return plan;
+  const i18n = typeof chrome !== 'undefined' ? chrome.i18n : undefined;
+  let out: Plan = { ...plan, finish: o.finish, ...(i18n ? { words: finishWords((k, s) => i18n.getMessage(k, s), i18n.getUILanguage()) } : {}) };
+  if (out.kind === 'file' && (out.direct || out.raw)) {
+    if ((item.size ?? 0) > RAW_THRESHOLD) throw new PlanError('too_large');
+    out = { ...out, raw: false };
+    delete out.direct;
+    delete out.fast;
+  }
+  if (out.raw) throw new PlanError('too_large');
+  return out;
 }
 
 /** Parts to join: valid, in order, overlapping ones merged; fewer than two is not joining. */

@@ -8,6 +8,7 @@ import { AUDIO_FORMATS, CHAPTER_FORMATS, FORMAT_NAMES, IMAGE_FORMATS, isAudioFor
 import type { DownloadExtra, PopupToBg } from '../../shared/messages';
 import type { AudioFormat, Clip, OutputFormat, VideoFormat } from '../../shared/plan';
 import { canShrink, scaleChoices, SHRUNK_FORMATS } from '../../shared/scale';
+import { applyRule, ruleFor, type Rule } from '../../shared/rules';
 import { SHEET_EVERY, sheetCount } from '../../shared/sheet';
 import type { Job, MediaItem, Variant } from '../../shared/types';
 import { size, t, uiLang } from '../i18n';
@@ -17,6 +18,9 @@ import { canPause, isActive, JobBar } from './JobBar';
 import { Segmented } from './Segmented';
 import { Select, type SelectOption } from './Select';
 import { Moment, Trim } from './Trim';
+import { FinishPanel, finishCount } from './Finish';
+import { Follow } from './Follow';
+import type { Finish } from '../../shared/finish';
 
 /** The longest animated picture (GIF, WebP), in seconds. */
 const MAX_ANIMATION = 30;
@@ -37,6 +41,22 @@ interface Props {
   send: (m: PopupToBg) => void;
   /** "Download all": the card is a row with a round tick instead of its choices. */
   select?: { on: boolean; toggle: () => void } | undefined;
+  /** The user's automatic rules: the site's one makes the first choices. */
+  rules?: Rule[];
+  /** The local AI: whether its models may be downloaded, and agreeing to it. */
+  ai?: { allowed: boolean; allow: () => void };
+}
+
+/** How long a live stream may be recorded (minutes). */
+const LIVE_LIMITS = [30, 60, 120, 240, 480, 720];
+
+const isYouTube = (url: string) => /^https:\/\/(www\.|m\.)?youtube\.com\//.test(url);
+
+/** The part chosen (or the whole video) played in the page's own player. */
+function previewInPage(item: MediaItem, start: number, end?: number) {
+  void chrome.tabs
+    .sendMessage(item.tabId, { type: 'preview', videoIndex: item.videoIndex ?? -1, start, ...(end !== undefined ? { end } : {}) }, { frameId: item.frameId ?? 0 })
+    .catch(() => {});
 }
 
 /** Expected size of a quality: told by the source, else estimated from its bitrate. */
@@ -61,22 +81,28 @@ function Thumb({ item }: { item: MediaItem }) {
       ) : (
         <Icon name={item.audioOnly ? 'audio' : 'film'} size={24} />
       )}
-      {item.duration ? <span class="thumb__time">{formatDuration(item.duration)}</span> : null}
+      {/* A live stream's length is only what the page holds for now: it says "live" instead. */}
+      {item.live ? <span class="thumb__time thumb__time--live">{t('st_live')}</span> : item.duration ? <span class="thumb__time">{formatDuration(item.duration)}</span> : null}
     </div>
   );
 }
 
-export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, index, preferred, send, select }: Props) {
+export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, index, preferred, send, select, rules, ai }: Props) {
+  // The site's rule: its quality, format and subtitles are chosen already (still changeable).
+  const rule = ruleFor(rules, item.pageUrl);
+  const ruled = rule ? applyRule(item, rule, preferred) : undefined;
   const open = wantOpen && !select;
   const onToggle = select ? select.toggle : toggleOpen;
   const card = useUnfold<HTMLElement>(open);
   // A quality the source offers (its id), or a smaller one Grabby makes ("scale:360").
-  const [quality, setQuality] = useState<string | undefined>(item.variants[0]?.id);
+  const [quality, setQuality] = useState<string | undefined>(ruled?.variantId ?? item.variants[0]?.id);
   const shrinkTo = canShrink(item) ? scaleChoices(item.variants) : [];
   const scale = quality?.startsWith(SCALE_PREFIX) ? Number(quality.slice(SCALE_PREFIX.length)) : undefined;
   const variantId = scale ? undefined : quality;
   const videoFormats = item.audioOnly ? [] : scale ? SHRUNK_FORMATS : (item.formats ?? videoFormatsFor(''));
-  const initial: OutputFormat = item.audioOnly
+  const initial: OutputFormat = ruled?.format && (ruled.mode === 'audio' || videoFormats.includes(ruled.format as VideoFormat))
+    ? ruled.format
+    : item.audioOnly
     ? preferred.audio
     : videoFormats.includes(preferred.video)
       ? preferred.video
@@ -89,7 +115,7 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
   const [joined, setJoined] = useState(true);
   const clippable = canClip(item);
   // Subtitles: none, or some of the stream's tracks, put in the video or saved next to it.
-  const [subsIds, setSubsIds] = useState<string[]>([]);
+  const [subsIds, setSubsIds] = useState<string[]>(ruled?.subtitles ?? []);
   const [subsApart, setSubsApart] = useState(false);
   // Sound tracks (other languages), when the stream has several: null, its own choice.
   const choices = audioChoices(item);
@@ -101,6 +127,13 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
   const [still, setStill] = useState<'frame' | 'sheet' | 'thumb'>('frame');
   const [sheetEvery, setSheetEvery] = useState<number>(0);
   const [thumbSaved, setThumbSaved] = useState(false);
+  // "Retouches et IA": what is done to the file afterwards.
+  const [finishing, setFinishing] = useState(false);
+  const [finish, setFinish] = useState<Finish>({});
+  // A live stream: how long it may be recorded.
+  const [liveMinutes, setLiveMinutes] = useState(120);
+  // "Aperçu": a file plays here; anything else in the page's own player.
+  const [previewing, setPreviewing] = useState(false);
   const image = isImageFormat(format);
   const whole = (c: Clip) => !!item.duration && c.start <= 0 && c.end >= Math.floor(item.duration);
   const chosen = trimming && parts ? parts.filter((c) => !whole(c) || parts.length > 1) : [];
@@ -123,7 +156,8 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
   const shownSize = image ? undefined : chosen.length && wholeSize ? Math.round((wholeSize * kept) / item.duration!) : wholeSize;
   // YouTube: a hidden player records it, the user keeps watching — it's a plain download for them.
   const hidden = !!item.ytId;
-  const blocked = item.protection !== 'none' || item.live;
+  const blocked = item.protection !== 'none';
+  const live = item.live && !blocked;
   const kind = item.audioOnly ? t('kind_audio') : t(`kind_${item.kind}`);
   const single = item.variants.length === 1 ? item.variants[0]!.label : '';
   const showJob = job && (isActive(job) || ['done', 'error', 'canceled'].includes(job.status));
@@ -188,6 +222,30 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
     detail: t('sheetPictures', String(sheetCount(item.duration ?? 1, s))),
   }));
 
+  // What the panel asks for (kept when it is folded: its button shows how many), without what
+  // can't apply any more (no text to burn or sum up).
+  const hasText = (subsOffered && subsIds.length > 0) || !!finish.transcribe;
+  const finishSent: Finish | undefined = (() => {
+    if (image) return undefined;
+    const f: Finish = { ...finish };
+    if (!hasText) {
+      delete f.burn;
+      delete f.summary;
+    }
+    if (!item.chapters?.length && !f.summary) delete f.split;
+    if ((f.transcribe || f.translate) && !ai?.allowed) {
+      delete f.transcribe;
+      delete f.translate;
+    }
+    return finishCount(f) ? f : undefined;
+  })();
+  const previewSpan = { start: cut?.start ?? 0, ...(cut ? { end: cut.end } : {}) };
+  const previewUrl = item.kind === 'file' ? (variant?.url || item.url) : '';
+  const preview = () => {
+    if (previewUrl) setPreviewing((v) => !v);
+    else previewInPage(item, previewSpan.start, previewSpan.end);
+  };
+
   const start = () => {
     const base = {
       type: 'download' as const,
@@ -195,13 +253,16 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
       mode: audio ? ('audio' as const) : ('video' as const),
       ...(!audio && variantId ? { variantId } : {}),
       format,
+      ...(ruled?.folder ? { folder: ruled.folder } : {}),
     };
     const extra: DownloadExtra = {
+      ...(finishSent ? { finish: finishSent } : {}),
       ...(!audio && !image && scale ? { scale } : {}),
       ...(subs ? { subtitles: subs } : {}),
       ...(audiosOffered && audioIds ? { audios: audio ? audioSel.slice(0, 1) : audioSel } : {}),
       ...(chaptersOffered && !chapters ? { noChapters: true } : {}),
     };
+    if (live) return send({ ...base, ...(finishSent ? { finish: finishSent } : {}), live: liveMinutes });
     if (format === 'jpg' && stillKind === 'thumb') {
       setThumbSaved(true);
       return send({ type: 'save-thumb', mediaId: item.id });
@@ -262,7 +323,7 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
                 {size(shownSize)}
               </span>
             ) : null}
-            {blocked && !open && <Icon name={item.live ? 'live' : 'lock'} size={14} />}
+            {(blocked || live) && !open && <Icon name={live ? 'live' : 'lock'} size={14} />}
           </p>
           {/* A download running in a row: its bar under the text, not over the layout. */}
           {running && !open && <span class="card__progress" style={{ '--p': String(job!.progress) }} aria-hidden="true" />}
@@ -332,11 +393,53 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
               <Icon name="lock" size={16} />
               {t('protectedBody')}
             </p>
-          ) : item.live ? (
+          ) : live && item.kind === 'dash' ? (
             <p class="notice">
               <Icon name="live" size={16} />
               {t('liveBody')}
             </p>
+          ) : live ? (
+            <>
+              {!showJob && (
+                <div class="pickers">
+                  <Select label={t('formatLabel')} value={image ? preferred.video : format} options={formatOptions.filter((o) => !isImageFormat(o.value))} onChange={setFormat} />
+                  <Select
+                    label={t('liveLimit')}
+                    value={String(liveMinutes)}
+                    options={LIVE_LIMITS.map((m) => ({ value: String(m), label: m < 60 ? t('liveMinutes', String(m)) : t('liveHours', String(m / 60)) }))}
+                    onChange={(v) => setLiveMinutes(Number(v))}
+                  />
+                </div>
+              )}
+              {!showJob && (
+                <button class="trim-toggle" aria-expanded={finishing} onClick={() => setFinishing((v) => !v)}>
+                  <Icon name={finishing ? 'close' : 'wand'} size={16} />
+                  {finishing ? t('finishClose') : finishCount(finish) ? t('finishOpenCount', String(finishCount(finish))) : t('finishOpen')}
+                </button>
+              )}
+              {!showJob && finishing && (
+                <FinishPanel
+                  value={finish}
+                  onChange={setFinish}
+                  audio={audio}
+                  format={format}
+                  {...(item.thumbnail ? { picture: item.thumbnail } : {})}
+                  subsChosen={false}
+                  chapters={0}
+                  aiAllowed={!!ai?.allowed}
+                  onAllowAi={() => ai?.allow()}
+                />
+              )}
+              {showJob ? (
+                <JobBar job={job} send={send} />
+              ) : (
+                <button class="btn btn--primary btn--wide" onClick={start}>
+                  <Icon name="record" />
+                  {t('liveRecord')}
+                </button>
+              )}
+              {!showJob && <p class="hint">{t('liveHint')}</p>}
+            </>
           ) : (
             <>
               {!showJob && (
@@ -398,11 +501,40 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
               {!showJob && image && format !== 'jpg' && clippable && (
                 <Trim key="animation" duration={item.duration!} parts={parts} onChange={setParts} single={{ max: MAX_ANIMATION }} />
               )}
-              {!showJob && clippable && !image && (
-                <button class="trim-toggle" aria-expanded={trimming} onClick={() => setTrimming((v) => !v)}>
-                  <Icon name={trimming ? 'close' : 'scissors'} size={16} />
-                  {trimming ? t('trimWhole') : t('trimOpen')}
-                </button>
+              {!showJob && !image && (clippable || previewUrl || item.kind === 'capture' || item.videoIndex !== undefined) && (
+                <div class="card__actions">
+                  {clippable && (
+                    <button class="trim-toggle" aria-expanded={trimming} onClick={() => setTrimming((v) => !v)}>
+                      <Icon name={trimming ? 'close' : 'scissors'} size={16} />
+                      {trimming ? t('trimWhole') : t('trimOpen')}
+                    </button>
+                  )}
+                  {!item.audioOnly && (
+                    <button class="trim-toggle" aria-expanded={previewUrl ? previewing : undefined} onClick={preview} title={previewUrl ? t('previewHere') : t('previewInPage')}>
+                      <Icon name="eye" size={16} />
+                      {t('preview')}
+                    </button>
+                  )}
+                  <button class="trim-toggle" aria-expanded={finishing} onClick={() => setFinishing((v) => !v)}>
+                    <Icon name={finishing ? 'close' : 'wand'} size={16} />
+                    {finishing ? t('finishClose') : finishCount(finish) ? t('finishOpenCount', String(finishCount(finish))) : t('finishOpen')}
+                  </button>
+                </div>
+              )}
+              {!showJob && previewing && previewUrl && (
+                <video
+                  class="preview"
+                  key={`${previewUrl}#${previewSpan.start}-${previewSpan.end ?? ''}`}
+                  src={`${previewUrl}#t=${previewSpan.start}${previewSpan.end !== undefined ? `,${previewSpan.end}` : ''}`}
+                  controls
+                  autoplay
+                  playsInline
+                  onError={() => {
+                    // The site won't play it here: in its own page instead.
+                    setPreviewing(false);
+                    previewInPage(item, previewSpan.start, previewSpan.end);
+                  }}
+                />
               )}
               {!showJob && clippable && trimming && !image && <Trim key="parts" duration={item.duration!} parts={parts} onChange={setParts} />}
               {!showJob && chosen.length > 1 && !image && (
@@ -410,6 +542,19 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
                   <span>{t('partsJoined')}</span>
                   <input class="switch" type="checkbox" role="switch" checked={joined} onChange={(e) => setJoined(e.currentTarget.checked)} />
                 </label>
+              )}
+              {!showJob && finishing && !image && (
+                <FinishPanel
+                  value={finish}
+                  onChange={setFinish}
+                  audio={audio}
+                  format={format}
+                  {...(item.thumbnail ? { picture: item.thumbnail } : {})}
+                  subsChosen={subsOffered && subsIds.length > 0}
+                  chapters={item.chapters?.length ?? 0}
+                  aiAllowed={!!ai?.allowed}
+                  onAllowAi={() => ai?.allow()}
+                />
               )}
               {showJob ? (
                 <>
@@ -423,6 +568,10 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
                 </button>
               )}
               {item.kind === 'capture' && !showJob && <p class="hint">{t(hidden ? 'hiddenHint' : 'captureHint')}</p>}
+              {rule && !showJob && <p class="hint">{t('ruleApplied', rule.site || t('ruleEverySite'))}</p>}
+              {!showJob && isYouTube(item.pageUrl) && /[?&]v=|\/(shorts|live)\//.test(item.pageUrl) && (
+                <Follow url={item.pageUrl} mode={audio ? 'audio' : 'video'} quality="hd1080" {...(!image ? { format } : {})} label={t('followChannel')} />
+              )}
               {scale && !audio && !image && !showJob && <p class="hint">{t('shrinkHint')}</p>}
               {chosen.length > 0 && !audio && !image && !showJob && <p class="hint">{t('trimHint')}</p>}
               {image && !showJob && (

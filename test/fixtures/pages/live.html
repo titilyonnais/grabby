@@ -1,0 +1,7 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Live stream test</title></head>
+<body><h1>Live</h1><script>
+const id = String(Date.now());
+const poll = () => fetch('/live/index.m3u8?id=' + id).then(r => r.text()).then(t => { document.body.dataset.loaded = t.length; });
+poll();
+setInterval(poll, 1000);
+</script></body></html>

@@ -1,7 +1,10 @@
-import type { HistoryEntry, Job, JobMode, JobStatus, MediaItem } from './types';
+import type { HistoryEntry, Job, JobMode, JobStatus, JobStep, MediaItem } from './types';
 import type { Chapter, Clip, ErrorCode, OutputFormat, Plan, SubsChoice, VideoFormat } from './plan';
 import type { Release } from './release';
 import type { YtList } from './ytlist';
+import type { BatchItem, BatchMode } from './batch';
+import type { Watch } from './feeds';
+import type { Finish } from './finish';
 
 /** What a download asks for besides the quality and the format. */
 export interface DownloadExtra {
@@ -20,6 +23,12 @@ export interface DownloadExtra {
   at?: number;
   /** A contact sheet (JPEG): a picture every so many seconds (0: chosen from its length). */
   sheet?: number;
+  /** A folder of the downloads folder chosen by a rule ("Musique"). */
+  folder?: string;
+  /** What is done to the file once it is made: edits, compression, AI. */
+  finish?: Finish;
+  /** A live stream: recorded until stopped (or this many minutes). */
+  live?: number;
 }
 import type { Settings } from './settings';
 
@@ -61,6 +70,8 @@ export interface YtInfo {
   author?: string;
   /** Chapters its description lists. */
   chapters?: Chapter[];
+  /** A live stream (recorded from the page's player). */
+  live?: boolean;
 }
 
 export interface PageInfo {
@@ -90,13 +101,17 @@ export type ContentToBg =
   | { type: 'capture-done'; jobId: string; tracks: { track: number; mime: string }[]; keep?: number[] }
   | { type: 'capture-error'; jobId: string; error: ErrorCode }
   /** The "done" bubble's button. */
-  | { type: 'show-download'; downloadId: number };
+  | { type: 'show-download'; downloadId: number }
+  /** The button over a video: `src`, the video's address when it has one. */
+  | { type: 'grab'; src?: string; mode?: 'video' | 'audio' };
 
 /* ---------- service worker → content script ---------- */
 export type BgToContent =
   | { type: 'scan' }
   /** `session`: which recording session of the job (0 first); `from`: where it starts again. */
-  | { type: 'capture-start'; jobId: string; videoIndex: number; clip?: Clip; session?: number; from?: number }
+  | { type: 'capture-start'; jobId: string; videoIndex: number; clip?: Clip; session?: number; from?: number; live?: boolean }
+  /** "Aperçu": the page's own player plays the part chosen. */
+  | { type: 'preview'; videoIndex: number; start: number; end?: number }
   /** `hold`: paused, the recording stops without being finished. */
   | { type: 'capture-stop'; jobId: string; hold?: boolean }
   /** Bubble in the page the user is looking at when a download ends. */
@@ -121,6 +136,10 @@ export interface PopupState {
   install?: InstallState;
   /** The YouTube playlist or channel on screen. */
   ytList?: YtList;
+  /** Followed channels and playlists (the full page only). */
+  watches?: Watch[];
+  /** Pasted addresses being opened (the full page only). */
+  batch?: BatchItem[];
 }
 
 export type PopupToBg =
@@ -153,7 +172,25 @@ export type PopupToBg =
   | { type: 'redo'; id: string }
   | { type: 'clear-history' }
   | { type: 'history-remove'; id: string }
-  | { type: 'settings'; patch: Partial<Settings> };
+  | { type: 'settings'; patch: Partial<Settings> }
+  | { type: 'batch-remove'; id: string }
+  | { type: 'batch-retry'; id: string }
+  /** `all`: also the addresses still waiting. */
+  | { type: 'batch-clear'; all: boolean }
+  | { type: 'watch-remove'; id: string }
+  | { type: 'watch-change'; id: string; patch: Partial<Pick<Watch, 'mode' | 'quality' | 'format'>> };
+
+/** Asked by an extension page, answered (chrome.runtime.sendMessage). */
+export type AppRequest =
+  | { app: 'watch-add'; url: string; mode: 'video' | 'audio'; quality: string; format?: OutputFormat }
+  | { app: 'watch-check'; id?: string }
+  | { app: 'batch-add'; text: string; mode: BatchMode }
+  | { app: 'export' }
+  | { app: 'import'; data: unknown }
+  /** Opens the full page (from the popup: the popup closes). */
+  | { app: 'open-app'; section?: string }
+  /** Where a finished download is on disk (the library plays it from there). */
+  | { app: 'file-paths'; ids: number[] };
 
 export type BgToPopup = { type: 'state'; state: PopupState };
 
@@ -163,6 +200,8 @@ export type BgToOffscreen =
   /** The speed limit changed (bytes per second, 0: none). */
   | { target: 'offscreen'; type: 'rate'; rate: number }
   | { target: 'offscreen'; type: 'cancel'; jobId: string }
+  /** A live stream: stop reading its playlist and make the file from what was fetched. */
+  | { target: 'offscreen'; type: 'live-stop'; jobId: string }
   /** Stops fetching, keeping what is stored. */
   | { target: 'offscreen'; type: 'pause'; jobId: string }
   | { target: 'offscreen'; type: 'release'; jobId: string }
@@ -181,12 +220,28 @@ export type OffscreenToBg =
       progress: number;
       bytes: number;
       speed: number;
+      /** What is being done to the file (AI, editor…), once it is made. */
+      step?: JobStep;
     }
-  | { target: 'bg'; type: 'job-ready'; jobId: string; blobUrl: string; ext: OutputFormat; size: number; /** .srt files to save next to it. */ subtitles?: { srt: string; lang?: string }[] }
+  | {
+      target: 'bg';
+      type: 'job-ready';
+      jobId: string;
+      blobUrl: string;
+      ext: OutputFormat;
+      size: number;
+      /** .srt files to save next to it. */
+      subtitles?: { srt: string; lang?: string }[];
+      /** One file per chapter: the first one is `blobUrl` (named `name`), these are the others. */
+      pieces?: { blobUrl: string; name: string }[];
+      name?: string;
+      /** Text files next to it (the summary): `tag` names them ("Title.summary.txt"). */
+      notes?: { text: string; tag: string }[];
+    }
   | { target: 'bg'; type: 'job-error'; jobId: string; error: ErrorCode }
   | { target: 'bg'; type: 'job-paused'; jobId: string }
   /** capture-sink → SW: may this job write capture chunks? */
-  | { target: 'bg'; type: 'sink-check'; jobId: string };
+  | { target: 'bg'; type: 'sink-check'; jobId: string; probe?: string };
 
 /** Installing a new version through the update helper. */
 export type InstallStep = 'working' | 'done' | 'uptodate' | 'helper_missing' | 'busy' | 'failed';

@@ -3,7 +3,7 @@
  * buffers by postMessage (transferred, no copy) and stores them in the extension's
  * IndexedDB. Only accepts chunks for a job the service worker confirms is capturing.
  */
-import { putChunks, type StoredChunk } from '../shared/idb';
+import { putChunk, putChunks, type StoredChunk } from '../shared/idb';
 
 let allowedJob: string | null = null;
 let queue: Promise<void> = Promise.resolve();
@@ -46,10 +46,16 @@ window.addEventListener('message', (e: MessageEvent) => {
 
   if (d.type === 'open') {
     const jobId = d.jobId;
+    const target = e.origin === 'null' ? '*' : e.origin;
     queue = queue
       .then(async () => {
-        const ok = await chrome.runtime.sendMessage({ target: 'bg', type: 'sink-check', jobId }).catch(() => false);
+        // A probe the extension must be able to read back: this frame's storage may be
+        // walled off from the extension's (Brave), and what it stored would be lost.
+        const probe = `probe-${crypto.randomUUID()}`;
+        await putChunk({ jobId: probe, track: 0, seq: 0, init: false, data: new ArrayBuffer(1) }, 'probe').catch(() => {});
+        const ok = await chrome.runtime.sendMessage({ target: 'bg', type: 'sink-check', jobId, probe }).catch(() => false);
         allowedJob = ok === true ? jobId : null;
+        window.parent.postMessage({ grabbySink: ok === true ? 'opened' : ok === 'partitioned' ? 'partitioned' : 'refused' }, target);
       })
       .catch(() => {});
     return;

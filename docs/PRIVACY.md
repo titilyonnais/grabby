@@ -1,6 +1,6 @@
 # Grabby — Privacy policy / Politique de confidentialité
 
-_Last updated: 2026-10-06 (1.9.0)_
+_Last updated: 2026-10-06 (1.10.0)_
 
 ## English
 
@@ -10,7 +10,8 @@ Grabby does **not** collect, store on a server, sell or share any personal data.
   telemetry and makes no network request of its own except to the media files, playlists
   and manifests of the page you are viewing, and only to detect or download them at your
   request (and, only if you turn them on or ask for them, the new version check, the
-  update and the SponsorBlock question described below).
+  update, the SponsorBlock question, the feeds of the channels you follow and the AI models
+  described below).
 - **What stays on your device:**
   - your settings (theme, video and audio formats, file name parts, save options) in the
     browser's extension storage, and the theme again in the popup's own storage so it opens
@@ -57,6 +58,29 @@ Grabby does **not** collect, store on a server, sell or share any personal data.
   No cookie, no identifier. SponsorBlock sees the request like any visit (your IP address).
 - **Thumbnail.** When you save a video's thumbnail, Grabby fetches it at its biggest size
   (on YouTube, from `i.ytimg.com`, where the page already loads it).
+- **Followed channels (only those you follow).** When you follow a YouTube channel or
+  playlist, Grabby reads its page once (to find its id), then once an hour its public feed
+  (`www.youtube.com/feeds/videos.xml?…`), without cookies, to see new videos. The list of
+  followed channels and the videos already seen stay in the extension's storage; you can
+  stop following at any time.
+- **Pasted addresses.** The pages of a list you paste are opened one or two at a time in
+  tabs behind yours, as if you opened them yourself, and closed once their video is
+  found.
+- **Live streams.** While you record a live stream, Grabby keeps reading its playlist (or
+  records what the page's player plays), until you stop it or the time you set is up.
+- **Local AI (only if you ask for it and agree).** Transcription and translation run on
+  your device. The first time, after you agree, the models' weights (data, not code) are
+  downloaded once from Hugging Face (`huggingface.co` and its file servers), without
+  cookies or any identifier, and kept in the browser's cache. Your videos, sounds and texts
+  are never sent. When the browser has its own on-device translator or summarizer (Chrome's
+  built-in AI), Grabby may use it instead; it also works on your device.
+- **Button on videos.** A small "Download" button shows over the videos of the pages you
+  visit (it can be turned off in the settings); it is drawn by Grabby in the page and sends
+  nothing.
+- **Library and backup.** The full-page library shows your download history. If you allowed
+  Grabby to read local files (`chrome://extensions`, "Allow access to file URLs"), it can
+  play the files you saved; nothing leaves your device. A backup is a file you save and
+  open yourself; Grabby sends it nowhere.
 - **Notifications.** When a download finishes, a small bubble appears in the page you are
   looking at, and a system notification is shown; both can be turned off in the settings.
 - **Downloads** are saved through the browser's own download manager to the location you
@@ -72,9 +96,9 @@ et ne la partage pas.
 - **Pas de compte, pas de statistiques, pas de pistage, pas de serveur.** L'extension ne
   contient aucune télémétrie. Elle n'effectue aucune requête réseau à son initiative, hormis
   vers les fichiers vidéo, playlists et manifestes de la page consultée, pour les détecter
-  ou les télécharger à ta demande (et, seulement si tu l'actives, la vérification
-  quotidienne des nouvelles versions, la mise à jour et la question à SponsorBlock
-  décrites plus bas, seulement si tu les actives ou les demandes).
+  ou les télécharger à ta demande (et la vérification quotidienne des nouvelles versions,
+  la mise à jour, la question à SponsorBlock, les flux des chaînes suivies et les modèles
+  d'IA décrits plus bas, seulement si tu les actives ou les demandes).
 - **Ce qui reste sur ton appareil :**
   - tes réglages (thème, formats vidéo et audio, composition du nom de fichier, options
     d'enregistrement), et le thème une seconde fois dans la mémoire de la popup pour qu'elle
@@ -132,6 +156,32 @@ et ne la partage pas.
   ni identifiant. SponsorBlock voit la requête comme toute visite (ton adresse IP).
 - **Miniature.** Quand tu enregistres la miniature d'une vidéo, Grabby la récupère dans sa
   plus grande taille (sur YouTube, sur `i.ytimg.com`, où la page la charge déjà).
+- **Chaînes suivies (seulement celles que tu suis).** Quand tu suis une chaîne ou une
+  playlist YouTube, Grabby lit sa page une fois (pour trouver son identifiant), puis une
+  fois par heure son flux public (`www.youtube.com/feeds/videos.xml?…`), sans cookie, pour
+  voir les nouvelles vidéos. La liste des chaînes suivies et des vidéos déjà vues reste dans
+  la mémoire de l'extension ; tu peux arrêter de suivre à tout moment.
+- **Liste d'adresses collée.** Les pages d'une liste que tu colles sont ouvertes une ou deux
+  à la fois dans des onglets en arrière-plan, comme si tu les ouvrais toi-même, puis
+  refermées une fois leur vidéo trouvée.
+- **Directs.** Pendant que tu enregistres un direct, Grabby continue de lire sa playlist
+  (ou enregistre ce que joue le lecteur de la page), jusqu'à ce que tu l'arrêtes ou que la
+  durée choisie soit atteinte.
+- **IA locale (seulement si tu la demandes et l'acceptes).** La transcription et la
+  traduction se font sur ton appareil. La première fois, après ton accord, les poids des
+  modèles (des données, pas du code) sont téléchargés une seule fois depuis Hugging Face
+  (`huggingface.co` et ses serveurs de fichiers), sans cookie ni identifiant, et gardés dans
+  le cache du navigateur. Tes vidéos, sons et textes ne sont jamais envoyés. Quand le
+  navigateur a son propre traducteur ou résumeur sur l'appareil (l'IA intégrée de Chrome),
+  Grabby peut s'en servir à la place ; lui aussi travaille sur ton appareil.
+- **Bouton sur les vidéos.** Un petit bouton « Télécharger » s'affiche sur les vidéos des
+  pages visitées (désactivable dans les réglages) ; Grabby le dessine dans la page et il
+  n'envoie rien.
+- **Bibliothèque et sauvegarde.** La bibliothèque plein écran montre ton historique de
+  téléchargements. Si tu as autorisé Grabby à lire les fichiers locaux (`chrome://extensions`,
+  « Autoriser l'accès aux URL de fichier »), elle peut lire les fichiers enregistrés ; rien
+  ne quitte ton appareil. Une sauvegarde est un fichier que tu enregistres et rouvres
+  toi-même ; Grabby ne l'envoie nulle part.
 - **Notifications.** À la fin d'un téléchargement, une petite bulle apparaît dans la page
   que tu regardes et une notification système s'affiche ; tu peux les désactiver dans les
   réglages.

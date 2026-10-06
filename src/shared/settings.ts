@@ -1,5 +1,6 @@
 import type { AudioFormat, VideoFormat } from './plan';
 import type { FolderMode } from './filename';
+import type { Rule } from './rules';
 
 export interface Settings {
   theme: 'auto' | 'light' | 'dark';
@@ -30,6 +31,12 @@ export interface Settings {
   normalize: boolean;
   /** YouTube: the parts marked as sponsored (SponsorBlock) left out of the file. */
   skipSponsors: boolean;
+  /** Automatic choices per site (see rules.ts). */
+  rules: Rule[];
+  /** A Grabby button over the videos of the pages. */
+  overlayButton: boolean;
+  /** The user agreed to download the local AI's models (transcription, translation). */
+  aiModels: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -50,6 +57,9 @@ export const DEFAULT_SETTINGS: Settings = {
   quickMode: 'video',
   normalize: false,
   skipSponsors: false,
+  rules: [],
+  overlayButton: true,
+  aiModels: false,
 };
 
 const KEY = 'settings';
@@ -59,7 +69,7 @@ export async function getSettings(): Promise<Settings> {
   const stored = (res[KEY] as Partial<Settings>) ?? {};
   // Set before 1.9 as "in a Grabby folder".
   const folder = stored.folder ?? (stored.subfolder ? 'grabby' : 'none');
-  return { ...DEFAULT_SETTINGS, ...stored, folder };
+  return { ...DEFAULT_SETTINGS, ...stored, folder, rules: Array.isArray(stored.rules) ? stored.rules : [] };
 }
 
 let writing: Promise<unknown> = Promise.resolve();

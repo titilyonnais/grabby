@@ -35,6 +35,8 @@ export function cutNetwork(ms: number): void {
   outageUntil = Date.now() + ms;
 }
 const live = new Set<import('node:http').ServerResponse>();
+const liveClock = new Map<string, number>();
+const LIVE_SEGMENTS = 30;
 
 /** Sends `body` (a slice of a big file) at `rate` bytes per second, in small chunks. */
 function trickle(res: import('node:http').ServerResponse, body: Buffer, rate: number, key: string) {
@@ -113,6 +115,20 @@ export function startServer(port = 0): Promise<{ server: Server; origin: string 
         }
         res.writeHead(200, { 'Content-Type': 'video/mp4', 'Content-Length': full.length, 'Accept-Ranges': 'bytes' });
         return trickle(res, full, rate, key);
+      }
+      // /live/index.m3u8?id=…: a live stream of 1-second segments, a window of the latest 4,
+      // growing from the first request for that id; it ends after 30 segments.
+      if (url.pathname === '/live/index.m3u8') {
+        const id = url.searchParams.get('id') ?? '';
+        const born = liveClock.get(id) ?? Date.now();
+        liveClock.set(id, born);
+        const now = Math.min(LIVE_SEGMENTS, Math.floor((Date.now() - born) / 1000) + 1);
+        const first = Math.max(0, now - 4);
+        const lines = ['#EXTM3U', '#EXT-X-VERSION:3', '#EXT-X-TARGETDURATION:1', `#EXT-X-MEDIA-SEQUENCE:${first}`];
+        for (let i = first; i < now; i++) lines.push('#EXTINF:1.000000,', `/media/live/s${String(i).padStart(2, '0')}.ts`);
+        if (now >= LIVE_SEGMENTS) lines.push('#EXT-X-ENDLIST');
+        res.writeHead(200, { 'Content-Type': TYPES['.m3u8']!, 'Cache-Control': 'no-store' });
+        return void res.end(`${lines.join('\n')}\n`);
       }
       if (url.pathname.startsWith('/media/protected-referer/') && !(req.headers.referer ?? '').startsWith(origin)) {
         res.writeHead(403).end('referer required');

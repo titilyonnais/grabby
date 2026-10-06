@@ -10,7 +10,15 @@ const ACTIVE = ['queued', 'downloading', 'capturing', 'processing', 'saving', 'p
 export const isActive = (j: Job | undefined): boolean => !!j && ACTIVE.includes(j.status);
 
 /** A download pauses while it fetches or records (not while the file is being assembled). */
-export const canPause = (j: Job): boolean => j.status === 'downloading' || j.status === 'queued' || j.status === 'capturing';
+export const canPause = (j: Job): boolean => (!j.live || j.status === 'queued') && (j.status === 'downloading' || j.status === 'queued' || j.status === 'capturing');
+
+/** "12:05" since a live recording started. */
+function since(ts: number): string {
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  const h = Math.floor(s / 3600);
+  const m = String(Math.floor((s % 3600) / 60)).padStart(h ? 2 : 1, '0');
+  return `${h ? `${h}:` : ''}${m}:${String(s % 60).padStart(2, '0')}`;
+}
 
 /** Re-renders every second while `on`: for a countdown. */
 export function useTick(on: boolean): void {
@@ -24,6 +32,10 @@ export function useTick(on: boolean): void {
 
 export function label(job: Job): string {
   const pct = `${Math.round(job.progress * 100)} %`;
+  // A live stream being recorded: for how long.
+  if (job.live && (job.status === 'downloading' || job.status === 'capturing')) return `${t('st_live')} · ${job.liveSince ? since(job.liveSince) : '0:00'}`;
+  // What is being done to the file once it is made.
+  if (job.status === 'processing' && job.step) return `${t(`step_${job.step}`)} ${pct}`;
   switch (job.status) {
     case 'paused': {
       if (job.pausedBy === 'user') return `${t('st_paused')} · ${pct}`;
@@ -152,10 +164,10 @@ export function JobBar({ job, send, canFinish = true }: { job: Job; send: (m: Po
   }
 
   const paused = job.status === 'paused';
-  // A countdown to the next try for the network.
-  useTick(paused && job.pausedBy === 'network');
+  // A countdown to the next try for the network; the time of a live recording.
+  useTick((paused && job.pausedBy === 'network') || (!!job.live && (job.status === 'downloading' || job.status === 'capturing')));
   const held = job.status === 'queued' && !!job.held;
-  const indeterminate = !paused && !held && (job.status === 'queued' || (job.status === 'processing' && !job.scale) || job.status === 'saving' || job.progress === 0);
+  const indeterminate = !paused && !held && (job.status === 'queued' || (job.status === 'processing' && !job.scale && !job.step) || job.status === 'saving' || job.progress === 0 || (!!job.live && job.status !== 'processing'));
   const stats = jobStats(job);
   const text = label(job);
   return (
@@ -191,7 +203,7 @@ export function JobBar({ job, send, canFinish = true }: { job: Job; send: (m: Po
             </button>
           )
         )}
-        {(job.status === 'capturing' || (paused && job.kind === 'capture' && job.bytes > 0)) && canFinish && (
+        {(job.status === 'capturing' || (job.live && job.status === 'downloading') || (paused && job.kind === 'capture' && job.bytes > 0)) && canFinish && (
           <button class="btn btn--primary btn--icon" title={t('finishCapture')} aria-label={t('finishCapture')} onClick={() => send({ type: 'finish-capture', jobId: job.id })}>
             <Icon name="stop" />
           </button>

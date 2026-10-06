@@ -22,7 +22,10 @@ type Up =
   | { type: 'error'; error: 'capture_unavailable' | 'protected' | 'capture_failed' }
   | { type: 'yt'; info: import('../shared/messages').YtInfo };
 
-type Down = { type: 'arm'; videoIndex: number; clip?: { start: number; end?: number }; from?: number } | { type: 'stop'; hold?: boolean };
+type Down =
+  | { type: 'arm'; videoIndex: number; clip?: { start: number; end?: number }; from?: number; live?: boolean }
+  | { type: 'stop'; hold?: boolean }
+  | { type: 'preview'; videoIndex: number; start: number; end?: number };
 
 const LOG_BUDGET = 48 * 1024 * 1024;
 
@@ -50,7 +53,8 @@ const LOG_BUDGET = 48 * 1024 * 1024;
     port = e.ports[0];
     port.onmessage = (m: MessageEvent) => {
       const d = m.data as Down | null;
-      if (d?.type === 'arm' && Number.isInteger(d.videoIndex)) arm(d.videoIndex, validPart(d.clip), num(d.from));
+      if (d?.type === 'arm' && Number.isInteger(d.videoIndex)) arm(d.videoIndex, validPart(d.clip), num(d.from), d.live === true);
+      else if (d?.type === 'preview' && Number.isInteger(d.videoIndex)) preview(d.videoIndex, num(d.start) ?? 0, num(d.end));
       // Held (paused): the recording stops without being finished.
       else if (d?.type === 'stop') stop(!d.hold);
     };
@@ -306,7 +310,65 @@ const LOG_BUDGET = 48 * 1024 * 1024;
    * Records a player. `part`: only that part of the video is wanted. `from`: a recording
    * that carries on (after a pause, a lost connection, a restart) starts again there.
    */
-  function arm(videoIndex: number, part?: { start: number; end?: number }, from?: number) {
+  /** "Aperçu": the page's player plays the part chosen, then pauses. */
+  function preview(videoIndex: number, start: number, end?: number) {
+    const all = deepVideos();
+    // -1: the page's main player (the biggest one).
+    const area = (v: HTMLVideoElement) => v.clientWidth * v.clientHeight;
+    const video = videoIndex >= 0 ? all[videoIndex] : [...all].sort((a, b) => area(b) - area(a))[0];
+    if (!video) return;
+    video.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    try {
+      video.currentTime = start;
+    } catch {
+      /* a live stream can't seek */
+    }
+    if (end !== undefined && end > start) {
+      const onTime = () => {
+        if (video.currentTime < end) return;
+        video.pause();
+        video.removeEventListener('timeupdate', onTime);
+      };
+      video.addEventListener('timeupdate', onTime);
+    }
+    void video.play().catch(() => {});
+  }
+
+  /**
+   * A live stream: recorded as the player receives it, from now on, at normal speed (there is
+   * nothing ahead to hurry to), until stopped.
+   */
+  function armLive(video: HTMLVideoElement, ms: MediaSource, buffers: SourceBuffer[]) {
+    const tracks = new Map<SourceBuffer, number>();
+    buffers.forEach((sb, i) => tracks.set(sb, i));
+    // Each track starts with its last init segment: what comes next belongs to it.
+    buffers.forEach((sb, track) => {
+      const info = sbInfo.get(sb)!;
+      if (info.lastInit) {
+        const copy = info.lastInit.slice(0);
+        post({ type: 'chunk', track, mime: info.mime, init: true, data: copy }, [copy]);
+      }
+    });
+    dropLogs(ms);
+    const began = Date.now();
+    const c: Capture = {
+      ms,
+      video,
+      tracks,
+      rate: 1,
+      wasMuted: video.muted,
+      onTime: () => post({ type: 'progress', progress: 0, time: (Date.now() - began) / 1000 }),
+      onEnd: () => stop(true),
+      onRate: () => {},
+    };
+    capture = c;
+    video.addEventListener('timeupdate', c.onTime);
+    c.beat = setInterval(c.onTime, 5000);
+    video.addEventListener('ended', c.onEnd);
+    void video.play().catch(() => {});
+  }
+
+  function arm(videoIndex: number, part?: { start: number; end?: number }, from?: number, live = false) {
     stop(false);
     const video = deepVideos()[videoIndex];
     if (!video) return post({ type: 'error', error: 'capture_unavailable' });
@@ -314,6 +376,7 @@ const LOG_BUDGET = 48 * 1024 * 1024;
     const ms = blobToMs.get(video.currentSrc || video.src);
     const buffers = ms ? msBuffers.get(ms) : undefined;
     if (!ms || !buffers?.length) return post({ type: 'error', error: 'capture_unavailable' });
+    if (live) return armLive(video, ms, buffers);
 
     const tracks = new Map<SourceBuffer, number>();
     buffers.forEach((sb, i) => tracks.set(sb, i));

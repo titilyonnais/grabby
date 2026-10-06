@@ -1,3 +1,4 @@
+import type { Finish } from './finish';
 import type { Chapter, Clip, OutputFormat, Plan, SubsChoice, VideoFormat } from './plan';
 import type { Hold } from './schedule';
 import type { YtEntry } from './ytlist';
@@ -130,6 +131,8 @@ export interface Job {
   order?: number;
   /** A contact sheet: a picture every so many seconds (0: chosen from the video's length). */
   sheet?: number;
+  /** A folder of the downloads folder chosen by a rule (instead of the settings'). */
+  folder?: string;
   kind: MediaKind;
   error?: string;
   raw?: boolean;
@@ -201,7 +204,18 @@ export interface Job {
   startNow?: boolean;
   /** A video of a YouTube playlist or channel: enough to find it again. */
   entry?: YtEntry;
+  /** What is done to the file once it is made (editor, size, AI). */
+  finish?: Finish;
+  /** A live stream recorded until stopped: at most this many minutes. */
+  live?: number;
+  /** A live stream: when its recording started. */
+  liveSince?: number;
+  /** What is being done to the file once it is made. */
+  step?: JobStep;
 }
+
+/** The steps after a file is made: the model downloaded, subtitles written or translated… */
+export type JobStep = 'model' | 'transcribe' | 'translate' | 'summary' | 'encode' | 'split';
 
 export interface HistoryEntry {
   id: string;

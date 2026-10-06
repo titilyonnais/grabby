@@ -6,6 +6,7 @@ import { LIST_QUALITIES, type YtList } from '../../shared/ytlist';
 import { t } from '../i18n';
 import { Icon } from './Icon';
 import { Select } from './Select';
+import { Follow } from './Follow';
 
 const LIST_VIDEO = ['mp4', 'webm', 'mkv'] as const;
 
@@ -18,8 +19,11 @@ export function Playlist({
   preferred,
   send,
   compact,
+  pageUrl,
 }: {
   list: YtList;
+  /** The page it is on (followed from there). */
+  pageUrl?: string;
   preferred: { video: OutputFormat; audio: OutputFormat };
   send: (m: PopupToBg) => void;
   /** Under the video being watched: one line, opened on demand. */
@@ -93,6 +97,15 @@ export function Playlist({
         {sent ? t('listQueued', String(count)) : t('listGo', String(count))}
       </button>
       <p class="hint">{t('listHint')}</p>
+      {pageUrl && (
+        <Follow
+          url={pageUrl}
+          mode={audio ? 'audio' : 'video'}
+          quality={quality}
+          format={format}
+          label={t(list.kind === 'channel' ? 'followChannel' : 'followPlaylist')}
+        />
+      )}
     </section>
   );
 }

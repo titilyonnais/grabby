@@ -1,4 +1,5 @@
 import type { SheetLayout } from './sheet';
+import type { Finish, FinishWords } from './finish';
 /** A byte range is inclusive: [start, end]. */
 export interface SegRef {
   url: string;
@@ -54,6 +55,8 @@ export interface TrackPlan {
   segments: SegRef[];
   container: Container;
   codecs?: string;
+  /** A live stream: its media playlist, read again while recording (its segments come from it). */
+  live?: string;
 }
 
 export interface Plan {
@@ -108,6 +111,12 @@ export interface Plan {
    * contact sheet of the whole video (JPEG).
    */
   image?: { at?: number; sheet?: SheetLayout };
+  /** What is done to the file once it is made. */
+  finish?: Finish;
+  /** The words the processing writes, in the browser's language. */
+  words?: FinishWords;
+  /** A live stream, recorded until stopped or for at most `max` seconds. */
+  live?: { max: number };
 }
 
 /** The subtitle tracks of a plan (one object in plans saved before several were possible). */

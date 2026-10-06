@@ -1,7 +1,8 @@
 import { normalizeMediaUrl } from '../parsers/url';
 import type { BgToContent } from '../shared/messages';
 import { rank } from '../shared/rank';
-import { getSettings } from '../shared/settings';
+import { applyRule, newRule, ruleFor } from '../shared/rules';
+import { getSettings, type Settings } from '../shared/settings';
 import type { MediaItem } from '../shared/types';
 import type { JobManager } from './jobs';
 import type { Registry } from './registry';
@@ -23,7 +24,7 @@ export function pickFor(items: MediaItem[], srcUrl?: string): MediaItem | undefi
 }
 
 /** Starts the download straight away, in the user's preferred format and the best quality. */
-export async function quickDownload(registry: Registry, jobs: JobManager, tabId: number, srcUrl?: string): Promise<void> {
+export async function quickDownload(registry: Registry, jobs: JobManager, tabId: number, srcUrl?: string, mode?: 'video' | 'audio'): Promise<void> {
   const items = visibleItems(await registry.get(tabId));
   const item = pickFor(items, srcUrl);
   const say = (ok: boolean, title: string, detail: string) =>
@@ -34,8 +35,20 @@ export async function quickDownload(registry: Registry, jobs: JobManager, tabId:
     return;
   }
   const settings = await getSettings();
-  // Sound only when the setting says so (or when there is nothing but sound).
-  const audio = !!item.audioOnly || settings.quickMode === 'audio';
-  const job = await jobs.start(tabId, item.id, item.variants[0]?.id, audio ? 'audio' : 'video', audio ? settings.audioFormat : settings.videoFormat);
+  const job = await startWithRules(jobs, tabId, item, settings, mode);
   if (job) await say(true, chrome.i18n.getMessage('quickStarted'), item.title);
+}
+
+/**
+ * A download started without the popup: what the site's rule says (else the settings: the
+ * best quality, the video or its sound as chosen for the shortcut). `mode` forces one.
+ */
+export async function startWithRules(jobs: JobManager, tabId: number, item: MediaItem, settings: Settings, mode?: 'video' | 'audio') {
+  const rule = ruleFor(settings.rules, item.pageUrl);
+  const asked = mode ?? (rule ? rule.mode : settings.quickMode);
+  const c = applyRule(item, { ...(rule ?? newRule()), mode: asked }, { video: settings.videoFormat, audio: settings.audioFormat });
+  return jobs.start(tabId, item.id, c.variantId ?? item.variants[0]?.id, c.mode, c.format, {
+    ...(c.subtitles.length ? { subtitles: { ids: c.subtitles, separate: false } } : {}),
+    ...(c.folder ? { folder: c.folder } : {}),
+  });
 }

@@ -49,9 +49,11 @@ async function upsertYouTube(registry: Registry, ctx: DetectContext, frameId: nu
     formats: ['mp4', 'webm', 'mkv'],
     variants,
     ...(yt.thumbnail ? { thumbnail: yt.thumbnail } : {}),
-    ...((p?.duration ?? yt.duration) ? { duration: p?.duration ?? yt.duration } : {}),
-    // Recorded discreetly by a hidden player when YouTube allows embedding it.
-    ...(p?.embeddable ? { ytId: p.id } : {}),
+    ...(!p?.live && (p?.duration ?? yt.duration) ? { duration: p?.duration ?? yt.duration } : {}),
+    // Recorded discreetly by a hidden player when YouTube allows embedding it (a live stream:
+    // from the page's own player).
+    ...(p?.embeddable && !p.live ? { ytId: p.id } : {}),
+    ...(p?.live ? { live: true } : {}),
     ...(variants[0]?.sizes.mp4 ? { size: variants[0].sizes.mp4 } : {}),
     ...(p?.captions?.length ? { subtitles: youtubeSubs(p.captions, p.translations, p.translationNames) } : {}),
     ...(p?.author ? { author: p.author.slice(0, 200) } : {}),
