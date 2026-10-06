@@ -21,6 +21,12 @@ import { Moment, Trim } from './Trim';
 import { FinishPanel, finishCount } from './Finish';
 import { Follow } from './Follow';
 import type { Finish } from '../../shared/finish';
+import { PAIR_MB, TRANSLATE_TARGETS, WHISPER_MB } from '../../shared/translate';
+import { baseLang } from '../../shared/langs';
+
+/** The local AI in the subtitles' list: subtitles made from what is said, or translated. */
+const AI_TRANSCRIBE = 'ai:transcribe';
+const AI_TRANSLATE = 'ai:translate';
 
 /** The longest animated picture (GIF, WebP), in seconds. */
 const MAX_ANIMATION = 30;
@@ -53,10 +59,10 @@ interface Props {
   saved?: HistoryEntry | undefined;
 }
 
-/** What a download makes, when a card has several: "Vidéo · MP4", "Son · M4A". */
+/** What a download makes, when a card has several: "Vidéo, MP4", "Son, M4A". */
 function jobKind(j: Job): string {
   const what = j.mode === 'audio' ? t('jobKindAudio') : j.format && isImageFormat(j.format) ? t('jobKindImage') : t('jobKindVideo');
-  return [what, j.format ? FORMAT_NAMES[j.format] : '', j.mode === 'video' ? (j.quality ?? '') : ''].filter(Boolean).join(' · ');
+  return [what, j.format ? FORMAT_NAMES[j.format] : '', j.mode === 'video' ? (j.quality ?? '') : ''].filter(Boolean).join(', ');
 }
 
 /** A download shown in the queue above: the card only says so (never shown twice). */
@@ -94,7 +100,7 @@ function SavedBefore({ entry, send }: { entry: HistoryEntry; send: (m: PopupToBg
       <Icon name="check" size={15} />
       <span class="saved__text">
         <strong>{t('savedBefore', relativeTime(entry.date))}</strong>
-        <span>{[entry.filename.split('.').pop()?.toUpperCase(), entry.quality, size(entry.size)].filter(Boolean).join(' · ')}</span>
+        <span>{[entry.filename.split('.').pop()?.toUpperCase(), entry.quality, size(entry.size)].filter(Boolean).join(', ')}</span>
       </span>
       <button class="hcard__btn" title={t('historyOpenFile')} aria-label={t('historyOpenFile')} onClick={() => send({ type: 'open-file', downloadId: entry.downloadId! })}>
         <Icon name="play" size={15} />
@@ -250,12 +256,33 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
   const subs = subsOffered && subsIds.length ? { ids: subsIds, separate: subsApart || subsMustApart } : null;
   // By language, in the browser's language: the video's own, automatic ones, YouTube's translations.
   const subsOptions: SelectOption<string>[] = subtitleChoices(item.subtitles ?? [], subWordsFrom(t), uiLang());
-  const subsSummary = !subsIds.length
+  // Then what the local AI can make (on this computer), with what it costs the first time.
+  const myLang = TRANSLATE_TARGETS.find((l) => l === baseLang(uiLang())) ?? 'en';
+  const aiDetail = ai?.allowed ? t('aiTag') : t('aiFirstTime', String(WHISPER_MB));
+  const aiSubOptions: SelectOption<string>[] = [
+    { value: AI_TRANSCRIBE, label: t('subsAiTranscribe'), detail: aiDetail, group: t('aiGroup') },
+    { value: AI_TRANSLATE, label: t('subsAiTranslate', baseLanguageName(myLang, uiLang())), detail: aiDetail, group: t('aiGroup') },
+  ];
+  const aiPicked = [...(finish.transcribe ? [AI_TRANSCRIBE] : []), ...(finish.translate ? [AI_TRANSLATE] : [])];
+  const allSubs = [...subsIds, ...aiPicked];
+  const subsSummary = !allSubs.length
     ? t('subsNone')
-    : subsIds.length === 1
-      ? (subsOptions.find((o) => o.value === subsIds[0])?.label ?? '')
-      : t('subsCount', String(subsIds.length));
-  const toggleSub = (id: string) => setSubsIds((l) => (l.includes(id) ? l.filter((x) => x !== id) : [...l, id]));
+    : allSubs.length === 1
+      ? ([...subsOptions, ...aiSubOptions].find((o) => o.value === allSubs[0])?.label ?? '')
+      : t('subsCount', String(allSubs.length));
+  const toggleAi = (id: string) =>
+    setFinish((f) => {
+      const next = { ...f };
+      if (id === AI_TRANSCRIBE) {
+        if (next.transcribe) delete next.transcribe;
+        else next.transcribe = 'auto';
+      } else if (next.translate) delete next.translate;
+      else next.translate = myLang;
+      return next;
+    });
+  const toggleSub = (id: string) => (id.startsWith('ai:') ? toggleAi(id) : setSubsIds((l) => (l.includes(id) ? l.filter((x) => x !== id) : [...l, id])));
+  // The AI asked for, not allowed yet: the consent is asked right there.
+  const aiNeedsConsent = !!(finish.transcribe || finish.translate) && !ai?.allowed;
 
   // Sound tracks: the stream's default first when nothing was chosen.
   const audiosOffered = choices.length > 1 && !image;
@@ -375,7 +402,7 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
             {single && <span>{single}</span>}
             {running && !open ? (
               <span class="card__pct">
-                {job!.status === 'paused' ? `${t('st_paused')} · ` : ''}
+                {job!.status === 'paused' ? `${t('st_paused')}, ` : ''}
                 {Math.round(job!.progress * 100)} %
               </span>
             ) : shownSize ? (
@@ -523,7 +550,7 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
               )}
               {!showJob && subsOffered && (
                 <div class="subs">
-                  <Select label={t('subsLabel')} value="" values={subsIds} summary={subsSummary} options={subsOptions} onChange={toggleSub} />
+                  <Select label={t('subsLabel')} value="" values={allSubs} summary={subsSummary} options={[...subsOptions, ...aiSubOptions]} onChange={toggleSub} />
                   {subsIds.length > 0 && (
                     <label class="subs__apart">
                       <span>{t('subsApart')}</span>
@@ -538,6 +565,27 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
                     </label>
                   )}
                   {subsIds.length > 0 && subsMustApart && <p class="hint">{t('subsApartHint')}</p>}
+                </div>
+              )}
+              {/* No subtitles on the site: the local AI offers to make them. */}
+              {!showJob && !subsOffered && !audio && !image && (
+                <label class="option option--ai">
+                  <span class="option__text">
+                    <span class="option__title">
+                      {t('subsMake')}
+                      <span class="tag tag--ai">{t('aiTag')}</span>
+                    </span>
+                    <span class="option__sub">{ai?.allowed ? t('subsMakeDetail') : t('subsMakeDetailFirst', String(WHISPER_MB))}</span>
+                  </span>
+                  <input class="switch" type="checkbox" role="switch" checked={!!finish.transcribe} onChange={() => toggleAi(AI_TRANSCRIBE)} />
+                </label>
+              )}
+              {!showJob && aiNeedsConsent && !finishing && (
+                <div class="consent" role="note">
+                  <p>{t('aiConsent', [String(WHISPER_MB), String(PAIR_MB)])}</p>
+                  <button class="btn btn--primary btn--small" onClick={() => ai?.allow()}>
+                    {t('aiAllow')}
+                  </button>
                 </div>
               )}
               {!showJob && chaptersOffered && (
@@ -577,10 +625,10 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
                       {trimming ? t('trimWhole') : t('trimOpen')}
                     </button>
                   )}
-                  {!item.audioOnly && (
+                  {!item.audioOnly && cut && (
                     <button class="trim-toggle" aria-expanded={previewUrl ? previewing : undefined} onClick={preview} title={previewUrl ? t('previewHere') : t('previewInPage')}>
-                      <Icon name="eye" size={16} />
-                      {t('preview')}
+                      <Icon name={previewing ? 'close' : 'play'} size={16} />
+                      {previewing ? t('previewStop') : t('preview')}
                     </button>
                   )}
                   <button class="trim-toggle" aria-expanded={finishing} onClick={() => setFinishing((v) => !v)}>
@@ -607,14 +655,19 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
                   )}
                 </div>
               )}
-              {!showJob && previewing && previewUrl && (
+              {!showJob && previewing && previewUrl && cut && (
                 <video
                   class="preview"
                   key={`${previewUrl}#${previewSpan.start}-${previewSpan.end ?? ''}`}
-                  src={`${previewUrl}#t=${previewSpan.start}${previewSpan.end !== undefined ? `,${previewSpan.end}` : ''}`}
+                  src={`${previewUrl}#t=${previewSpan.start}`}
                   controls
                   autoplay
                   playsInline
+                  // The extract, in a loop.
+                  onTimeUpdate={(e) => {
+                    const v = e.currentTarget;
+                    if (previewSpan.end !== undefined && v.currentTime >= previewSpan.end) v.currentTime = previewSpan.start;
+                  }}
                   onError={() => {
                     // The site won't play it here: in its own page instead.
                     setPreviewing(false);

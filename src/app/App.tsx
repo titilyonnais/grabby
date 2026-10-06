@@ -19,8 +19,6 @@ import { Workshop } from './sections/Workshop';
 interface Section {
   id: string;
   icon: IconName;
-  /** Its own color: the icon's tile, the page's header. */
-  color: string;
 }
 
 /** The sections, in groups: what was saved, what to download, what to make, how it works. */
@@ -28,31 +26,31 @@ const GROUPS: { id: string; sections: Section[] }[] = [
   {
     id: 'files',
     sections: [
-      { id: 'library', icon: 'grid', color: '#ff5b4f' },
-      { id: 'stats', icon: 'chart', color: '#e0679b' },
+      { id: 'library', icon: 'grid' },
+      { id: 'stats', icon: 'chart' },
     ],
   },
   {
     id: 'get',
     sections: [
-      { id: 'batch', icon: 'link', color: '#4f8df5' },
-      { id: 'later', icon: 'later', color: '#6d7cf5' },
-      { id: 'channels', icon: 'bell', color: '#ef4444' },
-      { id: 'images', icon: 'image', color: '#e08a1e' },
+      { id: 'batch', icon: 'link' },
+      { id: 'later', icon: 'later' },
+      { id: 'channels', icon: 'bell' },
+      { id: 'images', icon: 'image' },
     ],
   },
   {
     id: 'make',
     sections: [
-      { id: 'workshop', icon: 'wand', color: '#9b6cf6' },
-      { id: 'join', icon: 'layers', color: '#18a8a0' },
+      { id: 'workshop', icon: 'wand' },
+      { id: 'join', icon: 'layers' },
     ],
   },
   {
     id: 'organize',
     sections: [
-      { id: 'rules', icon: 'list', color: '#22b07d' },
-      { id: 'backup', icon: 'archive', color: '#f5a524' },
+      { id: 'rules', icon: 'list' },
+      { id: 'backup', icon: 'archive' },
     ],
   },
 ];
@@ -111,13 +109,12 @@ export function AppPage() {
     document.getElementById('main')?.focus({ preventScroll: true });
   };
   const setSettings = (patch: Partial<Settings>) => send({ type: 'settings', patch });
-  const current = SECTIONS.find((s) => s.id === section)!;
   const active = (state?.jobs ?? []).filter(isActive);
   const progress = active.length ? active.reduce((n, j) => n + j.progress, 0) / active.length : 0;
   const waiting = state?.batch?.filter((b) => b.status === 'waiting' || b.status === 'opening').length ?? 0;
 
   return (
-    <div class="ap" style={{ '--sec': current.color }}>
+    <div class="ap">
       <nav ref={nav} class="ap__nav" aria-label={t('appTitle')}>
         <span class="brand ap__brand">
           <span class="brand__tile">
@@ -137,7 +134,6 @@ export function AppPage() {
                     <a
                       href={`#${s.id}`}
                       class={`ap__link${section === s.id ? ' on' : ''}`}
-                      style={{ '--c': s.color }}
                       aria-current={section === s.id ? 'page' : undefined}
                       onClick={(e) => {
                         e.preventDefault();
@@ -182,13 +178,8 @@ export function AppPage() {
         {/* Keyed: a new section comes in from below, its header first. */}
         <div key={section} class="ap__view">
           <header class="ap__head">
-            <span class="ap__headicon" aria-hidden="true">
-              <Icon name={current.icon} size={26} />
-            </span>
-            <div>
-              <h1>{t(`app_${section}`)}</h1>
-              <p>{t(`app_${section}_lead`)}</p>
-            </div>
+            <h1>{t(`app_${section}`)}</h1>
+            <p>{t(`app_${section}_lead`)}</p>
           </header>
           {!state ? (
             <div class="skeleton" aria-busy="true" aria-label={t('loading')}>

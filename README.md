@@ -17,8 +17,27 @@
 
 ---
 
-<!-- release:2.0.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
-## Nouveautés de la version 2.0.0
+<!-- release:2.1.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
+## Nouveautés de la version 2.1.0
+
+- **Corrigé, YouTube** : les boutons Grabby sous le lecteur étaient écrits en noir sur fond
+  sombre. Ce sont maintenant de **vrais boutons YouTube**, placés juste après le pouce
+  levé / pouce baissé : une pilule **Télécharger | Son seul** (avec la **progression** du
+  téléchargement dedans), puis deux ronds **Photo** et **Plus tard**. Ils suivent le thème
+  clair ou sombre de YouTube. La bulle ne s'affiche plus sur les vidéos YouTube.
+- **Corrigé, Aperçu** : il ne faisait que lancer la vidéo. Il devient **Lire l'extrait** et
+  n'apparaît qu'une fois un extrait coupé ; il le lit **en boucle**, du début à la fin.
+- **IA locale, enfin visible** : une rubrique **Réglages, IA locale** montre chaque modèle
+  (Whisper pour la transcription, Opus-MT ou le traducteur de Chrome pour la traduction, le
+  résumeur de Chrome), s'il est **prêt** et la **place** qu'il prend, avec **Tester la
+  transcription** et **Supprimer les modèles**. Dans une carte, le menu **Sous-titres**
+  propose **Créer à partir du son** et **Traduire**, et une vidéo sans sous-titres propose
+  **Créer les sous-titres**.
+- **Design plus sobre et cohérent** : une seule couleur (la tienne) au lieu d'une par
+  rubrique, réglages en liste, en-têtes compacts, chiffres en ligne, écrans vides plus
+  directs ; **Images de la page** et **Plus tard** passent dans l'en-tête de la fenêtre.
+
+**Rappel de la 2.0.0** :
 
 - **Chercher ce qui est dit** : la bibliothèque retrouve les mots prononcés dans tes
   vidéos (sous-titres ou transcription locale) et lance la lecture au bon moment.
@@ -257,7 +276,8 @@ Le détail de chaque version est dans le [journal des modifications](CHANGELOG.m
   suivies aussi par le clic droit, le raccourci, le bouton sur les vidéos et la liste
   d'adresses.
 - **Bulle sur les vidéos** : un rond Grabby au survol ; un clic le déroule (Télécharger,
-  Son seul, Photo, Plus tard). Sous le lecteur YouTube aussi.
+  Son seul, Photo, Plus tard). Sur YouTube, ces boutons sont sous le lecteur, au style de
+  YouTube, juste après le pouce levé / pouce baissé.
 - **Page complète** : **bibliothèque** (recherche dans ce qui est dit, lecteur avec vitesse,
   boucle A-B, image par image, reprise, texte synchronisé, éditeur de sous-titres et
   export ; favoris, collections, sélection multiple, Annuler), **statistiques**, **liste
@@ -402,8 +422,9 @@ npm run zip        # → release/grabby-vX.Y.Z.zip
   moment choisi, une **planche** (des captures de toute la vidéo côte à côte, une toutes les
   10 s, 30 s, 1 min, 5 min ou automatiquement) ou la **miniature** de la vidéo dans sa plus
   grande taille ; **GIF** et **WebP** une animation d'un passage de 30 secondes au plus.
-- **Aperçu** : lit l'extrait choisi (ou toute la vidéo) dans la popup ; pour un flux, c'est
-  le lecteur de la page qui s'y place.
+- **Lire l'extrait** (une fois un extrait coupé) : le lit en boucle dans la popup ; pour un
+  flux (YouTube…), c'est le lecteur de la page qui le lit en boucle, jusqu'à ce que tu
+  ailles ailleurs dans la vidéo.
 - **Retouches et IA** : un panneau pour ce qui est fait au fichier une fois téléchargé. Ses
   choix restent quand il est replié (son bouton dit combien) :
   - **Image** : **Recadrer** (un cadre à déplacer sur l'image, formes libre, 16:9, 1:1,
@@ -413,7 +434,8 @@ npm run zip        # → release/grabby-vX.Y.Z.zip
   - **IA locale** : **Transcrire** (la langue parlée, ou détectée), **Traduire en**,
     **Résumé et mots-clés** (un fichier texte à côté). La première fois, Grabby demande
     l'accord pour télécharger les modèles (environ 77 Mo, puis 107 Mo par paire de
-    langues) ;
+    langues). La transcription et la traduction sont aussi dans le menu **Sous-titres** de
+    la carte, et une vidéo sans sous-titres propose **Créer les sous-titres** ;
   - **Sous-titres et chapitres** : **Incruster les sous-titres dans l'image**, **Un fichier
     par chapitre** (dans un dossier au nom de la vidéo, numérotés).
 
@@ -466,7 +488,7 @@ ou la **bulle sur les vidéos** qui apparaît au survol (un clic la déroule : *
 | Sauvegarde | Réglages, règles, historique et chaînes suivies dans un fichier JSON ; la restauration ajoute sans rien perdre |
 
 **Réglages** (icône à droite de la lune/du soleil), en 7 rubriques sans défilement :
-Général, Formats, Noms et dossiers, Téléchargements, Raccourcis, IA et pages, Synchro et
+Général, Formats, Noms et dossiers, Téléchargements, Raccourcis, IA locale, Synchro et
 mises à jour.
 
 | Réglage | Effet |
@@ -487,9 +509,9 @@ mises à jour.
 | Raccourci clavier | La touche qui télécharge sans ouvrir Grabby (Changer ouvre la page des raccourcis) et ce qu'elle prend : la vidéo ou le son seul |
 | Retirer les passages sponsorisés | YouTube : coupe les sponsors et l'autopromotion repérés par SponsorBlock (désactivé par défaut) |
 | Bouton sur les vidéos | La bulle au survol des vidéos et les boutons sous le lecteur YouTube (activé par défaut) |
-| Panneau latéral, visite guidée | Ouvre Grabby à côté de la page ; revoit la visite guidée |
+| Page complète, Panneau latéral, Revoir la visite | Trois boutons sous la liste des rubriques |
 | Réglages synchronisés | Réglages et règles suivent ton compte de navigateur sur tes autres ordinateurs (désactivé par défaut) |
-| IA locale | Autorise le téléchargement unique des modèles de transcription et de traduction (désactivé par défaut) |
+| IA locale | Autorise le téléchargement unique des modèles (désactivé par défaut) ; montre chaque modèle, s'il est prêt et sa taille, avec Tester la transcription et Supprimer les modèles |
 | Prévenir des nouvelles versions | Une fois par jour, demande à GitHub la dernière version (désactivé par défaut) |
 | Installer la dernière version | Bouton Mettre à jour : télécharge, vérifie et installe la dernière version (Windows, avec l'assistant) |
 

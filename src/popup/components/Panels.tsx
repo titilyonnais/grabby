@@ -3,14 +3,11 @@ import type { PopupToBg } from '../../shared/messages';
 import type { HistoryEntry } from '../../shared/types';
 import { size, t, uiLang } from '../i18n';
 import { reducedMotion } from '../motion';
-import { Icon, type IconName } from './Icon';
+import { Icon } from './Icon';
 
-export function StateCard({ icon, title, body }: { icon: IconName; title: string; body: string }) {
+export function StateCard({ title, body }: { title: string; body: string }) {
   return (
     <section class="state">
-      <span class="state__icon">
-        <Icon name={icon} size={26} />
-      </span>
       <h2>{title}</h2>
       <p>{body}</p>
     </section>
@@ -77,7 +74,7 @@ export function HistoryList({ entries, send }: { entries: HistoryEntry[]; send: 
   // Entries the user just removed: they fold away before the list forgets them.
   const [leaving, setLeaving] = useState<string[]>([]);
   const [query, setQuery] = useState('');
-  if (!entries.length) return <StateCard icon="folder" title={t('tabHistory')} body={t('historyEmpty')} />;
+  if (!entries.length) return <StateCard title={t('historyEmptyTitle')} body={t('historyEmpty')} />;
   const shown = matching(entries, query);
   const remove = (id: string) => {
     setLeaving((l) => [...l, id]);

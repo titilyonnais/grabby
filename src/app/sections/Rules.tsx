@@ -90,9 +90,6 @@ export function Rules({ rules, onChange }: { rules: Rule[]; onChange: (r: Rule[]
       ))}
       {!rules.length && (
         <div class="blank">
-          <span class="blank__icon" aria-hidden="true">
-            <Icon name="list" size={30} />
-          </span>
           <p>{t('rulesEmpty')}</p>
         </div>
       )}

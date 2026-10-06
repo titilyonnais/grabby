@@ -13,9 +13,6 @@ export function Stats({ history, go }: { history: HistoryEntry[]; go: (section: 
   if (!history.length)
     return (
       <div class="blank">
-        <span class="blank__icon" aria-hidden="true">
-          <Icon name="chart" size={30} />
-        </span>
         <h2>{t('statsEmptyTitle')}</h2>
         <p>{t('statsEmptyBody')}</p>
         <div class="row">
@@ -48,7 +45,7 @@ export function Stats({ history, go }: { history: HistoryEntry[]; go: (section: 
         <div class="kpi" style={{ '--i': '3' }}>
           <span class="kpi__label">{t('statsStreak')}</span>
           <strong class="kpi__value">{n.streak.best}</strong>
-          <span class="kpi__sub">{n.streak.now > 1 ? t('statsStreakNow', String(n.streak.now)) : t('statsDays')}</span>
+          {n.streak.now > 1 && <span class="kpi__sub">{t('statsStreakNow', String(n.streak.now))}</span>}
         </div>
         <div class="kpi" style={{ '--i': '4' }}>
           <span class="kpi__label">{t('statsHour')}</span>
@@ -64,7 +61,7 @@ export function Stats({ history, go }: { history: HistoryEntry[]; go: (section: 
               key={i}
               class={`weeks__bar${i === WEEKS - 1 ? ' weeks__bar--now' : ''}`}
               style={{ '--h': String(c / most), '--i': String(i) }}
-              title={`${shortDate(firstWeek + i * 7 * 86_400_000)} · ${c}`}
+              title={`${shortDate(firstWeek + i * 7 * 86_400_000)}, ${c}`}
             >
               {c > 0 && <span class="weeks__n">{c}</span>}
             </span>

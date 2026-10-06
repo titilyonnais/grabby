@@ -570,8 +570,10 @@ p {
   column-gap: 8px;
 }
 
+/* Open: the picture across, a little lower than 16:9 to leave room for the choices. */
 .card--open .card__head .thumb {
   grid-column: 1 / -1;
+  aspect-ratio: 2 / 1;
 }
 
 .card__body {
@@ -1916,19 +1918,6 @@ p {
   animation: rise var(--t-gentle) var(--spring-gentle);
 }
 
-.state__icon {
-  display: grid;
-  place-items: center;
-  width: 60px;
-  height: 60px;
-  margin-bottom: 6px;
-  border-radius: var(--r-pill);
-  background: var(--surface);
-  animation:
-    drop-in 760ms var(--spring-bouncy) both,
-    bob 3.2s ease-in-out 900ms infinite;
-}
-
 .state h2 {
   font-size: 16px;
   font-weight: 650;
@@ -2626,96 +2615,92 @@ label.row-setting:hover {
 }
 
 /* ------------------------------------------------------ the settings' menu */
+/* One list, a row per section: its plain icon, its name, what is set in it, a chevron. */
 .smenu {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 18px;
+  background: var(--surface);
 }
 
 .smenu__item {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 12px;
+  align-items: center;
+  gap: 14px;
   width: 100%;
-  min-height: 104px;
-  padding: 14px 14px 12px;
+  min-height: 52px;
+  padding: 7px 14px 7px 16px;
   border: 0;
-  border-radius: var(--r-inner);
-  background: var(--surface);
+  background: transparent;
   color: var(--text);
   font: inherit;
   text-align: left;
   cursor: pointer;
-  animation: group-in 520ms var(--spring-gentle) backwards;
-  animation-delay: calc(120ms + var(--i, 0) * 34ms);
-  transition: background-color 140ms var(--ease), transform 200ms var(--spring-bouncy), box-shadow 200ms var(--ease);
+  animation: group-in 420ms var(--spring-gentle) backwards;
+  animation-delay: calc(60ms + var(--i, 0) * 24ms);
+  transition: background-color 140ms var(--ease);
 }
 
-/* The last one alone on its line: as wide as two, laid out on one line. */
-.smenu__item--wide {
-  grid-column: 1 / -1;
-  flex-direction: row;
-  align-items: center;
-  min-height: 0;
+.smenu__item + .smenu__item {
+  box-shadow: inset 0 1px 0 var(--line);
 }
 
 .smenu__item:hover,
 .smenu__item:focus-visible {
   background: var(--surface-2);
-  transform: translateY(-2px);
 }
 
-.smenu__item:active {
-  transform: scale(0.97);
+.smenu__item:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
 }
 
 .smenu__icon {
-  --c: var(--accent);
   display: grid;
   place-items: center;
   flex: none;
-  width: 36px;
-  height: 36px;
-  border-radius: 13px;
-  color: var(--c);
-  background: color-mix(in srgb, var(--c) 16%, transparent);
-  transition: transform 260ms var(--spring-bouncy);
+  width: 22px;
+  color: var(--muted);
+  transition: color 160ms var(--ease);
 }
 
 .smenu__item:hover .smenu__icon {
-  transform: rotate(-6deg) scale(1.08);
+  color: var(--text);
 }
 
-.smenu__icon--look { --c: #f5a524; }
-.smenu__icon--formats { --c: #ff5b4f; }
-.smenu__icon--files { --c: #4f8df5; }
-.smenu__icon--downloads { --c: #22b07d; }
-.smenu__icon--keys { --c: #9b6cf6; }
-.smenu__icon--pages { --c: #e8579a; }
-.smenu__icon--updates { --c: #18a8a0; }
-
 .smenu__text {
+  flex: 1;
   min-width: 0;
-  max-width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
 .smenu__title {
   font-size: 14px;
-  font-weight: 640;
+  font-weight: 600;
 }
 
 .smenu__sum {
-  font-size: 12px;
-  line-height: 1.3;
-  color: var(--muted);
-  display: -webkit-box;
   overflow: hidden;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.3;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.smenu__go {
+  display: grid;
+  flex: none;
+  color: var(--muted);
+  transform: rotate(-90deg);
+  transition: transform 220ms var(--spring-bouncy);
+}
+
+.smenu__item:hover .smenu__go {
+  transform: rotate(-90deg) translateY(3px);
 }
 
 /* Grabby's color, as round swatches. */
@@ -2826,6 +2811,21 @@ label.row-setting:hover {
   color: var(--muted);
   font-size: 13px;
   animation: rise 320ms var(--spring-gentle) backwards;
+}
+
+.smenu__more {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0 14px;
+  animation: rise var(--t-gentle) var(--spring-gentle) 300ms backwards;
+}
+
+.smenu__more .btn {
+  flex: 1 1 0;
+  justify-content: center;
+  padding: 0 8px;
+  font-size: 12.5px;
+  white-space: nowrap;
 }
 
 .page__foot {
@@ -3189,37 +3189,164 @@ label.row-setting:hover {
   margin: 0;
 }
 
-/* ------------------------------------------- the page's other tools */
-.pagetools {
+/* ------------------------------------------------------------- local AI */
+.tag--ai {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.finish__title .tag--ai {
+  margin-left: auto;
+}
+
+.option--ai {
+  gap: 12px;
+}
+
+.option__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.option__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.option__sub {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.ai {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: -4px;
+}
+
+.ai__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai__row {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px 10px;
+  padding: 8px 0;
+}
+
+.ai__row + .ai__row {
+  box-shadow: inset 0 1px 0 var(--line);
+}
+
+.ai__dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--muted);
+}
+
+.ai__dot--on {
+  box-shadow: none;
+  background: #2fbf71;
+}
+
+.ai__what {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.ai__state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  max-width: 150px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.ai__actions {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
-  margin: 4px 0 8px;
+  gap: 8px;
 }
 
-.pagetools__btn {
-  display: inline-flex;
-  align-items: center;
+.ai__result {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
-  height: 32px;
-  padding: 0 12px;
-  border-radius: var(--r-pill);
-  background: var(--surface);
+  margin: 0;
   color: var(--muted);
   font-size: 12.5px;
-  font-weight: 600;
-  transition:
-    color 140ms var(--ease),
-    transform var(--t-bouncy) var(--spring-bouncy);
+  line-height: 1.4;
 }
 
-.pagetools__btn:hover {
+.ai__result:empty {
+  display: none;
+}
+
+.ai__bar {
+  --p: 0;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--accent) calc(var(--p) * 100%), var(--surface-2) 0);
+  transition: background 300ms var(--ease);
+}
+
+/* A quiet button: words only, a surface when pointed at. */
+.btn--ghost {
+  background: transparent;
+  color: var(--muted);
+}
+
+.btn--ghost:hover {
+  background: var(--surface-2);
   color: var(--text);
 }
 
-.pagetools__btn:active {
-  transform: scale(0.95);
+/* How many are waiting, on a header button. */
+.icon-btn {
+  position: relative;
+}
+
+.icon-btn__count {
+  position: absolute;
+  top: 2px;
+  right: 1px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px var(--bg);
+  animation: pop-in var(--t-bouncy) var(--spring-bouncy);
+  box-sizing: border-box;
 }
 
 /* ----------------------------------------------------- guided tour */
@@ -3499,7 +3626,10 @@ label.row-setting:hover {
   box-shadow:
     inset 0 0 0 1px var(--line),
     0 2px 0 var(--line-strong);
-  font: 600 12px/1.2 inherit;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
   white-space: nowrap;
 }
 
@@ -3522,10 +3652,18 @@ label.row-setting:hover {
 
 /* ------------------------------------------------- retouches et IA (1.10) */
 /* The card's secondary actions: cut, preview, retouch — one row of quiet pills. */
+/* What else can be done: one row of equal buttons (a fourth, « Lire l'extrait », wraps). */
 .card__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px;
+  gap: 4px;
+}
+
+.card__actions .trim-toggle {
+  flex: 1 1 0;
+  justify-content: center;
+  min-width: max-content;
+  padding: 0 10px;
 }
 
 .preview {

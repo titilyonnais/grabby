@@ -75,13 +75,13 @@ export function useTick(on: boolean): void {
 export function label(job: Job): string {
   const pct = `${Math.round(job.progress * 100)} %`;
   // A live stream being recorded: for how long.
-  if (job.live && (job.status === 'downloading' || job.status === 'capturing')) return `${t('st_live')} · ${job.liveSince ? since(job.liveSince) : '0:00'}`;
+  if (job.live && (job.status === 'downloading' || job.status === 'capturing')) return `${t('st_live')}, ${job.liveSince ? since(job.liveSince) : '0:00'}`;
   // What is being done to the file once it is made.
   if (job.status === 'processing' && job.step) return `${t(`step_${job.step}`)} ${pct}`;
   switch (job.status) {
     case 'paused': {
-      if (job.pausedBy === 'user') return `${t('st_paused')} · ${pct}`;
-      if (job.pausedBy === 'page') return `${t('st_pageClosed')} · ${pct}`;
+      if (job.pausedBy === 'user') return `${t('st_paused')}, ${pct}`;
+      if (job.pausedBy === 'page') return `${t('st_pageClosed')}, ${pct}`;
       const wait = Math.ceil(((job.retryAt ?? 0) - Date.now()) / 1000);
       if (job.pausedBy === 'restart') return t('st_resuming');
       return wait > 0 ? t('st_offline', String(wait)) : t('st_retrying');

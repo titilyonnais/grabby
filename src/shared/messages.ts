@@ -109,7 +109,9 @@ export type ContentToBg =
   /** « Photo »: the picture on screen, read by the page (`dataUrl`) or to be cut from a screenshot (`rect`, CSS pixels). */
   | { type: 'snap'; dataUrl?: string; rect?: { x: number; y: number; w: number; h: number }; dpr?: number; time?: number }
   /** « Plus tard »: the video (or the page) kept aside, to be downloaded later. */
-  | { type: 'later'; src?: string };
+  | { type: 'later'; src?: string }
+  /** YouTube's buttons under the player: the downloads of this video, to show their progress. */
+  | { type: 'page-jobs' };
 
 /* ---------- service worker → content script ---------- */
 export type BgToContent =

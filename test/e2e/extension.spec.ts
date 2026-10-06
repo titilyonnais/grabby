@@ -395,7 +395,7 @@ test('settings open as a full page; the file name is built from checkboxes', asy
   await expect(popup.getByRole('heading', { name: 'Sample: direct clip' })).toHaveCount(0);
   // A menu of sections, each with what is set in it.
   await expect(popup.locator('.smenu__item')).toHaveCount(7);
-  await expect(popup.getByRole('button', { name: /^Formats\s*MP4 · M4A/ })).toBeVisible();
+  await expect(popup.getByRole('button', { name: /^Formats\s*MP4, M4A/ })).toBeVisible();
   await settingsSection(popup, 'Names and folders');
   await expect(popup.getByRole('heading', { name: 'Names and folders' })).toBeVisible();
   // Tick "Site": the saved template gains {site}.
@@ -632,7 +632,7 @@ test('pause keeps what came in; resume carries on from there to the same file', 
   await popup.getByRole('button', { name: 'Download', exact: true }).click();
   await expect.poll(() => meterValue(popup), { timeout: 30_000 }).toBeGreaterThan(40);
   await popup.getByRole('button', { name: 'Pause' }).click();
-  await expect(popup.getByText(/^Paused · \d+ %/).first()).toBeVisible();
+  await expect(popup.getByText(/^Paused, \d+ %/).first()).toBeVisible();
   // Nothing more is fetched while paused.
   await popup.waitForTimeout(800);
   const sentAtPause = bigStats.sent.get('/big/pause.mp4') ?? 0;
@@ -722,7 +722,7 @@ test('download all: every video of the page ticked, one format, all saved', asyn
 
 /** Opens "Cut a clip" and types the two times of the part. */
 async function cutClip(popup: Page, start: string, end: string) {
-  await popup.getByRole('button', { name: 'Cut a clip' }).click();
+  await popup.getByRole('button', { name: 'Clip' }).click();
   for (const [name, value] of [['End', end], ['Start', start]] as const) {
     const field = popup.getByRole('textbox', { name });
     await field.fill(value);
@@ -1136,7 +1136,7 @@ test('several parts joined: one file, a chapter per part; or one file each', asy
   // Again, one file each.
   await popup.getByRole('button', { name: 'Download again' }).click();
   // The panel stayed open, back to the whole video.
-  await expect(popup.getByRole('button', { name: 'Keep the whole video' })).toBeVisible();
+  await expect(popup.getByRole('button', { name: 'Whole video' })).toBeVisible();
   await setPart(popup, '0:00', '0:02');
   await popup.getByRole('button', { name: 'Add a part' }).click();
   await setPart(popup, '0:04', '0:06');
@@ -1371,9 +1371,9 @@ test('sound evened out: the file is encoded with the loudness filter, and plays'
 
 // ——— 1.10: retouching, local AI, live streams, the button on videos, the full page ———
 
-/** Opens the card's "Retouch and AI" panel. */
+/** Opens the card's "Retouch" panel. */
 async function openRetouch(popup: Page) {
-  await popup.getByRole('button', { name: /^Retouch and AI/ }).click();
+  await popup.getByRole('button', { name: /^Retouch/ }).click();
   await expect(popup.getByRole('heading', { name: 'Speed and size' })).toBeVisible();
 }
 
@@ -1401,8 +1401,8 @@ test('retouch: turned, mirrored, twice as fast, without sound: the file is made 
   await popup.getByRole('switch', { name: /Mirror/ }).check();
   await pick(popup, 'Speed', '2×');
   await popup.getByRole('switch', { name: 'Without sound' }).check();
-  await popup.getByRole('button', { name: 'Close retouching' }).click();
-  await expect(popup.getByRole('button', { name: 'Retouch and AI (4)' })).toBeVisible();
+  await popup.getByRole('button', { name: 'Close' }).click();
+  await expect(popup.getByRole('button', { name: 'Retouch (4)' })).toBeVisible();
   await popup.getByRole('button', { name: 'Download', exact: true }).click();
   await expect(popup.getByText('Saved')).toBeVisible({ timeout: 90_000 });
   const { filename } = await lastDownload(sw);
@@ -1485,7 +1485,7 @@ test('a live stream is recorded until "Stop and save", then made into one file',
   const popup = await openPopup(context, extId, tabId);
   await expect(popup.getByRole('button', { name: /^At most/ })).toBeVisible();
   await popup.getByRole('button', { name: 'Record the live stream' }).click();
-  await expect(popup.getByText(/Live · 0:0[4-9]/).first()).toBeVisible({ timeout: 30_000 });
+  await expect(popup.getByText(/Live, 0:0[4-9]/).first()).toBeVisible({ timeout: 30_000 });
   await popup.getByRole('button', { name: 'Stop and save' }).click();
   await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
   const { filename, bytes } = await lastDownload(sw);
@@ -1529,16 +1529,25 @@ test('the button on videos downloads the one under the pointer; it can be turned
   expect(await again.evaluate(() => !!document.querySelector('grabby-overlay'))).toBe(false);
 });
 
-test('preview: the part chosen plays in the popup before downloading', async ({ context, sw, extId }) => {
+test('play the extract: offered once a part is cut, it plays that part in a loop', async ({ context, sw, extId }) => {
   const { tabId } = await openFixture(context, sw, 'direct.html');
   await expect.poll(() => badge(sw, tabId)).toBe('1');
   const popup = await openPopup(context, extId, tabId);
+  // The whole video: nothing to play here (the page's player does that).
+  await expect(popup.getByRole('button', { name: 'Play the extract' })).toHaveCount(0);
   await cutClip(popup, '0:02', '0:04');
-  await popup.getByRole('button', { name: 'Preview' }).click();
+  await popup.getByRole('button', { name: 'Play the extract' }).click();
   const video = popup.locator('video.preview');
   await expect(video).toBeVisible();
-  expect(await video.getAttribute('src')).toMatch(/#t=2,4$/);
+  expect(await video.getAttribute('src')).toMatch(/#t=2$/);
   await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.currentTime), { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
+  // Past the end of the part, it starts again from its beginning.
+  await video.evaluate((v: HTMLVideoElement) => {
+    v.currentTime = 4.2;
+  });
+  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.currentTime), { timeout: 10_000 }).toBeLessThan(4);
+  await popup.getByRole('button', { name: 'Stop the extract' }).click();
+  await expect(video).toHaveCount(0);
 });
 
 async function openApp(context: BrowserContext, extId: string, section: string): Promise<Page> {
@@ -1679,7 +1688,7 @@ test('full page: the library lists what was saved, and followed channels can be 
   await expect(app.getByText('Ma chaîne')).toBeVisible();
   await expect(app.getByText(/videos saved: 2/)).toBeVisible();
   // Its @name, its subscribers and its latest videos, each with what became of it.
-  await expect(app.getByText('@machaine · 12 k subscribers')).toBeVisible();
+  await expect(app.getByText('@machaine, 12 k subscribers')).toBeVisible();
   await expect(app.locator('.recent--taken')).toContainText('Une vidéo prise');
   await expect(app.locator('.recent--before')).toContainText('Une vieille vidéo');
   // Up to 4K.
@@ -1764,4 +1773,35 @@ test('2.0: a guided tour on first opening, once; the side panel shows the same w
   await side.goto(`chrome-extension://${extId}/sidepanel.html?tab=${tabId}`);
   await expect(side.getByRole('heading', { name: 'Sample: direct clip' })).toBeVisible();
   expect(await side.evaluate(() => document.documentElement.hasAttribute('data-side'))).toBe(true);
+});
+
+test('2.0: on YouTube, Grabby sits right after the thumbs, as YouTube buttons; no bubble over the video', async ({ context, sw }) => {
+  // A page shaped like YouTube's (the real one is not reached).
+  const page = await context.newPage();
+  await context.route('https://www.youtube.com/watch?v=abcdefghijk', (r) =>
+    r.fulfill({
+      contentType: 'text/html',
+      body: `<!doctype html><html><head><meta charset="utf-8"><title>Une vidéo - YouTube</title></head><body>
+<video src="${origin}/media/sample.mp4" muted style="width:640px;height:360px"></video>
+<ytd-watch-metadata><div id="top-level-buttons-computed" style="display:flex">
+<segmented-like-dislike-button-view-model><button>154</button></segmented-like-dislike-button-view-model><button id="share">Partager</button>
+</div></ytd-watch-metadata></body></html>`,
+    }),
+  );
+  await context.route(/^https:\/\/(www\.youtube\.com\/(?!watch\?v=abcdefghijk)|.*\.(googlevideo|ytimg|google)\.com)/, (r) => r.abort());
+  await page.goto('https://www.youtube.com/watch?v=abcdefghijk');
+  await expect(page.locator('grabby-yt')).toHaveCount(1, { timeout: 10_000 });
+  // Right after the thumbs, before "Partager".
+  expect(await page.evaluate(() => document.querySelector('segmented-like-dislike-button-view-model')?.nextElementSibling?.tagName)).toBe('GRABBY-YT');
+  // Two pills' worth of YouTube buttons: 36 px high.
+  const box = (await page.locator('grabby-yt').boundingBox())!;
+  expect(Math.round(box.height)).toBe(36);
+  // The bubble stays away from YouTube's player.
+  const v = (await page.locator('video').boundingBox())!;
+  await page.mouse.move(v.x + v.width / 2, v.y + v.height / 2);
+  await page.waitForTimeout(800);
+  expect(await page.evaluate(() => !!document.querySelector('grabby-overlay'))).toBe(false);
+  // Turned off in the settings: gone.
+  await setSettings(sw, { overlayButton: false });
+  await expect(page.locator('grabby-yt')).toHaveCount(0);
 });

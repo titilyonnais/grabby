@@ -86,7 +86,7 @@ export function Addresses({ items, send }: { items: BatchItem[]; send: (m: Popup
                   <span class="line__meta">
                     {t(`batch_${i.status}`)}
                     {i.error ? ` — ${t(`batchErr_${i.error}`)}` : ''}
-                    {i.title ? ` · ${i.url}` : ''}
+                    {i.title ? `, ${i.url}` : ''}
                   </span>
                 </span>
                 <span class="line__tools">

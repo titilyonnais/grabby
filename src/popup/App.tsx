@@ -168,6 +168,20 @@ export function App() {
             Grabby
           </span>
           <span class="top__tools">
+            {/* What can be done with the page itself, next to the rest. */}
+            {state && /^https?:/i.test(state.pageUrl ?? '') && !state.blocked && (
+              <button class="icon-btn" aria-label={t('pageImages')} title={t('pageImages')} onClick={() => openApp('images', state.tabId)}>
+                <Icon name="image" />
+              </button>
+            )}
+            {state?.later?.length ? (
+              <button class="icon-btn" aria-label={t('pageLater', String(state.later.length))} title={t('pageLater', String(state.later.length))} onClick={() => openApp('later')}>
+                <Icon name="later" />
+                <span key={state.later.length} class="icon-btn__count">
+                  {state.later.length}
+                </span>
+              </button>
+            ) : null}
             <button
               class="icon-btn"
               aria-label={dark ? t('switchToLight') : t('switchToDark')}
@@ -238,10 +252,10 @@ export function App() {
                   {/* A playlist or a channel page: its videos first. Under a video being watched, the list it belongs to comes after it, folded. */}
                   {state.ytList && !state.blocked && !items.length && <Playlist key={state.ytList.title} list={state.ytList} pageUrl={state.pageUrl} preferred={prefs} send={send} />}
                   {state.blocked === 'restricted' ? (
-                    <StateCard icon="lock" title={t('restrictedTitle')} body={t('restrictedBody')} />
+                    <StateCard title={t('restrictedTitle')} body={t('restrictedBody')} />
                   ) : !items.length ? (
                     state.ytList ? null : (
-                      <StateCard icon="film" title={t('emptyTitle')} body={t('emptyBody')} />
+                      <StateCard title={t('emptyTitle')} body={t('emptyBody')} />
                     )
                   ) : (
                     <section class="list" aria-label={t('tabPage')}>
@@ -286,20 +300,6 @@ export function App() {
                   )}
                   {state.ytList && !state.blocked && items.length > 0 && !picked && (
                     <Playlist key={state.ytList.title} list={state.ytList} pageUrl={state.pageUrl} preferred={prefs} send={send} compact />
-                  )}
-                  {/^https?:/i.test(state.pageUrl ?? '') && !state.blocked && !picked && (
-                    <div class="pagetools">
-                      <button class="pagetools__btn" onClick={() => openApp('images', state.tabId)}>
-                        <Icon name="image" size={15} />
-                        {t('pageImages')}
-                      </button>
-                      {state.later?.length ? (
-                        <button class="pagetools__btn" onClick={() => openApp('later')}>
-                          <Icon name="later" size={15} />
-                          {t('pageLater', String(state.later.length))}
-                        </button>
-                      ) : null}
-                    </div>
                   )}
                 </>
               )}

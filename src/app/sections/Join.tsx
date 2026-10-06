@@ -83,9 +83,9 @@ export function Join() {
                     <span class="line__title">{f.name}</span>
                     <span class="line__meta">
                       {size(f.size)}
-                      {info?.duration ? ` · ${formatDuration(info.duration)}` : ''}
-                      {info?.video ? ` · ${info.video.width}×${info.video.height} ${info.video.codec}` : ''}
-                      {info?.audio ? ` · ${info.audio.codec}` : ''}
+                      {info?.duration ? `, ${formatDuration(info.duration)}` : ''}
+                      {info?.video ? `, ${info.video.width}×${info.video.height} ${info.video.codec}` : ''}
+                      {info?.audio ? `, ${info.audio.codec}` : ''}
                     </span>
                   </span>
                   <span class="line__tools">

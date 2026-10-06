@@ -311,13 +311,20 @@ const LOG_BUDGET = 48 * 1024 * 1024;
    * that carries on (after a pause, a lost connection, a restart) starts again there.
    */
   /** "Aperçu": the page's player plays the part chosen, then pauses. */
+  /** The extract playing in a loop, if any: stopped by the next one. */
+  let stopLoop: (() => void) | null = null;
+
+  /** « Lire l'extrait »: the page's player plays the part chosen, again and again, until the user goes elsewhere. */
   function preview(videoIndex: number, start: number, end?: number) {
+    stopLoop?.();
     const all = deepVideos();
     // -1: the page's main player (the biggest one).
     const area = (v: HTMLVideoElement) => v.clientWidth * v.clientHeight;
     const video = videoIndex >= 0 ? all[videoIndex] : [...all].sort((a, b) => area(b) - area(a))[0];
     if (!video) return;
     video.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    // Seeks Grabby makes itself, told apart from the user's.
+    let ours = true;
     try {
       video.currentTime = start;
     } catch {
@@ -326,10 +333,21 @@ const LOG_BUDGET = 48 * 1024 * 1024;
     if (end !== undefined && end > start) {
       const onTime = () => {
         if (video.currentTime < end) return;
-        video.pause();
+        ours = true;
+        video.currentTime = start;
+      };
+      const onSeeked = () => {
+        if (ours) ours = false;
+        else if (video.currentTime < start - 0.5 || video.currentTime > end + 0.5) stop();
+      };
+      const stop = () => {
         video.removeEventListener('timeupdate', onTime);
+        video.removeEventListener('seeked', onSeeked);
+        stopLoop = null;
       };
       video.addEventListener('timeupdate', onTime);
+      video.addEventListener('seeked', onSeeked);
+      stopLoop = stop;
     }
     void video.play().catch(() => {});
   }

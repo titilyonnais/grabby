@@ -1,3 +1,4 @@
+import { youTubeIdOf } from '../shared/saved';
 import type { AppRequest, BgToContent, BgToPopup, BlockedReason, ContentToBg, OffscreenToBg, PopupState, PopupToBg } from '../shared/messages';
 import { getSettings, setSettings } from '../shared/settings';
 import { cleanTitle } from '../shared/title';
@@ -528,6 +529,22 @@ chrome.runtime.onMessage.addListener((msg: ContentToBg | OffscreenToBg | AppRequ
     case 'later':
       void keepForLater(tabId, sender.tab, msg.src);
       break;
+    case 'page-jobs': {
+      // The newest download of each kind for the video on screen (a YouTube tab changes video).
+      const here = sender.tab.url ?? '';
+      const id = youTubeIdOf(here);
+      const mine = jobs
+        .list()
+        .filter((j) => j.tabId === tabId && (id ? youTubeIdOf(j.pageUrl) === id : j.pageUrl === here))
+        .sort((a, b) => b.startedAt - a.startedAt);
+      sendResponse(
+        (['video', 'audio'] as const).flatMap((mode) => {
+          const j = mine.find((x) => x.mode === mode);
+          return j ? [{ mode, status: j.status, progress: j.progress }] : [];
+        }),
+      );
+      break;
+    }
     case 'show-download':
       // Only downloads Grabby made can be shown from a page.
       if (jobs.list().some((j) => j.downloadId === msg.downloadId)) chrome.downloads.show(msg.downloadId);

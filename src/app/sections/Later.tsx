@@ -23,9 +23,6 @@ export function Later({ items, at, send }: { items: LaterItem[]; at?: number; se
   if (!items.length)
     return (
       <div class="blank">
-        <span class="blank__icon" aria-hidden="true">
-          <Icon name="later" size={30} />
-        </span>
         <h2>{t('laterEmptyTitle')}</h2>
         <p>{t('laterEmptyBody')}</p>
       </div>

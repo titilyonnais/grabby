@@ -9,6 +9,7 @@ import { Icon, type IconName } from './Icon';
 import { Segmented } from './Segmented';
 import { Select } from './Select';
 import { InstallStatus } from './Update';
+import { AiPanel } from './AiPanel';
 import type { InstallState } from '../../shared/messages';
 
 interface Props {
@@ -196,21 +197,21 @@ const CATEGORY_ICONS: Record<Category, IconName> = {
 function summary(c: Category, s: S, keys: string | null): string {
   switch (c) {
     case 'look':
-      return `${t(`set_theme_${s.theme}`)} · ${t(`accent_${s.accent}`)}`;
+      return `${t(`set_theme_${s.theme}`)}, ${t(`accent_${s.accent}`)}`;
     case 'formats':
-      return `${FORMAT_NAMES[s.videoFormat]} · ${FORMAT_NAMES[s.audioFormat]}`;
+      return `${FORMAT_NAMES[s.videoFormat]}, ${FORMAT_NAMES[s.audioFormat]}`;
     case 'files':
-      return [t(`set_folder_${s.folder}`), s.saveAs ? t('set_sum_ask') : ''].filter(Boolean).join(' · ');
+      return [t(`set_folder_${s.folder}`), s.saveAs ? t('set_sum_ask') : ''].filter(Boolean).join(', ');
     case 'downloads':
       return [t('set_sum_parallel', String(s.parallel)), s.scheduleOn ? t('set_sum_hours', [hhmm(s.scheduleFrom), hhmm(s.scheduleTo)]) : '', s.rateLimit ? `${size(s.rateLimit)}/s` : '']
         .filter(Boolean)
-        .join(' · ');
+        .join(', ');
     case 'keys':
-      return [keys || t('set_sum_nokeys'), t(s.quickMode === 'audio' ? 'set_quick_audio' : 'set_quick_video')].join(' · ');
+      return [keys || t('set_sum_nokeys'), t(s.quickMode === 'audio' ? 'set_quick_audio' : 'set_quick_video')].join(', ');
     case 'pages':
       return t(s.aiModels ? 'set_sum_ai_on' : 'set_sum_ai_off');
     case 'updates':
-      return [s.sync ? t('set_sum_sync_on') : '', s.updateCheck ? t('set_sum_updates_on') : t('set_sum_updates_off')].filter(Boolean).join(' · ');
+      return [s.sync ? t('set_sum_sync_on') : '', s.updateCheck ? t('set_sum_updates_on') : t('set_sum_updates_off')].filter(Boolean).join(', ');
   }
 }
 
@@ -456,46 +457,7 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
     pages: () => (
       <Group index={0}>
         <Toggle label={t('set_ai')} hint={t('set_ai_hint')} checked={settings.aiModels} onChange={(aiModels) => onChange({ aiModels })} />
-        <div class="row-setting row-setting--stack">
-          <span class="row-setting__text">
-            <span class="setting__label">{t('set_app')}</span>
-            <span class="setting__hint">{t('set_app_hint')}</span>
-          </span>
-          <span class="keys-row">
-            <button
-              class="btn btn--soft btn--small"
-              onClick={() => {
-                void chrome.runtime.sendMessage({ app: 'open-app', section: 'rules' }).catch(() => {});
-                window.close();
-              }}
-            >
-              <Icon name="grid" size={15} />
-              {t('set_app_open')}
-            </button>
-            {chrome.sidePanel && (
-              <button class="btn btn--soft btn--small" onClick={() => void openSidePanel()}>
-                <Icon name="layers" size={15} />
-                {t('set_side_open')}
-              </button>
-            )}
-          </span>
-        </div>
-        <div class="row-setting">
-          <span class="row-setting__text">
-            <span class="setting__label">{t('set_tour')}</span>
-            <span class="setting__hint">{t('set_tour_hint')}</span>
-          </span>
-          <button
-            class="btn btn--soft btn--small"
-            onClick={() => {
-              onChange({ tourDone: false });
-              onClose();
-            }}
-          >
-            <Icon name="play" size={14} />
-            {t('set_tour_again')}
-          </button>
-        </div>
+        <AiPanel allowed={settings.aiModels} />
       </Group>
     ),
     updates: () => (
@@ -541,17 +503,46 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
           <div key="menu" class={`scat scat--${dir === 'back' ? 'back' : 'first'}`}>
             <nav class="smenu" aria-label={t('openSettings')} style={{ '--n': String(CATEGORIES.length) }}>
               {CATEGORIES.map((c, i) => (
-                <button key={c} data-cat={c} class={`smenu__item${i === CATEGORIES.length - 1 ? ' smenu__item--wide' : ''}`} style={{ '--i': String(i) }} onClick={() => open(c)}>
-                  <span class={`smenu__icon smenu__icon--${c}`}>
-                    <Icon name={CATEGORY_ICONS[c]} size={17} />
+                <button key={c} data-cat={c} class="smenu__item" style={{ '--i': String(i) }} onClick={() => open(c)}>
+                  <span class="smenu__icon">
+                    <Icon name={CATEGORY_ICONS[c]} size={18} />
                   </span>
                   <span class="smenu__text">
                     <span class="smenu__title">{t(`set_cat_${c}`)}</span>
                     <span class="smenu__sum">{summary(c, settings, keys)}</span>
                   </span>
+                  <span class="smenu__go" aria-hidden="true">
+                    <Icon name="chevron" size={16} />
+                  </span>
                 </button>
               ))}
             </nav>
+            {/* Grabby elsewhere: its full page, next to the page, the tour again. */}
+            <div class="smenu__more">
+              <button
+                class="btn btn--soft btn--small"
+                onClick={() => {
+                  void chrome.runtime.sendMessage({ app: 'open-app', section: 'library' }).catch(() => {});
+                  window.close();
+                }}
+              >
+                {t('set_app_open')}
+              </button>
+              {chrome.sidePanel && !document.documentElement.hasAttribute('data-side') && (
+                <button class="btn btn--soft btn--small" onClick={() => void openSidePanel()}>
+                  {t('set_side_open')}
+                </button>
+              )}
+              <button
+                class="btn btn--soft btn--small"
+                onClick={() => {
+                  onChange({ tourDone: false });
+                  onClose();
+                }}
+              >
+                {t('set_tour_again')}
+              </button>
+            </div>
             <p class="page__foot">
               <Icon name="shield" size={14} />
               <span>{t('set_privacy')}</span>

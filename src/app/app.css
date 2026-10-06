@@ -1,7 +1,7 @@
 /*
  * The full page: the popup's look (its tokens, pills and controls) given room. A sidebar in
- * groups, each section with its own color (its icon, the page's header), one wide column.
- * The coral stays for what starts something.
+ * groups with plain icons, one wide column. One color only, Grabby's (chosen in the
+ * settings): for what starts something and for where you are.
  */
 body.app-page {
   width: auto;
@@ -59,7 +59,7 @@ body.app-page {
   position: absolute;
   top: 0;
   left: 0;
-  border-radius: 16px;
+  border-radius: 12px;
   background: var(--surface-2);
   box-shadow: var(--lift);
   transition:
@@ -93,9 +93,9 @@ body.app-page {
   display: flex;
   align-items: center;
   gap: 11px;
-  height: 44px;
-  padding: 0 10px 0 8px;
-  border-radius: 16px;
+  height: 40px;
+  padding: 0 10px 0 12px;
+  border-radius: 12px;
   color: var(--muted);
   font-weight: 600;
   text-decoration: none;
@@ -116,22 +116,18 @@ body.app-page {
   display: grid;
   place-items: center;
   flex: none;
-  width: 30px;
-  height: 30px;
-  border-radius: 10px;
-  color: var(--c);
-  background: color-mix(in srgb, var(--c) 15%, transparent);
-  transition: transform 300ms var(--spring-bouncy), background-color 200ms var(--ease), color 200ms var(--ease);
-}
-
-.ap__link:hover .ap__linkicon {
-  transform: rotate(-7deg) scale(1.08);
+  width: 24px;
+  height: 24px;
+  color: inherit;
+  transition: color 200ms var(--ease), transform 300ms var(--spring-bouncy);
 }
 
 .ap__link.on .ap__linkicon {
-  color: #fff;
-  background: var(--c);
-  transform: scale(1.04);
+  color: var(--accent);
+}
+
+.ap__link:active .ap__linkicon {
+  transform: scale(0.88);
 }
 
 .ap__linktext {
@@ -248,22 +244,9 @@ body.app-page {
   position: relative;
   width: 100%;
   max-width: 1120px;
-  padding: 36px 48px 72px;
+  padding: 32px 40px 64px;
   box-sizing: border-box;
   outline: none;
-}
-
-/* The section's color, as a faint light behind its header. */
-.ap__main::before {
-  content: '';
-  position: absolute;
-  top: -120px;
-  left: 0;
-  right: 0;
-  height: 340px;
-  background: radial-gradient(60% 70% at 18% 30%, color-mix(in srgb, var(--sec) 16%, transparent), transparent 70%);
-  pointer-events: none;
-  transition: background 400ms var(--ease);
 }
 
 .ap__view {
@@ -272,38 +255,22 @@ body.app-page {
 }
 
 .ap__head {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  margin-bottom: 28px;
-}
-
-.ap__headicon {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 60px;
-  height: 60px;
-  border-radius: 20px;
-  background: var(--sec);
-  color: #fff;
-  box-shadow: 0 10px 28px color-mix(in srgb, var(--sec) 38%, transparent);
-  animation: brand-in 560ms var(--spring-bouncy) 60ms backwards;
+  margin-bottom: 24px;
 }
 
 .ap__head h1 {
   margin: 0;
-  font-size: 32px;
-  font-weight: 680;
-  letter-spacing: -0.025em;
-  line-height: 1.1;
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
 }
 
 .ap__head p {
-  max-width: 68ch;
-  margin: 8px 0 0;
+  max-width: 72ch;
+  margin: 6px 0 0;
   color: var(--muted);
-  font-size: 14.5px;
+  font-size: 14px;
   line-height: 1.5;
 }
 
@@ -321,10 +288,9 @@ body.app-page {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 22px;
-  border-radius: var(--r-inner);
+  padding: 20px;
+  border-radius: 16px;
   background: var(--surface);
-  box-shadow: var(--lift);
   animation: card-in 480ms var(--spring-gentle) backwards;
 }
 
@@ -442,39 +408,25 @@ body.app-page {
 }
 
 /* Nothing yet: an icon, a sentence, where to start. */
+/* Nothing yet: said plainly, where the content will be, with what to do. */
 .blank {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 48px 24px;
-  border: 1.5px dashed var(--line-strong);
-  border-radius: var(--r-inner);
-  text-align: center;
-  animation: card-in 520ms var(--spring-gentle) 80ms backwards;
-}
-
-.blank__icon {
-  display: grid;
-  place-items: center;
-  width: 64px;
-  height: 64px;
-  margin-bottom: 4px;
-  border-radius: 22px;
-  background: color-mix(in srgb, var(--sec) 15%, transparent);
-  color: var(--sec);
-  animation: bob 3s var(--ease) infinite;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 0 12px;
+  animation: rise var(--t-gentle) var(--spring-gentle);
 }
 
 .blank h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 650;
 }
 
 .blank p {
-  max-width: 52ch;
-  margin: 0 0 6px;
+  max-width: 60ch;
+  margin: 0 0 8px;
   color: var(--muted);
   line-height: 1.5;
 }
@@ -909,36 +861,47 @@ a.line__title:hover {
 }
 
 /* Key figures. */
+/* The figures: one strip, each figure parted from the next by a line (no box each). */
 .kpis {
-  display: grid;
-  grid-template-columns: 1fr 1fr 2.2fr;
-  gap: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  row-gap: 12px;
+  padding: 14px 0;
+  border-block: 1px solid var(--line);
 }
 
 .kpi {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 16px 18px;
-  border-radius: var(--r-inner);
-  background: var(--surface);
-  box-shadow: var(--lift);
-  animation: card-in 480ms var(--spring-gentle) backwards;
-  animation-delay: calc(80ms + var(--i, 0) * 60ms);
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 0 28px;
+  border-left: 1px solid var(--line);
+}
+
+.kpi:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.kpi--wide {
+  flex: 1;
+  min-width: 240px;
 }
 
 .kpi__label {
   color: var(--muted);
   font-size: 12.5px;
-  font-weight: 600;
+  font-weight: 550;
 }
 
 .kpi__value {
-  font-size: 26px;
-  font-weight: 680;
-  letter-spacing: -0.02em;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
   font-variant-numeric: tabular-nums;
-  animation: value-in 520ms var(--spring-bouncy) 200ms backwards;
 }
 
 .stats__bar {
@@ -962,12 +925,13 @@ a.line__title:hover {
   background: var(--accent);
 }
 
+/* One color in three strengths: the kinds tell apart without a rainbow. */
 .stats__seg--audio {
-  background: #4f8df5;
+  background: color-mix(in srgb, var(--accent) 55%, var(--bg));
 }
 
 .stats__seg--image {
-  background: #f5a524;
+  background: color-mix(in srgb, var(--accent) 28%, var(--bg));
 }
 
 @keyframes grow {
@@ -1114,14 +1078,6 @@ a.line__title:hover {
   bottom: 10px;
   background: var(--thumb-shade);
   color: #fff;
-}
-
-.ltile__ext--audio {
-  background: #4f8df5;
-}
-
-.ltile__ext--image {
-  background: #c98510;
 }
 
 .ltile__body {
@@ -1427,7 +1383,28 @@ a.line__title:hover {
 }
 
 .lib__keys {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 16px;
   margin: 4px 0 0;
+}
+
+.lib__key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lib__key kbd {
+  min-width: 22px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
   text-align: center;
 }
 
@@ -1837,10 +1814,6 @@ a.line__title:hover {
 }
 
 /* ------------------------------------------------------------------ stats */
-.stats .kpis {
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-}
-
 .kpi__sub {
   color: var(--muted);
   font-size: 12px;
@@ -1955,7 +1928,6 @@ a.line__title:hover {
 .kinds {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
   margin: 14px 0 0;
   padding: 0;
   list-style: none;
@@ -1965,26 +1937,22 @@ a.line__title:hover {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 12px;
-  border-radius: var(--r-small);
-  background: var(--surface-2);
+  padding: 4px 16px;
+  border-left: 1px solid var(--line);
   font-size: 13px;
+}
+
+.kinds__item:first-child {
+  padding-left: 0;
+  border-left: 0;
 }
 
 .kinds__item strong {
   font-size: 22px;
 }
 
-.kinds__item--video .icon {
-  color: var(--accent);
-}
-
-.kinds__item--audio .icon {
-  color: #4f8df5;
-}
-
-.kinds__item--image .icon {
-  color: #c98510;
+.kinds__item .icon {
+  color: var(--muted);
 }
 
 .stats__h3 {
@@ -2054,6 +2022,7 @@ a.line__title:hover {
 
 .images__head {
   display: flex;
+  flex-direction: row;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
@@ -2067,6 +2036,7 @@ a.line__title:hover {
 
 .images__url {
   margin: 4px 0 0;
+  padding: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -2351,7 +2321,7 @@ a.line__title:hover {
 }
 
 .recent--new .recent__status {
-  background: #4f8df5;
+  background: color-mix(in srgb, var(--accent) 55%, var(--bg));
 }
 
 .recent__bar {
@@ -2476,12 +2446,10 @@ a.line__title:hover {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .kpis {
-    grid-template-columns: 1fr 1fr;
-  }
-
   .kpi--wide {
-    grid-column: 1 / -1;
+    flex-basis: 100%;
+    padding-left: 0;
+    border-left: 0;
   }
 
   .ajobs {

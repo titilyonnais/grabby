@@ -168,7 +168,7 @@ export function Images() {
             {t('imagesReload')}
           </button>
           <button class="btn btn--soft btn--small" onClick={() => (history.replaceState(null, '', '#images'), setTabId(NaN), setList(undefined))} disabled={!!busy}>
-            <Icon name="grid" size={14} />
+            <Icon name="image" size={14} />
             {t('imagesOther')}
           </button>
         </div>
@@ -198,9 +198,11 @@ export function Images() {
               ]}
               onChange={setMin}
             />
-            <button class="btn btn--soft btn--small" onClick={() => setOff(off.length ? [] : shown.map((i) => i.url))}>
-              {off.length ? t('libPickAll') : t('libPickNone')}
-            </button>
+            {shown.length > 0 && (
+              <button class="btn btn--soft btn--small" onClick={() => setOff(off.length ? [] : shown.map((i) => i.url))}>
+                {off.length ? t('libPickAll') : t('libPickNone')}
+              </button>
+            )}
             <span class="selbar__gap" />
             <strong class="images__count" aria-live="polite">
               {t('imagesChosen', [String(chosen.length), String(shown.length)])}

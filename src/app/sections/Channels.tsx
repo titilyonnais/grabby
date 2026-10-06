@@ -116,8 +116,8 @@ export function Channels({ watches, jobs, send, preferred }: { watches: Watch[];
         ? t('batchModeAudio')
         : t('batchModeVideo')
       : w.mode === 'audio'
-        ? `${t('batchModeAudio')}${w.format ? ` · ${FORMAT_NAMES[w.format]}` : ''}`
-        : `${listQuality(w.quality).label}${w.format ? ` · ${FORMAT_NAMES[w.format]}` : ''}`;
+        ? `${t('batchModeAudio')}${w.format ? `, ${FORMAT_NAMES[w.format]}` : ''}`
+        : `${listQuality(w.quality).label}${w.format ? `, ${FORMAT_NAMES[w.format]}` : ''}`;
   const fmt = new Intl.NumberFormat(uiLang());
 
   return (
@@ -187,8 +187,8 @@ export function Channels({ watches, jobs, send, preferred }: { watches: Watch[];
                     </a>
                     <span class="chan__sub">
                       {w.kind === 'feed'
-                        ? [t('watchKindFeed'), w.site ? new URL(w.site).hostname.replace(/^www\./, '') : ''].filter(Boolean).join(' · ')
-                        : [w.kind === 'channel' ? w.handle : t('watchKindPlaylist'), w.subscribers].filter(Boolean).join(' · ') || t('watchKindChannel')}
+                        ? [t('watchKindFeed'), w.site ? new URL(w.site).hostname.replace(/^www\./, '') : ''].filter(Boolean).join(', ')
+                        : [w.kind === 'channel' ? w.handle : t('watchKindPlaylist'), w.subscribers].filter(Boolean).join(', ') || t('watchKindChannel')}
                     </span>
                     <span class="chan__facts">
                       <span class="tag">{what(w)}</span>
@@ -248,9 +248,6 @@ export function Channels({ watches, jobs, send, preferred }: { watches: Watch[];
         </section>
       ) : (
         <div class="blank">
-          <span class="blank__icon" aria-hidden="true">
-            <Icon name="bell" size={30} />
-          </span>
           <h2>{t('watchEmptyTitle')}</h2>
           <p>{t('watchEmptyBody')}</p>
         </div>

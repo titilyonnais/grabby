@@ -62,10 +62,10 @@ export function searchLibrary(entries: HistoryEntry[], query: string, texts: Rec
   };
 }
 
-/** What a download makes: "Vidéo · MP4 · 1080p", "Son · M4A". */
+/** What a download makes: "Vidéo, MP4, 1080p", "Son, M4A". */
 function jobWhat(j: Job): string {
   const what = j.mode === 'audio' ? t('jobKindAudio') : j.format && /^(jpg|gif|webp)$/.test(j.format) ? t('jobKindImage') : t('jobKindVideo');
-  return [what, j.format?.toUpperCase(), j.mode === 'video' ? j.quality : ''].filter(Boolean).join(' · ');
+  return [what, j.format?.toUpperCase(), j.mode === 'video' ? j.quality : ''].filter(Boolean).join(', ');
 }
 
 /** A download under way, with its picture, what it makes and where it came from. */
@@ -418,9 +418,6 @@ export function Library({ history, jobs, send, go }: { history: HistoryEntry[]; 
 
       {!history.length ? (
         <div class="blank">
-          <span class="blank__icon" aria-hidden="true">
-            <Icon name={active.length ? 'download' : 'grid'} size={30} />
-          </span>
           <h2>{t(active.length ? 'libEmptyBusyTitle' : 'libEmptyTitle')}</h2>
           <p>{t(active.length ? 'libEmptyBusyBody' : 'libEmptyBody')}</p>
           <div class="row">
@@ -466,7 +463,7 @@ export function Library({ history, jobs, send, go }: { history: HistoryEntry[]; 
                       </span>
                     )
                   )}
-                  <span class={`tag ltile__ext ltile__ext--${k}`}>{extOf(e.filename).toUpperCase() || '?'}</span>
+                  {extOf(e.filename) && <span class={`tag ltile__ext ltile__ext--${k}`}>{extOf(e.filename).toUpperCase()}</span>}
                 </button>
                 {!picking && (
                   <button
@@ -546,7 +543,25 @@ export function Library({ history, jobs, send, go }: { history: HistoryEntry[]; 
         </ul>
       )}
 
-      {history.length > 0 && !picking && <p class="lib__keys hint">{t('libKeys')}</p>}
+      {history.length > 0 && !picking && (
+        <p class="lib__keys hint" aria-label={t('libKeysTitle')}>
+          {(
+            [
+              ['/', 'libKeySearch'],
+              ['← →', 'libKeyMove'],
+              [t('libKeyEnter'), 'libKeyPlay'],
+              ['F', 'libKeyFav'],
+              ['X', 'libKeySelect'],
+              [t('libKeyDel'), 'libKeyDelete'],
+            ] as const
+          ).map(([key, what]) => (
+            <span key={what} class="lib__key">
+              <kbd>{key}</kbd>
+              {t(what)}
+            </span>
+          ))}
+        </p>
+      )}
 
       {picking && (
         <div class="selbar" role="toolbar" aria-label={t('libSelect')}>

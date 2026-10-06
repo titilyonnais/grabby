@@ -13,6 +13,78 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 ## [Non publié]
 
+## [2.1.0] — 2026-10-06
+
+Les boutons sous le lecteur YouTube deviennent de vrais boutons YouTube, « Aperçu » sert
+enfin à quelque chose, l'IA locale montre ce qu'elle a et ce qu'elle sait faire, et toute
+l'interface passe à une seule couleur, plus sobre et plus cohérente.
+
+### Corrigé
+- **Boutons sous le lecteur YouTube illisibles** : ils étaient écrits en noir sur le fond
+  sombre de YouTube (la couleur du texte de la page n'arrivait pas jusqu'à eux), et ni
+  leur taille, ni leur police, ni leurs icônes n'étaient celles de YouTube. Ils reprennent
+  maintenant exactement les boutons de YouTube : 36 px de haut, Roboto, icônes de 24 px,
+  les couleurs de YouTube (thème clair ou sombre suivi tout seul), l'infobulle de YouTube
+  au survol.
+- **« Aperçu » qui ne faisait que lancer la vidéo** : sur YouTube et les autres flux, il
+  remettait le lecteur de la page au début et lançait la lecture, comme le bouton Lecture.
+  Il devient **Lire l'extrait** et n'apparaît qu'une fois un extrait coupé.
+
+### Ajouté
+- **Boutons Grabby sous le lecteur YouTube**, placés juste après le pouce levé / pouce
+  baissé :
+  - une pilule en deux parties **Télécharger | Son seul**, comme celle des pouces ;
+  - pendant le téléchargement, la partie concernée affiche **En attente**, puis le
+    **pourcentage** avec la barre qui avance dedans, puis **Enregistré** (ou **Échec**)
+    pendant 3 secondes ;
+  - deux boutons ronds, comme « ··· » : **Photo** (l'image affichée, en PNG) et **Plus
+    tard** (la vidéo mise de côté) ;
+  - quand la fenêtre est étroite, la pilule ne garde que ses icônes, comme YouTube.
+- **Lire l'extrait** en boucle : arrivé à la fin de l'extrait, il reprend à son début. Dans
+  la popup pour un fichier ; dans le lecteur de la page pour un flux, jusqu'à ce que tu
+  ailles ailleurs dans la vidéo.
+- **Réglages, IA locale** : une rubrique à part qui montre ce que l'IA a sur ton ordinateur.
+  - **Transcription** : Whisper base (OpenAI), prêt ou pas, et la place qu'il prend ;
+  - **Traduction** : chaque paire de langues déjà téléchargée pour Opus-MT (par exemple
+    « Anglais vers Français, 107 Mo »), et si le traducteur intégré à Chrome est prêt ;
+  - **Résumé** : si le résumeur intégré à Chrome est disponible dans ce navigateur ;
+  - **Tester la transcription** : charge vraiment le modèle et lui fait écouter un son de
+    test, puis dit combien de temps ça a pris (ou pourquoi ça a échoué). Si le modèle
+    n'est pas encore là, le bouton dit **Télécharger et tester (77 Mo)** ;
+  - **Supprimer les modèles** : libère la place ; ils seront retéléchargés si besoin.
+- **L'IA locale là où elle sert** : le menu **Sous-titres** d'une carte a un groupe « IA
+  locale, sur ton ordinateur » avec **Créer à partir du son** et **Traduire en** (ta
+  langue), avec la taille à télécharger la première fois. Une vidéo **sans sous-titres**
+  propose **Créer les sous-titres**. Si l'IA n'est pas encore autorisée, l'accord est
+  demandé juste dessous. Le panneau Retouches explique quel modèle fait quoi.
+- **Raccourcis de la bibliothèque** affichés en touches (/, ← →, Entrée, F, X, Suppr).
+
+### Modifié
+- **Une seule couleur** : les rubriques de la page complète et des réglages n'ont plus
+  chacune leur couleur ; les icônes sont neutres, et ta couleur (Réglages, Général)
+  marque ce qui lance une action et l'endroit où tu es. Les types de fichiers (vidéos,
+  sons, images) sont des nuances de cette couleur.
+- **Page complète** : en-têtes compacts (sans grande tuile lumineuse ni halo coloré), les
+  chiffres sur une seule ligne séparés par des filets au lieu de cartes, les « Par type »
+  des statistiques à plat.
+- **Réglages** : le menu est une liste (icône, nom, ce qui est réglé, chevron) au lieu de
+  tuiles colorées ; **Page complète**, **Panneau latéral** et **Revoir la visite** sont
+  sous la liste ; la rubrique « IA et pages » devient **IA locale**.
+- **Fenêtre** : **Images de la page** et **Plus tard** (avec le nombre en attente) passent
+  dans l'en-tête au lieu d'un bouton seul en bas ; les actions d'une carte tiennent sur
+  une ligne (**Extrait**, **Retouches**, **Plus tard**) ; la miniature d'une carte ouverte
+  est un peu moins haute pour laisser la place aux choix.
+- **Bulle sur les vidéos** : ouverte, son rond montre une croix pour la refermer (la flèche
+  tournée ressemblait à « aller à la fin »).
+- **Écrans vides** : une phrase claire, sans grosse icône qui flotte.
+- Les textes n'utilisent plus le point médian « · » comme séparateur.
+
+### Limites connues
+- Les boutons sous le lecteur YouTube suivent la mise en page actuelle de YouTube ; si
+  YouTube la change, Grabby les remet à la fin de la rangée de boutons.
+- Le test de l'IA locale tourne dans la fenêtre de Grabby : la fermer pendant le premier
+  téléchargement du modèle l'interrompt (il reprendra au prochain essai).
+
 ## [2.0.0] — 2026-10-06
 
 La grosse mise à jour : une bibliothèque qui retrouve **ce qui est dit** dans tes vidéos,
@@ -1120,7 +1192,8 @@ Première version.
 - Capture YouTube expérimentale.
 - Interface en français et en anglais, thème clair et sombre.
 
-[Non publié]: https://github.com/titilyonnais/grabby/compare/v2.0.0...HEAD
+[Non publié]: https://github.com/titilyonnais/grabby/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/titilyonnais/grabby/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/titilyonnais/grabby/compare/v1.11.0...v2.0.0
 [1.11.0]: https://github.com/titilyonnais/grabby/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/titilyonnais/grabby/compare/v1.9.0...v1.10.0

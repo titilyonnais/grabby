@@ -269,7 +269,9 @@ export function FinishPanel({ value: f, onChange, audio, format, picture, subsCh
         <h3 class="finish__title">
           <Icon name="sparkle" size={15} />
           {t('finishAi')}
+          <span class="tag tag--ai">{t('aiTag')}</span>
         </h3>
+        <p class="hint">{t('aiWhere')}</p>
         <div class="pickers">
           <Select label={t('transcribeLabel')} value={f.transcribe ?? ''} options={spokenOptions} onChange={(v) => set('transcribe', v || undefined)} />
           <Select label={t('translateLabel')} value={f.translate ?? ''} options={targetOptions} onChange={(v) => set('translate', v || undefined)} />
