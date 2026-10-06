@@ -54,6 +54,8 @@ export function buildManifest(version) {
       'contextMenus',
       // Grabby next to the page, in the browser's side panel.
       'sidePanel',
+      // After an update, Grabby goes back into the pages already open (their old one is cut off).
+      'scripting',
     ],
     // Asked for when "Update" is first clicked: talking to the update helper.
     optional_permissions: ['nativeMessaging'],

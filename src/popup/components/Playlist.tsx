@@ -94,17 +94,19 @@ export function Playlist({
       </div>
       <button class="btn btn--primary btn--wide" disabled={sent} onClick={go}>
         <Icon name={sent ? 'check' : 'download'} />
-        {sent ? t('listQueued', String(count)) : t('listGo', String(count))}
+        {sent ? (count === 1 ? t('listQueuedOne') : t('listQueued', String(count))) : t('listGo', String(count))}
       </button>
       <p class="hint">{t('listHint')}</p>
       {pageUrl && (
-        <Follow
-          url={pageUrl}
-          mode={audio ? 'audio' : 'video'}
-          quality={quality}
-          format={format}
-          label={t(list.kind === 'channel' ? 'followChannel' : 'followPlaylist')}
-        />
+        <div class="card__actions">
+          <Follow
+            url={pageUrl}
+            mode={audio ? 'audio' : 'video'}
+            quality={quality}
+            format={format}
+            label={t(list.kind === 'channel' ? 'followChannel' : 'followPlaylist')}
+          />
+        </div>
       )}
     </section>
   );

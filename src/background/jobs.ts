@@ -475,13 +475,16 @@ export class JobManager {
     else if (mark) this.update(again.id, mark);
   }
 
+  /**
+   * « Masquer » (or « Télécharger à nouveau »): the card goes back to its choices. Its older
+   * finished downloads go too, or the card would show the one before (a second click needed).
+   */
   async dismiss(jobId: string): Promise<void> {
     await this.ready;
     const j = this.jobs.get(jobId);
-    if (j && FINISHED.includes(j.status)) {
-      this.jobs.delete(jobId);
-      this.changed();
-    }
+    if (!j || !FINISHED.includes(j.status)) return;
+    for (const [id, o] of this.jobs) if (id === jobId || (o.tabId === j.tabId && o.mediaId === j.mediaId && FINISHED.includes(o.status))) this.jobs.delete(id);
+    this.changed();
   }
 
   async cancel(jobId: string): Promise<void> {

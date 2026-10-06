@@ -1529,6 +1529,33 @@ test('the button on videos downloads the one under the pointer; it can be turned
   expect(await again.evaluate(() => !!document.querySelector('grabby-overlay'))).toBe(false);
 });
 
+test('one click on « Download again » (or « Hide ») is enough, even with an older download of the same video', async ({ context, sw, extId }) => {
+  const { page, tabId } = await openFixture(context, sw, 'direct.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  let before = await completed(sw);
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
+  await nextDownload(sw, before);
+  // A second download of the same video, from the button on the video.
+  before = await completed(sw);
+  const box = (await page.locator('video').boundingBox())!;
+  await page.bringToFront();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await expect.poll(() => page.evaluate(() => !!document.querySelector('grabby-overlay'))).toBe(true);
+  await page.mouse.move(box.x + 32, box.y + 32);
+  await page.mouse.click(box.x + 32, box.y + 32);
+  await page.waitForTimeout(500);
+  await page.mouse.move(box.x + 90, box.y + 31);
+  await page.mouse.click(box.x + 90, box.y + 31);
+  await nextDownload(sw, before);
+  await popup.bringToFront();
+  await expect(popup.locator('.job__msg')).toBeVisible();
+  // One click: the card is back to its choices (not to the older « Saved »).
+  await popup.getByRole('button', { name: 'Download again' }).click();
+  await expect(popup.locator('.job__msg')).toHaveCount(0);
+  await expect(popup.getByRole('button', { name: 'Download', exact: true })).toBeVisible();
+});
+
 test('play the extract: offered once a part is cut, it plays that part in a loop', async ({ context, sw, extId }) => {
   const { tabId } = await openFixture(context, sw, 'direct.html');
   await expect.poll(() => badge(sw, tabId)).toBe('1');
@@ -1720,7 +1747,7 @@ test('2.0: a saved video says so; kept for later, it is listed in the full page;
   await expect(again.getByRole('button', { name: 'Show in folder' }).first()).toBeVisible();
   // Kept for later, then found in the full page.
   await again.getByRole('button', { name: 'Later', exact: true }).first().click();
-  await expect(again.getByText('Kept aside').first()).toBeVisible();
+  await expect(again.getByRole('button', { name: 'Added', exact: true }).first()).toBeVisible();
   await expect.poll(() => sw.evaluate(async () => ((await chrome.storage.local.get('later')) as { later?: unknown[] }).later?.length ?? 0)).toBe(1);
   const app = await openApp(context, extId, 'later');
   await expect(app.locator('.later__item')).toHaveCount(1);
@@ -1793,9 +1820,34 @@ test('2.0: on YouTube, Grabby sits right after the thumbs, as YouTube buttons; n
   await expect(page.locator('grabby-yt')).toHaveCount(1, { timeout: 10_000 });
   // Right after the thumbs, before "Partager".
   expect(await page.evaluate(() => document.querySelector('segmented-like-dislike-button-view-model')?.nextElementSibling?.tagName)).toBe('GRABBY-YT');
-  // Two pills' worth of YouTube buttons: 36 px high.
+  // YouTube's buttons are 40 px high (2026): « Télécharger | ⌄ », one two-part pill.
   const box = (await page.locator('grabby-yt').boundingBox())!;
-  expect(Math.round(box.height)).toBe(36);
+  expect(Math.round(box.height)).toBe(40);
+  // The arrow opens a menu like YouTube's (its own host on the page, closed), its first row
+  // focused. This page's video is read from the player (no qualities): the first row is the
+  // sound alone, and Entrée asks for it.
+  const tabId = await sw.evaluate(async () => (await chrome.tabs.query({ url: 'https://www.youtube.com/*' }))[0]?.id ?? -1);
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  await page.mouse.click(box.x + box.width - 20, box.y + box.height / 2);
+  await expect(page.locator('grabby-yt-menu')).toHaveCount(1);
+  expect(await page.locator('grabby-yt-menu').evaluate((h) => h.shadowRoot === null)).toBe(true);
+  // Échap closes it; opened again, Entrée picks the first row.
+  await page.keyboard.press('Escape');
+  await expect(page.locator('grabby-yt-menu')).toHaveCount(0);
+  await page.mouse.click(box.x + box.width - 20, box.y + box.height / 2);
+  await expect(page.locator('grabby-yt-menu')).toHaveCount(1);
+  await page.keyboard.press('Enter');
+  await expect(page.locator('grabby-yt-menu')).toHaveCount(0);
+  await expect.poll(() => sw.evaluate(async () => ((await chrome.storage.local.get('jobs')).jobs as { mode: string }[] | undefined)?.map((j) => j.mode))).toEqual(['audio']);
+  // After an update Grabby puts its page script back into open pages: a second copy in the same
+  // page leaves one row of buttons, without errors.
+  const errors: string[] = [];
+  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  page.on('pageerror', (e) => errors.push(e.message));
+  await sw.evaluate((id) => chrome.scripting.executeScript({ target: { tabId: id }, files: ['scanner.js'] }), tabId);
+  await page.waitForTimeout(3500);
+  await expect(page.locator('grabby-yt')).toHaveCount(1);
+  expect(errors).toEqual([]);
   // The bubble stays away from YouTube's player.
   const v = (await page.locator('video').boundingBox())!;
   await page.mouse.move(v.x + v.width / 2, v.y + v.height / 2);

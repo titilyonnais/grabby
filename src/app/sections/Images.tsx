@@ -115,7 +115,7 @@ export function Images() {
       }
     }
     setBusy(null);
-    flash(failed ? t('imagesSavedSome', [String(files.length), String(failed)]) : t('imagesSaved', [String(files.length), size(total)]));
+    flash(failed ? t('imagesSavedSome', [String(files.length), String(failed)]) : files.length === 1 ? t('imagesSavedOne', size(total)) : t('imagesSaved', [String(files.length), size(total)]));
   };
 
   const oneByOne = async () => {
@@ -127,7 +127,7 @@ export function Images() {
       setBusy({ done: i + 1, of: chosen.length });
     }
     setBusy(null);
-    flash(t('imagesSent', String(chosen.length)));
+    flash(chosen.length === 1 ? t('imagesSentOne') : t('imagesSent', String(chosen.length)));
   };
 
   if (!Number.isInteger(tabId))

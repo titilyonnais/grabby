@@ -335,6 +335,34 @@ body.app-page {
   gap: 6px;
 }
 
+/*
+ * One height per row: next to a 48 px menu (Qualité, Format), the buttons and the two-way
+ * choice are 48 px too, so their tops and bottoms line up.
+ */
+.row:has(> .select) > .btn {
+  height: 48px;
+}
+
+.row:has(> .select) > .seg {
+  margin: 0;
+  padding: 6px;
+  border: 0;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.row:has(> .select) > .seg button {
+  height: 36px;
+  padding: 0 14px;
+}
+
+.row:has(> .select) > .seg .seg__thumb {
+  top: 6px;
+  bottom: 6px;
+  left: 6px;
+  width: calc((100% - 12px) / var(--n, 2));
+}
+
 .muted {
   color: var(--muted);
 }

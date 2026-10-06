@@ -13,6 +13,98 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 ## [Non publié]
 
+## [2.2.0] — 2026-10-06
+
+Les boutons sous le lecteur YouTube sont refaits d'après les vrais (mesurés sur youtube.com)
+et gagnent un menu d'options ; une panne après mise à jour est réparée, et toute l'interface
+a été relue bouton par bouton : alignements, textes faux, fonctions qui ne marchaient pas.
+
+### Corrigé
+- **Boutons YouTube disparus, erreurs « scanner.js:31 »** : quand Grabby se mettait à jour
+  (ou était rechargé) pendant qu'un onglet YouTube restait ouvert, le script déjà dans la
+  page perdait son extension. Chaque appel à Chrome levait alors « Extension context
+  invalidated », toutes les 1,5 seconde, et les boutons sous le lecteur ne revenaient plus
+  sans recharger la page. Maintenant :
+  - le script de la page vérifie que Grabby répond avant de lui parler ; sinon il retire
+    ses boutons et s'arrête, sans erreur ;
+  - après une installation ou une mise à jour, Grabby se remet tout seul dans les pages
+    déjà ouvertes (nouvelle autorisation interne « scripting », sans nouvel
+    avertissement) ; une seule copie reste active, jamais deux rangées de boutons.
+- **Boutons YouTube pas à la bonne taille ni aux bonnes couleurs** : YouTube a changé ses
+  boutons (40 px au lieu de 36) et ne publie plus ses couleurs dans des variables lisibles ;
+  Grabby retombait sur ses propres couleurs. Les boutons reprennent maintenant les mesures
+  relevées sur youtube.com : 40 px de haut, coins de 20 px, 16 px de marge, Roboto 500
+  14 px, icônes de 24 px à 6 px du texte, le filet de 1 × 24 px entre les deux parties, et
+  les couleurs **lues sur le bouton « J'aime » de YouTube lui-même** (clair ou sombre,
+  changées dès que YouTube change de thème). L'icône de téléchargement est celle de YouTube,
+  les autres sont dessinées au même trait de 2 px.
+- **Croix pas centrée** dans la bulle en bas à droite (« Téléchargement lancé », « Photo
+  enregistrée »…) : c'était le caractère « × » posé sur une ligne de texte ; c'est
+  maintenant une icône centrée dans un rond de 32 px. La bulle prend aussi ta couleur.
+- **« Masquer » à cliquer deux fois** après une annulation (et « Télécharger à nouveau »
+  après un téléchargement) : la carte montre le dernier téléchargement de la vidéo ; le
+  masquer faisait réapparaître le précédent (annulé ou enregistré). Un clic les efface
+  maintenant tous, et la carte revient à ses choix.
+- **« Suivre la chaîne » pas aligné** : il était seul sous les explications, avec une autre
+  forme que les autres boutons. Il rejoint la rangée **Extrait, Retouches, Plus tard**, avec
+  la même forme, et il suit maintenant la **qualité choisie** dans la carte (il prenait
+  toujours 1080p).
+- **Minuterie qui ne s'arrêtait pas** à la fin d'un direct enregistré dans la fenêtre.
+- **Textes faux ou trompeurs** :
+  - « Enregistrement » et « Enregistrement… » pour deux états différents : le second devient
+    « Écriture du fichier… » ;
+  - l'IA locale renvoyait vers « Réglages, IA et pages », qui s'appelle « IA locale » ; le
+    résumé se fait aussi sans le résumeur de Chrome (résumé simple de Grabby), c'est dit ;
+  - « Les diffusions en direct ne sont pas prises en charge » alors que les directs HLS et
+    YouTube s'enregistrent : l'erreur dit maintenant que **ce** direct (DASH) ne peut pas
+    l'être ;
+  - « deux à la fois » dans la liste d'adresses et la playlist, alors que le nombre se règle
+    de 1 à 4 ;
+  - « Chaînes et podcasts » ne parlait que de YouTube : les podcasts sont mentionnés
+    partout (adresse, explication, écran vide, erreurs) ;
+  - un seul nom par chose : « Son seul » (au lieu de « Audio seul » et « Le son »),
+    « Réduction », « Place occupée », « autoriser » l'IA (au lieu d'« activer »), « Ajouter à
+    Plus tard » / « Ajouté à Plus tard » (au lieu de « Mettre de côté », « Mis de côté »,
+    « Mise de côté ») ;
+  - « 1 images enregistrées », « 1 téléchargements lancés » : le singulier est géré ;
+  - « Glisser pour changer l'ordre » devient « Glisse… », comme le reste de l'interface.
+
+### Ajouté
+- **Menu ⌄ sous le lecteur YouTube**, juste à droite de **Télécharger**, dessiné comme les
+  menus de YouTube (coins de 12 px, lignes de 36 px, icônes de 24 px) :
+  - **Vidéo en MP4** (ton format) : chaque **qualité** de la vidéo avec la **taille** du
+    fichier ; un clic la télécharge dans cette qualité ;
+  - **Son seul** (avec ton format audio), **Photo de l'image affichée**, **Ajouter à Plus
+    tard** ;
+  - **Ouvrir Grabby** : la fenêtre de Grabby sur cette page, pour tous les autres choix
+    (extrait, retouches, sous-titres…) ; le panneau latéral si Chrome refuse la fenêtre.
+  - Il se ferme avec Échap, un clic ailleurs ou un défilement ; il s'ouvre au-dessus du
+    bouton quand la place manque en dessous ; il se pilote au clavier.
+
+### Modifié
+- **Sous le lecteur YouTube** : une seule pilule **Télécharger | ⌄** au lieu de « Télécharger
+  | Son seul » et des deux ronds Photo et Plus tard (ils sont dans le menu). Quand la rangée
+  de YouTube manque de place, la pilule ne garde que ses icônes, comme les boutons de
+  YouTube. La progression d'un téléchargement (vidéo ou son) s'affiche dans **Télécharger**.
+- **Carte ouverte** : le titre, ses détails, les menus, les actions et les explications
+  partent tous du bord gauche de la miniature. Les actions (Extrait, Lire l'extrait,
+  Retouches, Plus tard, Suivre la chaîne) sont des pilules de la taille de leur texte,
+  dessinées comme les menus au-dessus, espacées de 8 px.
+- **Page complète** : à côté d'un menu de 48 px (Qualité, Format), les boutons et le choix
+  « La vidéo / Son seul » font 48 px aussi (Chaînes et podcasts, Bibliothèque…).
+- La ligne de détails d'un téléchargement n'utilise plus le point médian comme séparateur.
+- **En-tête de la fenêtre** : le bouton soleil / lune est retiré ; il remplaçait le thème
+  « Auto » par Clair ou Sombre sans le dire. Le thème se règle dans Réglages, Général.
+
+### Supprimé
+- Deux textes qui ne servaient plus nulle part.
+
+### Limites connues
+- Après une mise à jour, une page restée ouverte retrouve ses boutons, mais **Enregistrer le
+  direct** et la capture depuis le lecteur n'y remarchent qu'une fois la page rechargée.
+- Le menu ⌄ ne liste des qualités que pour les vidéos que Grabby lit directement ; pour une
+  vidéo enregistrée depuis le lecteur, il commence à **Son seul**.
+
 ## [2.1.0] — 2026-10-06
 
 Les boutons sous le lecteur YouTube deviennent de vrais boutons YouTube, « Aperçu » sert
@@ -1192,7 +1284,8 @@ Première version.
 - Capture YouTube expérimentale.
 - Interface en français et en anglais, thème clair et sombre.
 
-[Non publié]: https://github.com/titilyonnais/grabby/compare/v2.1.0...HEAD
+[Non publié]: https://github.com/titilyonnais/grabby/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/titilyonnais/grabby/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/titilyonnais/grabby/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/titilyonnais/grabby/compare/v1.11.0...v2.0.0
 [1.11.0]: https://github.com/titilyonnais/grabby/compare/v1.10.0...v1.11.0

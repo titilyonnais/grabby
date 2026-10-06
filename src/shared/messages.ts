@@ -105,13 +105,26 @@ export type ContentToBg =
   /** The "done" bubble's button. */
   | { type: 'show-download'; downloadId: number }
   /** The button over a video: `src`, the video's address when it has one. */
-  | { type: 'grab'; src?: string; mode?: 'video' | 'audio' }
+  | { type: 'grab'; src?: string; mode?: 'video' | 'audio'; variantId?: string }
   /** « Photo »: the picture on screen, read by the page (`dataUrl`) or to be cut from a screenshot (`rect`, CSS pixels). */
   | { type: 'snap'; dataUrl?: string; rect?: { x: number; y: number; w: number; h: number }; dpr?: number; time?: number }
   /** « Plus tard »: the video (or the page) kept aside, to be downloaded later. */
   | { type: 'later'; src?: string }
   /** YouTube's buttons under the player: the downloads of this video, to show their progress. */
-  | { type: 'page-jobs' };
+  | { type: 'page-jobs' }
+  /** YouTube's menu under the player: the qualities of the video on screen (answered with PageMedia | null). */
+  | { type: 'page-media' }
+  /** « Plus d'options » in that menu: Grabby's window, opened on this page. */
+  | { type: 'open-grabby' };
+
+/** The video on screen as YouTube's menu under the player shows it. */
+export interface PageMedia {
+  title: string;
+  /** Best first; `bytes`: the expected size in the user's video format. */
+  qualities: { id: string; label: string; bytes?: number }[];
+  format: string;
+  audioFormat: string;
+}
 
 /* ---------- service worker → content script ---------- */
 export type BgToContent =

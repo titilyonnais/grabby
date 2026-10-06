@@ -20,6 +20,7 @@ import { Select, type SelectOption } from './Select';
 import { Moment, Trim } from './Trim';
 import { FinishPanel, finishCount } from './Finish';
 import { Follow } from './Follow';
+import { listQualityFor } from '../../shared/ytlist';
 import type { Finish } from '../../shared/finish';
 import { PAIR_MB, TRANSLATE_TARGETS, WHISPER_MB } from '../../shared/translate';
 import { baseLang } from '../../shared/langs';
@@ -179,6 +180,8 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
   const [parts, setParts] = useState<Clip[] | null>(null);
   const [joined, setJoined] = useState(true);
   const clippable = canClip(item);
+  // A YouTube video: its channel can be followed from the card.
+  const followable = isYouTube(item.pageUrl) && /[?&]v=|\/(shorts|live)\//.test(item.pageUrl);
   // Subtitles: none, or some of the stream's tracks, put in the video or saved next to it.
   const [subsIds, setSubsIds] = useState<string[]>(ruled?.subtitles ?? []);
   const [subsApart, setSubsApart] = useState(false);
@@ -506,10 +509,13 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
                 </div>
               )}
               {!showJob && (
-                <button class="trim-toggle" aria-expanded={finishing} onClick={() => setFinishing((v) => !v)}>
-                  <Icon name={finishing ? 'close' : 'wand'} size={16} />
-                  {finishing ? t('finishClose') : finishCount(finish) ? t('finishOpenCount', String(finishCount(finish))) : t('finishOpen')}
-                </button>
+                <div class="card__actions">
+                  <button class="trim-toggle" aria-expanded={finishing} onClick={() => setFinishing((v) => !v)}>
+                    <Icon name={finishing ? 'close' : 'wand'} size={16} />
+                    {finishing ? t('finishClose') : finishCount(finish) ? t('finishOpenCount', String(finishCount(finish))) : t('finishOpen')}
+                  </button>
+                  {followable && <Follow url={item.pageUrl} mode="video" quality={listQualityFor(variant?.height)} label={t('followChannel')} />}
+                </div>
               )}
               {!showJob && finishing && (
                 <FinishPanel
@@ -653,6 +659,7 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
                       {kept ? t('laterKept') : t('laterAdd')}
                     </button>
                   )}
+                  {followable && <Follow url={item.pageUrl} mode={audio ? 'audio' : 'video'} quality={listQualityFor(variant?.height)} {...(!image ? { format } : {})} label={t('followChannel')} />}
                 </div>
               )}
               {!showJob && previewing && previewUrl && cut && (
@@ -708,9 +715,6 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
               )}
               {item.kind === 'capture' && !showJob && <p class="hint">{t(hidden ? 'hiddenHint' : 'captureHint')}</p>}
               {rule && !showJob && <p class="hint">{t('ruleApplied', rule.site || t('ruleEverySite'))}</p>}
-              {!showJob && isYouTube(item.pageUrl) && /[?&]v=|\/(shorts|live)\//.test(item.pageUrl) && (
-                <Follow url={item.pageUrl} mode={audio ? 'audio' : 'video'} quality="hd1080" {...(!image ? { format } : {})} label={t('followChannel')} />
-              )}
               {scale && !audio && !image && !showJob && <p class="hint">{t('shrinkHint')}</p>}
               {chosen.length > 0 && !audio && !image && !showJob && <p class="hint">{t('trimHint')}</p>}
               {image && !showJob && (

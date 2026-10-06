@@ -24,7 +24,7 @@ export function pickFor(items: MediaItem[], srcUrl?: string): MediaItem | undefi
 }
 
 /** Starts the download straight away, in the user's preferred format and the best quality. */
-export async function quickDownload(registry: Registry, jobs: JobManager, tabId: number, srcUrl?: string, mode?: 'video' | 'audio'): Promise<void> {
+export async function quickDownload(registry: Registry, jobs: JobManager, tabId: number, srcUrl?: string, mode?: 'video' | 'audio', variantId?: string): Promise<void> {
   const items = visibleItems(await registry.get(tabId));
   const item = pickFor(items, srcUrl);
   const say = (ok: boolean, title: string, detail: string) =>
@@ -35,19 +35,21 @@ export async function quickDownload(registry: Registry, jobs: JobManager, tabId:
     return;
   }
   const settings = await getSettings();
-  const job = await startWithRules(jobs, tabId, item, settings, mode);
+  const job = await startWithRules(jobs, tabId, item, settings, mode, variantId);
   if (job) await say(true, chrome.i18n.getMessage('quickStarted'), item.title);
 }
 
 /**
  * A download started without the popup: what the site's rule says (else the settings: the
- * best quality, the video or its sound as chosen for the shortcut). `mode` forces one.
+ * best quality, the video or its sound as chosen for the shortcut). `mode` forces one, and
+ * `variantId` a quality (YouTube's menu under the player).
  */
-export async function startWithRules(jobs: JobManager, tabId: number, item: MediaItem, settings: Settings, mode?: 'video' | 'audio') {
+export async function startWithRules(jobs: JobManager, tabId: number, item: MediaItem, settings: Settings, mode?: 'video' | 'audio', variantId?: string) {
   const rule = ruleFor(settings.rules, item.pageUrl);
   const asked = mode ?? (rule ? rule.mode : settings.quickMode);
   const c = applyRule(item, { ...(rule ?? newRule()), mode: asked }, { video: settings.videoFormat, audio: settings.audioFormat });
-  return jobs.start(tabId, item.id, c.variantId ?? item.variants[0]?.id, c.mode, c.format, {
+  const chosen = c.mode === 'video' && variantId && item.variants.some((v) => v.id === variantId) ? variantId : c.variantId;
+  return jobs.start(tabId, item.id, chosen ?? item.variants[0]?.id, c.mode, c.format, {
     ...(c.subtitles.length ? { subtitles: { ids: c.subtitles, separate: false } } : {}),
     ...(c.folder ? { folder: c.folder } : {}),
   });

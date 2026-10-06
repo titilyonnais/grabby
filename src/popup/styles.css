@@ -292,7 +292,7 @@ p {
   height: 28px;
   border-radius: var(--r-pill);
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   animation: brand-in var(--t-bouncy) var(--spring-bouncy) 60ms backwards;
 }
 
@@ -580,8 +580,9 @@ p {
   min-width: 0;
 }
 
+/* Open: the title, its details and every row under them start on the thumbnail's left edge. */
 .card--open .card__body {
-  padding: 0 0 0 10px;
+  padding: 0;
 }
 
 .card__title {
@@ -724,12 +725,6 @@ p {
   line-height: 19px;
 }
 
-.tag--accent {
-  box-shadow: none;
-  background: var(--accent);
-  color: var(--on-accent);
-}
-
 .notice {
   display: flex;
   gap: 10px;
@@ -751,6 +746,12 @@ p {
   font-size: 12.5px;
   line-height: 1.45;
   color: var(--muted);
+}
+
+/* In a card, on the same left edge as its menus and buttons. */
+.card__drawer .hint {
+  padding-left: 0;
+  padding-right: 0;
 }
 
 /* Last in a card: clear of its round bottom corners. */
@@ -1501,16 +1502,11 @@ p {
 .job__stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 0;
-  padding: 0 12px 4px;
+  gap: 2px 12px;
+  padding: 0 0 4px;
   font-size: 12.5px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-}
-
-.job__stats span + span::before {
-  content: '·';
-  margin: 0 7px;
 }
 
 .job__stats span:first-child {
@@ -1527,7 +1523,7 @@ p {
 }
 
 .job--done .job__msg {
-  padding: 0 6px;
+  padding: 0;
 }
 
 /* Every button of a card's job is the height of the bar it sits next to. */
@@ -2278,16 +2274,6 @@ p {
   --i: 0;
   animation: group-in 560ms var(--spring-gentle) backwards;
   animation-delay: calc(200ms + var(--i) * 70ms);
-}
-
-.group__title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 8px 7px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--muted);
 }
 
 /* Group 32, 6 inside → rows and inner cards 26: their corners follow the group's. */
@@ -3651,19 +3637,43 @@ label.row-setting:hover {
 }
 
 /* ------------------------------------------------- retouches et IA (1.10) */
-/* The card's secondary actions: cut, preview, retouch — one row of quiet pills. */
-/* What else can be done: one row of equal buttons (a fourth, « Lire l'extrait », wraps). */
+/*
+ * What else can be done (Extrait, Retouches, Plus tard, Suivre la chaîne): pills the size of
+ * their words, drawn like the menus above them (same fill, same outline), 8 px apart, from the
+ * left edge of the card's content; what does not fit goes to the next line.
+ */
 .card__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 8px;
 }
 
 .card__actions .trim-toggle {
-  flex: 1 1 0;
-  justify-content: center;
-  min-width: max-content;
-  padding: 0 10px;
+  flex: none;
+  align-self: auto;
+  gap: 6px;
+  padding: 0 14px 0 12px;
+  color: var(--text);
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.card__actions .trim-toggle:hover,
+.card__actions .trim-toggle[aria-expanded='true'] {
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+.card__actions .trim-toggle--done,
+.card__actions .trim-toggle:disabled {
+  color: #22b07d;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+/* A message about one of them (« Suivre la chaîne » refused): on its own line under the row. */
+.card__actions .card__note {
+  flex-basis: 100%;
+  margin: 0;
 }
 
 .preview {
@@ -3806,13 +3816,7 @@ label.row-setting:hover {
   flex: 1;
 }
 
-.follow {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-}
-
-.btn--done {
-  color: var(--text);
+/* A button beside a 48 px menu (Qualité, Format, Tri): the same height, tops and bottoms aligned. */
+:where(div, section, header):has(> .select) > .btn:not(.btn--wide) {
+  height: 48px;
 }

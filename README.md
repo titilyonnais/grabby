@@ -17,25 +17,30 @@
 
 ---
 
-<!-- release:2.1.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
-## Nouveautés de la version 2.1.0
+<!-- release:2.2.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
+## Nouveautés de la version 2.2.0
 
-- **Corrigé, YouTube** : les boutons Grabby sous le lecteur étaient écrits en noir sur fond
-  sombre. Ce sont maintenant de **vrais boutons YouTube**, placés juste après le pouce
-  levé / pouce baissé : une pilule **Télécharger | Son seul** (avec la **progression** du
-  téléchargement dedans), puis deux ronds **Photo** et **Plus tard**. Ils suivent le thème
-  clair ou sombre de YouTube. La bulle ne s'affiche plus sur les vidéos YouTube.
-- **Corrigé, Aperçu** : il ne faisait que lancer la vidéo. Il devient **Lire l'extrait** et
-  n'apparaît qu'une fois un extrait coupé ; il le lit **en boucle**, du début à la fin.
-- **IA locale, enfin visible** : une rubrique **Réglages, IA locale** montre chaque modèle
-  (Whisper pour la transcription, Opus-MT ou le traducteur de Chrome pour la traduction, le
-  résumeur de Chrome), s'il est **prêt** et la **place** qu'il prend, avec **Tester la
-  transcription** et **Supprimer les modèles**. Dans une carte, le menu **Sous-titres**
-  propose **Créer à partir du son** et **Traduire**, et une vidéo sans sous-titres propose
-  **Créer les sous-titres**.
-- **Design plus sobre et cohérent** : une seule couleur (la tienne) au lieu d'une par
-  rubrique, réglages en liste, en-têtes compacts, chiffres en ligne, écrans vides plus
-  directs ; **Images de la page** et **Plus tard** passent dans l'en-tête de la fenêtre.
+- **Corrigé, boutons YouTube disparus après une mise à jour** : sur un onglet YouTube resté
+  ouvert, l'ancien Grabby perdait le contact avec l'extension, remplissait la console
+  d'erreurs (« scanner.js:31 ») et les boutons sous le lecteur ne revenaient plus. L'ancien
+  s'arrête maintenant proprement, et Grabby se remet tout seul dans les pages déjà ouvertes.
+- **Boutons YouTube refaits à l'identique**, mesurés sur youtube.com : 40 px de haut comme
+  ceux de YouTube, ses couleurs exactes (lues sur son propre bouton « J'aime », en clair et
+  en sombre), ses icônes. Une seule pilule **Télécharger | ⌄** juste après le pouce levé /
+  pouce baissé.
+- **Nouveau : le menu ⌄** (comme les menus de YouTube) : choisir la **qualité** (avec la
+  taille de chaque fichier), **Son seul**, **Photo de l'image affichée**, **Ajouter à Plus
+  tard** et **Ouvrir Grabby**.
+- **Corrigé** : la croix de la bulle « téléchargement lancé » est centrée ; **Masquer** et
+  **Télécharger à nouveau** marchent du premier clic ; **Suivre la chaîne** est aligné avec
+  les autres actions de la carte et suit la qualité choisie.
+- **Tout aligné** : dans une carte ouverte, titre, menus et boutons partent du même bord ; les
+  actions sont des pilules de la taille de leur texte, espacées pareil ; dans la page
+  complète, les boutons d'une rangée ont la hauteur des menus à côté.
+- **Textes corrigés** : états, IA locale, directs, Plus tard, podcasts, pluriels…
+
+**Rappel de la 2.1.0** : la rubrique **Réglages, IA locale** (état des modèles, test,
+suppression), **Lire l'extrait** en boucle et une interface à une seule couleur.
 
 **Rappel de la 2.0.0** :
 
@@ -276,8 +281,9 @@ Le détail de chaque version est dans le [journal des modifications](CHANGELOG.m
   suivies aussi par le clic droit, le raccourci, le bouton sur les vidéos et la liste
   d'adresses.
 - **Bulle sur les vidéos** : un rond Grabby au survol ; un clic le déroule (Télécharger,
-  Son seul, Photo, Plus tard). Sur YouTube, ces boutons sont sous le lecteur, au style de
-  YouTube, juste après le pouce levé / pouce baissé.
+  Son seul, Photo, Plus tard). Sur YouTube, une pilule **Télécharger | ⌄** au style de
+  YouTube est sous le lecteur, juste après le pouce levé / pouce baissé ; ⌄ ouvre le choix
+  de la qualité, du son seul, de la photo, de Plus tard et de Grabby.
 - **Page complète** : **bibliothèque** (recherche dans ce qui est dit, lecteur avec vitesse,
   boucle A-B, image par image, reprise, texte synchronisé, éditeur de sous-titres et
   export ; favoris, collections, sélection multiple, Annuler), **statistiques**, **liste
@@ -470,7 +476,8 @@ toutes les images), **Alt+Maj+D** pour la vidéo principale de la page, **Alt+Ma
 une photo de la vidéo (raccourcis modifiables dans `chrome://extensions/shortcuts`),
 `gb` puis un ou plusieurs liens dans la barre d'adresse (`gb son …` pour le son seul),
 ou la **bulle sur les vidéos** qui apparaît au survol (un clic la déroule : **Télécharger**,
-**Son seul**, **Photo**, **Plus tard**) et, sur YouTube, sous le lecteur.
+**Son seul**, **Photo**, **Plus tard**) et, sur YouTube, la pilule **Télécharger | ⌄** sous
+le lecteur (⌄ : qualité, son seul, photo, Plus tard, Ouvrir Grabby).
 
 **Page complète** (bouton en grille en haut de la popup) :
 

@@ -5,6 +5,7 @@
  */
 import { showToast } from './toast';
 import { startOverlay } from './overlay';
+import { alive, onDead, superfluous } from './alive';
 import { forgetForcedQuality, hiddenJobFromUrl, hiddenSessionFromUrl, readYouTubeInfo } from '../features/youtube';
 import { SESSION_SPAN } from '../shared/idb';
 import { deepVideos } from '../shared/dom';
@@ -21,12 +22,14 @@ type HookUp =
   | { type: 'yt'; info: YtInfo }
   | { type: 'error'; error: 'capture_unavailable' | 'protected' | 'capture_failed' };
 
-const send = (msg: ContentToBg) => chrome.runtime.sendMessage(msg).catch(() => {});
+// Grabby updated while the page stays open: nothing more is sent (it would throw).
+const send = (msg: ContentToBg) => (alive() ? chrome.runtime.sendMessage(msg).catch(() => {}) : Promise.resolve());
 
 /* Private channel to the MAIN-world hook (see hook.ts): offered before page scripts run. */
 const channel = new MessageChannel();
 const hook = channel.port1;
-window.postMessage({ __grabby: 'hello' }, '*', [channel.port2]);
+// (A second copy, put in after an update next to one still running, stays out of the way.)
+if (!superfluous) window.postMessage({ __grabby: 'hello' }, '*', [channel.port2]);
 const MANIFEST = /\.(m3u8|mpd)($|[?#])/i;
 const streams = new Set<string>();
 const isTop = window === window.top;
@@ -301,11 +304,16 @@ function watchResources() {
 function startObserving() {
   watchResources();
   report();
-  new MutationObserver(() => scheduleReport()).observe(document.documentElement, {
+  const watcher = new MutationObserver(() => scheduleReport());
+  watcher.observe(document.documentElement, {
     childList: true,
     subtree: true,
     attributes: true,
     attributeFilter: ['src'],
+  });
+  onDead(() => {
+    watcher.disconnect();
+    clearTimeout(timer);
   });
   // Media events don't bubble but are visible in the capture phase.
   for (const ev of ['loadedmetadata', 'durationchange', 'play']) {
@@ -315,7 +323,7 @@ function startObserving() {
 
 // Inside the hidden YouTube player this frame only records, it reports nothing.
 const hiddenJob = hiddenJobFromUrl(location.href);
-if (!hiddenJob) {
+if (!hiddenJob && !superfluous) {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startObserving, { once: true });
   else startObserving();
   // Once: the 144p an older hidden player made YouTube remember is forgotten.
@@ -498,8 +506,11 @@ function openSession(jobId: string, n: number): Session {
   };
 }
 
-if (hiddenJob) session = openSession(hiddenJob, hiddenSessionFromUrl(location.href));
-// The button over videos: on the pages the user looks at (never in a hidden player).
+// The button over videos: on the pages the user looks at (never in a hidden player). A second
+// copy put in after an update leaves it all to the one already running.
+if (superfluous) {
+  /* nothing to do */
+} else if (hiddenJob) session = openSession(hiddenJob, hiddenSessionFromUrl(location.href));
 else startOverlay();
 
 let lastProgress = 0;
@@ -561,6 +572,7 @@ hook.onmessage = (e: MessageEvent) => {
 /* --------------------------------------------------- service worker ⇄ us */
 
 chrome.runtime.onMessage.addListener((msg: BgToContent, _sender, respond) => {
+  if (!alive()) return;
   switch (msg.type) {
     case 'scan':
       report(true);

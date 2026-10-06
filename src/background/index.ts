@@ -1,5 +1,6 @@
 import { youTubeIdOf } from '../shared/saved';
-import type { AppRequest, BgToContent, BgToPopup, BlockedReason, ContentToBg, OffscreenToBg, PopupState, PopupToBg } from '../shared/messages';
+import type { AppRequest, BgToContent, BgToPopup, BlockedReason, ContentToBg, OffscreenToBg, PageMedia, PopupState, PopupToBg } from '../shared/messages';
+import type { VideoFormat } from '../shared/plan';
 import { getSettings, setSettings } from '../shared/settings';
 import { cleanTitle } from '../shared/title';
 import { hostOf } from '../parsers/url';
@@ -45,7 +46,10 @@ chrome.runtime.onStartup.addListener(() => {
   // Pages being opened before the browser closed: given up, the next ones opened.
   void batch.pump();
 });
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(({ reason }) => {
+  // Installed or updated while pages are open: their old Grabby lost its extension (its buttons
+  // under YouTube's player stopped). The page script goes back in, without reloading them.
+  if (reason === 'install' || reason === 'update') void reinject();
   void resetHeaderRules();
   void getSettings().then((s) => watchUpdates(s.updateCheck));
   // Right-click on a video, on a link, or anywhere on a page (whose player may hide its own menu).
@@ -96,6 +100,15 @@ async function keepForLater(tabId: number, tab?: chrome.tabs.Tab, src?: string) 
   await addLater({ url, title, ...(item?.thumbnail ? { thumbnail: item.thumbnail } : {}), mode: 'auto' });
   pushAll();
   await toastIn(tabId, true, 'laterAdded', title);
+}
+
+/** Grabby's page script, back into every open web page (the player hook needs a reload). */
+async function reinject() {
+  const tabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] }).catch(() => [] as chrome.tabs.Tab[]);
+  for (const tab of tabs) {
+    if (tab.id === undefined || tab.discarded) continue;
+    void chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, files: ['scanner.js'] }).catch(() => {});
+  }
 }
 
 /** The full page, on a section (and the tab it is about). */
@@ -516,7 +529,7 @@ chrome.runtime.onMessage.addListener((msg: ContentToBg | OffscreenToBg | AppRequ
       break;
     case 'grab':
       // The button over a video: that video, straight away.
-      void quickDownload(registry, jobs, tabId, msg.src, msg.mode);
+      void quickDownload(registry, jobs, tabId, msg.src, msg.mode, msg.variantId);
       break;
     case 'snap':
       void (async () => {
@@ -545,6 +558,26 @@ chrome.runtime.onMessage.addListener((msg: ContentToBg | OffscreenToBg | AppRequ
       );
       break;
     }
+    case 'page-media':
+      void (async () => {
+        const item = pickFor(visibleItems(await registry.get(tabId)));
+        if (!item || item.audioOnly) return sendResponse(null);
+        const settings = await getSettings();
+        const format = item.formats?.includes(settings.videoFormat as never) || !item.formats ? settings.videoFormat : item.formats[0]!;
+        const qualities = [...item.variants]
+          .sort((a, b) => (b.height ?? 0) - (a.height ?? 0) || (b.bandwidth ?? 0) - (a.bandwidth ?? 0))
+          .map((v) => {
+            const told = v.sizes?.[format as VideoFormat] ?? v.size;
+            const bytes = told || (v.bandwidth && item.duration ? Math.round((v.bandwidth * item.duration) / 8) : undefined);
+            return { id: v.id, label: v.label, ...(bytes ? { bytes } : {}) };
+          });
+        sendResponse({ title: item.title, qualities, format, audioFormat: settings.audioFormat } satisfies PageMedia);
+      })();
+      return true;
+    case 'open-grabby':
+      // The popup, over this page; where Chrome refuses it, the side panel.
+      void chrome.action.openPopup({ windowId: sender.tab.windowId }).catch(() => chrome.sidePanel.open({ tabId }).catch(() => {}));
+      break;
     case 'show-download':
       // Only downloads Grabby made can be shown from a page.
       if (jobs.list().some((j) => j.downloadId === msg.downloadId)) chrome.downloads.show(msg.downloadId);

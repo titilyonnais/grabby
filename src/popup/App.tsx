@@ -182,17 +182,6 @@ export function App() {
                 </span>
               </button>
             ) : null}
-            <button
-              class="icon-btn"
-              aria-label={dark ? t('switchToLight') : t('switchToDark')}
-              title={dark ? t('switchToLight') : t('switchToDark')}
-              onClick={() => send({ type: 'settings', patch: { theme: dark ? 'light' : 'dark' } })}
-            >
-              {/* Keyed: the new icon spins in. */}
-              <span key={dark ? 'sun' : 'moon'} class="spin-in">
-                <Icon name={dark ? 'sun' : 'moon'} />
-              </span>
-            </button>
             <button data-tour="app" class="icon-btn" aria-label={t('openApp')} title={t('openApp')} onClick={() => openApp()}>
               <Icon name="grid" />
             </button>

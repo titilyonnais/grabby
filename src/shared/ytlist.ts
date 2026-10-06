@@ -42,6 +42,9 @@ export const LIST_QUALITIES = [
 /** What a list or a followed channel is recorded in, unless chosen otherwise. */
 export const LIST_DEFAULT = 'hd1080';
 
+/** The list quality nearest below a video's height (« Suivre la chaîne » from a card): the default when unknown. */
+export const listQualityFor = (height?: number): string => (height ? (LIST_QUALITIES.find((q) => q.height <= height) ?? LIST_QUALITIES[LIST_QUALITIES.length - 1]!).id : LIST_DEFAULT);
+
 /** A LIST_QUALITIES entry (the default one for an unknown id). */
 export const listQuality = (id: string) => LIST_QUALITIES.find((x) => x.id === id) ?? LIST_QUALITIES.find((x) => x.id === LIST_DEFAULT)!;
 
