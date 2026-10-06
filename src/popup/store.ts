@@ -32,9 +32,27 @@ export function useGrabby(fixedTab?: number) {
       p.postMessage({ type: 'subscribe', tabId } satisfies PopupToBg);
     };
     void connect();
+    // The side panel stays open while the user goes from tab to tab: it follows the one shown.
+    const side = document.documentElement.hasAttribute('data-side') && fixedTab === undefined;
+    let windowId: number | undefined;
+    const follow = ({ tabId, windowId: w }: { tabId: number; windowId: number }) => {
+      if (w === windowId) port.current?.postMessage({ type: 'subscribe', tabId } satisfies PopupToBg);
+    };
+    const moved = (tabId: number, change: { url?: string }, tab: chrome.tabs.Tab) => {
+      if (change.url && tab.active && tab.windowId === windowId) port.current?.postMessage({ type: 'subscribe', tabId } satisfies PopupToBg);
+    };
+    if (side) {
+      void chrome.windows.getCurrent().then((w) => (windowId = w.id));
+      chrome.tabs.onActivated.addListener(follow);
+      chrome.tabs.onUpdated.addListener(moved);
+    }
     return () => {
       disposed = true;
       p?.disconnect();
+      if (side) {
+        chrome.tabs.onActivated.removeListener(follow);
+        chrome.tabs.onUpdated.removeListener(moved);
+      }
     };
   }, []);
 

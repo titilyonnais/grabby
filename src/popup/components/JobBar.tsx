@@ -2,7 +2,8 @@ import { useEffect, useState } from 'preact/hooks';
 import type { PopupToBg } from '../../shared/messages';
 import type { Job } from '../../shared/types';
 import { hhmm, minutesOf } from '../../shared/schedule';
-import { size, t } from '../i18n';
+import { browserName, reportOf, systemName } from '../../shared/report';
+import { size, t, uiLang } from '../i18n';
 import { Icon } from './Icon';
 
 const ACTIVE = ['queued', 'downloading', 'capturing', 'processing', 'saving', 'paused'];
@@ -11,6 +12,47 @@ export const isActive = (j: Job | undefined): boolean => !!j && ACTIVE.includes(
 
 /** A download pauses while it fetches or records (not while the file is being assembled). */
 export const canPause = (j: Job): boolean => (!j.live || j.status === 'queued') && (j.status === 'downloading' || j.status === 'queued' || j.status === 'capturing');
+
+/** « Diagnostic clair »: what went wrong, what to do, and a report to paste (no address in it). */
+function Diagnosis({ job }: { job: Job }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const code = job.error ?? 'unknown';
+  const fix = t(`fix_${code}`);
+  const copy = async () => {
+    const nav = navigator as Navigator & {
+      userAgentData?: { brands: { brand: string; version: string }[] };
+    };
+    const text = reportOf(job, {
+      version: chrome.runtime.getManifest().version,
+      browser: browserName(navigator.userAgent, nav.userAgentData?.brands),
+      system: systemName(navigator.userAgent),
+      lang: uiLang(),
+    });
+    await navigator.clipboard.writeText(text).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+  return (
+    <div class="diag">
+      <button class="diag__why" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Icon name="info" size={14} />
+        {t('diagWhy')}
+        <Icon name="chevron" size={14} />
+      </button>
+      {open && (
+        <div class="diag__body">
+          {fix !== `fix_${code}` && <p>{fix}</p>}
+          <button class="btn btn--soft btn--small" onClick={() => void copy()}>
+            <Icon name={copied ? 'check' : 'copy'} size={14} />
+            {copied ? t('diagCopied') : t('diagCopy')}
+          </button>
+          <p class="hint">{t('diagPrivate')}</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** "12:05" since a live recording started. */
 function since(ts: number): string {
@@ -148,6 +190,7 @@ export function JobBar({ job, send, canFinish = true }: { job: Job; send: (m: Po
           <Icon name={job.status === 'canceled' ? 'close' : 'alert'} size={16} />
           <span>{job.status === 'canceled' ? t('st_canceled') : t(`err_${job.error ?? 'unknown'}`)}</span>
         </p>
+        {job.status === 'error' && <Diagnosis job={job} />}
         <div class="job__actions">
           <button class="btn btn--soft" onClick={() => send({ type: 'dismiss', jobId: job.id })}>
             {t('dismiss')}
@@ -204,8 +247,8 @@ export function JobBar({ job, send, canFinish = true }: { job: Job; send: (m: Po
           )
         )}
         {(job.status === 'capturing' || (job.live && job.status === 'downloading') || (paused && job.kind === 'capture' && job.bytes > 0)) && canFinish && (
-          <button class="btn btn--primary btn--icon" title={t('finishCapture')} aria-label={t('finishCapture')} onClick={() => send({ type: 'finish-capture', jobId: job.id })}>
-            <Icon name="stop" />
+          <button class="btn btn--primary btn--icon btn--stop" title={t('finishCapture')} aria-label={t('finishCapture')} onClick={() => send({ type: 'finish-capture', jobId: job.id })}>
+            <Icon name="stop" size={20} />
           </button>
         )}
         <button class="btn btn--soft btn--icon" title={t('cancel')} aria-label={t('cancel')} onClick={() => send({ type: 'cancel', jobId: job.id })}>

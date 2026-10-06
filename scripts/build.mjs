@@ -44,6 +44,7 @@ async function buildAll() {
       rollupOptions: {
         input: {
           popup: resolve(root, 'src/pages/popup.html'),
+          sidepanel: resolve(root, 'src/pages/sidepanel.html'),
           app: resolve(root, 'src/pages/app.html'),
           offscreen: resolve(root, 'src/pages/offscreen.html'),
           'capture-sink': resolve(root, 'src/pages/capture-sink.html'),

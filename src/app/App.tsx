@@ -4,13 +4,16 @@ import { Icon, type IconName } from '../popup/components/Icon';
 import { isActive } from '../popup/components/JobBar';
 import { t } from '../popup/i18n';
 import { useGrabby } from '../popup/store';
-import { rememberTheme } from '../popup/theme';
+import { applyLook, rememberTheme } from '../popup/theme';
 import { Addresses } from './sections/Addresses';
 import { Backup } from './sections/Backup';
 import { Channels } from './sections/Channels';
+import { Images } from './sections/Images';
 import { Join } from './sections/Join';
+import { Later } from './sections/Later';
 import { Library } from './sections/Library';
 import { Rules } from './sections/Rules';
+import { Stats } from './sections/Stats';
 import { Workshop } from './sections/Workshop';
 
 interface Section {
@@ -22,12 +25,20 @@ interface Section {
 
 /** The sections, in groups: what was saved, what to download, what to make, how it works. */
 const GROUPS: { id: string; sections: Section[] }[] = [
-  { id: 'files', sections: [{ id: 'library', icon: 'grid', color: '#ff5b4f' }] },
+  {
+    id: 'files',
+    sections: [
+      { id: 'library', icon: 'grid', color: '#ff5b4f' },
+      { id: 'stats', icon: 'chart', color: '#e0679b' },
+    ],
+  },
   {
     id: 'get',
     sections: [
       { id: 'batch', icon: 'link', color: '#4f8df5' },
+      { id: 'later', icon: 'later', color: '#6d7cf5' },
       { id: 'channels', icon: 'bell', color: '#ef4444' },
+      { id: 'images', icon: 'image', color: '#e08a1e' },
     ],
   },
   {
@@ -48,7 +59,7 @@ const GROUPS: { id: string; sections: Section[] }[] = [
 const SECTIONS = GROUPS.flatMap((g) => g.sections);
 
 const fromHash = () => {
-  const h = decodeURIComponent(location.hash.slice(1));
+  const h = decodeURIComponent(location.hash.slice(1)).split('?')[0]!;
   return SECTIONS.some((s) => s.id === h) ? h : 'library';
 };
 
@@ -76,6 +87,9 @@ export function AppPage() {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light';
     rememberTheme(theme);
   }, [dark, theme]);
+  useEffect(() => {
+    if (state?.settings) applyLook(state.settings);
+  }, [state?.settings.accent, state?.settings.contrast]);
 
   // The highlight under the current section slides to the one chosen.
   const nav = useRef<HTMLElement>(null);
@@ -135,6 +149,7 @@ export function AppPage() {
                       </span>
                       <span class="ap__linktext">{t(`app_${s.id}`)}</span>
                       {s.id === 'batch' && waiting ? <span class="count">{waiting}</span> : null}
+                      {s.id === 'later' && state?.later?.length ? <span class="count count--soft">{state.later.length}</span> : null}
                       {s.id === 'channels' && state?.watches?.length ? <span class="count count--soft">{state.watches.length}</span> : null}
                       {s.id === 'library' && active.length ? <span class="count">{active.length}</span> : null}
                     </a>
@@ -182,8 +197,14 @@ export function AppPage() {
             </div>
           ) : section === 'library' ? (
             <Library history={state.history} jobs={state.jobs} send={send} go={go} />
+          ) : section === 'stats' ? (
+            <Stats history={state.history} go={go} />
           ) : section === 'batch' ? (
             <Addresses items={state.batch ?? []} send={send} />
+          ) : section === 'later' ? (
+            <Later items={state.later ?? []} at={state.laterAt} send={send} />
+          ) : section === 'images' ? (
+            <Images />
           ) : section === 'channels' ? (
             <Channels watches={state.watches ?? []} jobs={state.jobs} send={send} preferred={{ video: state.settings.videoFormat, audio: state.settings.audioFormat }} />
           ) : section === 'workshop' ? (

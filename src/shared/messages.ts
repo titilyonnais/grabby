@@ -4,6 +4,8 @@ import type { Release } from './release';
 import type { YtList } from './ytlist';
 import type { BatchItem, BatchMode } from './batch';
 import type { Watch } from './feeds';
+import type { LaterItem } from './later';
+import type { Transcript } from './transcript';
 import type { Finish } from './finish';
 
 /** What a download asks for besides the quality and the format. */
@@ -103,11 +105,19 @@ export type ContentToBg =
   /** The "done" bubble's button. */
   | { type: 'show-download'; downloadId: number }
   /** The button over a video: `src`, the video's address when it has one. */
-  | { type: 'grab'; src?: string; mode?: 'video' | 'audio' };
+  | { type: 'grab'; src?: string; mode?: 'video' | 'audio' }
+  /** « Photo »: the picture on screen, read by the page (`dataUrl`) or to be cut from a screenshot (`rect`, CSS pixels). */
+  | { type: 'snap'; dataUrl?: string; rect?: { x: number; y: number; w: number; h: number }; dpr?: number; time?: number }
+  /** « Plus tard »: the video (or the page) kept aside, to be downloaded later. */
+  | { type: 'later'; src?: string };
 
 /* ---------- service worker → content script ---------- */
 export type BgToContent =
   | { type: 'scan' }
+  /** « Toutes les images »: the pictures of the page (answered with PageImage[]). */
+  | { type: 'images' }
+  /** « Capture instantanée »: a photo of the video on screen (the keyboard shortcut). */
+  | { type: 'photo' }
   /** `session`: which recording session of the job (0 first); `from`: where it starts again. */
   | { type: 'capture-start'; jobId: string; videoIndex: number; clip?: Clip; session?: number; from?: number; live?: boolean }
   /** "Aperçu": the page's own player plays the part chosen. */
@@ -140,6 +150,9 @@ export interface PopupState {
   watches?: Watch[];
   /** Pasted addresses being opened (the full page only). */
   batch?: BatchItem[];
+  /** « À télécharger plus tard », and when it goes by itself. */
+  later?: LaterItem[];
+  laterAt?: number;
 }
 
 export type PopupToBg =
@@ -171,14 +184,22 @@ export type PopupToBg =
   | { type: 'open-shortcuts' }
   | { type: 'redo'; id: string }
   | { type: 'clear-history' }
-  | { type: 'history-remove'; id: string }
+  /** Taken out of the library; `restore`: « Annuler », put back. */
+  | { type: 'history-remove'; ids: string[] }
+  | { type: 'history-restore'; entries: HistoryEntry[] }
+  | { type: 'history-mark'; ids: string[]; patch: { fav?: boolean; tags?: string[]; addTag?: string; removeTag?: string } }
   | { type: 'settings'; patch: Partial<Settings> }
   | { type: 'batch-remove'; id: string }
   | { type: 'batch-retry'; id: string }
   /** `all`: also the addresses still waiting. */
   | { type: 'batch-clear'; all: boolean }
   | { type: 'watch-remove'; id: string }
-  | { type: 'watch-change'; id: string; patch: Partial<Pick<Watch, 'mode' | 'quality' | 'format'>> };
+  | { type: 'watch-change'; id: string; patch: Partial<Pick<Watch, 'mode' | 'quality' | 'format'>> }
+  /** « Plus tard »: a video of the page kept aside, the list removed from, downloaded, or set for a time. */
+  | { type: 'later-add'; mediaId: string; mode?: BatchMode }
+  | { type: 'later-remove'; id: string }
+  | { type: 'later-launch'; ids?: string[] }
+  | { type: 'later-schedule'; at?: number };
 
 /** Asked by an extension page, answered (chrome.runtime.sendMessage). */
 export type AppRequest =
@@ -188,7 +209,15 @@ export type AppRequest =
   | { app: 'export' }
   | { app: 'import'; data: unknown }
   /** Opens the full page (from the popup: the popup closes). */
-  | { app: 'open-app'; section?: string }
+  | { app: 'open-app'; section?: string; tabId?: number }
+  /** What is said in saved files (the library's search and export). */
+  | { app: 'texts'; ids: string[] }
+  /** Their pictures, kept for when there is no network. */
+  | { app: 'thumbs'; ids: string[] }
+  /** What is said in a saved file, as edited in the library. */
+  | { app: 'text-save'; id: string; text: Transcript }
+  /** The pictures of a tab's page. */
+  | { app: 'page-images'; tabId: number }
   /** Where a finished download is on disk (the library plays it from there). */
   | { app: 'file-paths'; ids: number[] };
 
@@ -196,7 +225,8 @@ export type BgToPopup = { type: 'state'; state: PopupState };
 
 /* ---------- service worker ⇄ offscreen ---------- */
 export type BgToOffscreen =
-  | { target: 'offscreen'; type: 'run'; jobId: string; plan: Plan; rate?: number }
+  /** `verify`: the file is read again once made (see verify.ts). */
+  | { target: 'offscreen'; type: 'run'; jobId: string; plan: Plan; rate?: number; verify?: boolean }
   /** The speed limit changed (bytes per second, 0: none). */
   | { target: 'offscreen'; type: 'rate'; rate: number }
   | { target: 'offscreen'; type: 'cancel'; jobId: string }
@@ -237,6 +267,8 @@ export type OffscreenToBg =
       name?: string;
       /** Text files next to it (the summary): `tag` names them ("Title.summary.txt"). */
       notes?: { text: string; tag: string }[];
+      /** What is said in it (subtitles or transcription), on the file's clock: kept for the library's search. */
+      transcript?: Transcript;
     }
   | { target: 'bg'; type: 'job-error'; jobId: string; error: ErrorCode }
   | { target: 'bg'; type: 'job-paused'; jobId: string }

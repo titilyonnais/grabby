@@ -11,6 +11,7 @@ import { deepVideos } from '../shared/dom';
 import type { BgToContent, ContentToBg, PageInfo, PageVideo, YtInfo } from '../shared/messages';
 import { cleanTitle } from '../shared/title';
 import { readYtList } from '../shared/ytlist';
+import { pageImages } from './pageimages';
 
 type HookUp =
   | { type: 'drm'; keySystem: string }
@@ -559,10 +560,13 @@ hook.onmessage = (e: MessageEvent) => {
 
 /* --------------------------------------------------- service worker ⇄ us */
 
-chrome.runtime.onMessage.addListener((msg: BgToContent) => {
+chrome.runtime.onMessage.addListener((msg: BgToContent, _sender, respond) => {
   switch (msg.type) {
     case 'scan':
       report(true);
+      break;
+    case 'images':
+      if (isTop) respond(pageImages());
       break;
     case 'capture-start':
       void startCapture(msg.jobId, msg.videoIndex, msg.clip, Number.isInteger(msg.session) ? msg.session! : 0, msg.from, msg.live === true);

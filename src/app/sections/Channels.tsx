@@ -13,14 +13,15 @@ import { relativeTime, t, uiLang } from '../../popup/i18n';
 
 const VIDEO = ['mp4', 'webm', 'mkv'] as const;
 
-const pageOf = (w: Watch) => (w.kind === 'channel' ? `https://www.youtube.com/${w.handle ?? `channel/${w.key}`}` : `https://www.youtube.com/playlist?list=${w.key}`);
+const pageOf = (w: Watch) =>
+  w.kind === 'feed' ? (w.site ?? w.key) : w.kind === 'channel' ? `https://www.youtube.com/${w.handle ?? `channel/${w.key}`}` : `https://www.youtube.com/playlist?list=${w.key}`;
 const thumbOf = (id: string) => `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
 
 /** The channel's picture, or its first letter on a tint of its own. */
 function Avatar({ w }: { w: Watch }) {
   const [broken, setBroken] = useState(false);
   const src = w.avatar ?? (w.kind === 'playlist' && w.recent?.[0] ? thumbOf(w.recent[0].id) : undefined);
-  if (src && !broken) return <img class={`avatar${w.kind === 'playlist' ? ' avatar--list' : ''}`} src={src} alt="" loading="lazy" referrerpolicy="no-referrer" onError={() => setBroken(true)} />;
+  if (src && !broken) return <img class={`avatar${w.kind !== 'channel' ? ' avatar--list' : ''}`} src={src} alt="" loading="lazy" referrerpolicy="no-referrer" onError={() => setBroken(true)} />;
   const hue = [...w.key].reduce((n, c) => (n * 31 + c.charCodeAt(0)) % 360, 7);
   return (
     <span class="avatar avatar--letter" style={{ '--h': String(hue) }} aria-hidden="true">
@@ -34,10 +35,18 @@ function Recent({ e, w, job, index }: { e: FeedEntry; w: Watch; job?: Job; index
   const taken = w.taken?.includes(e.id);
   const before = e.published < w.since - 60 * 60_000;
   const status = job ? 'busy' : taken ? 'taken' : before ? 'before' : 'new';
+  const feed = w.kind === 'feed';
+  const picture = feed ? (e.thumbnail ?? w.avatar) : thumbOf(e.id);
   return (
     <li class={`recent recent--${status}`} style={{ '--i': String(index) }}>
-      <a class="recent__thumb" href={`https://www.youtube.com/watch?v=${e.id}`} target="_blank" rel="noreferrer" title={e.title}>
-        <img src={thumbOf(e.id)} alt="" loading="lazy" referrerpolicy="no-referrer" />
+      <a
+        class={`recent__thumb${feed && !picture ? ' recent__thumb--sound' : ''}`}
+        href={feed ? (e.link ?? e.url) : `https://www.youtube.com/watch?v=${e.id}`}
+        target="_blank"
+        rel="noreferrer"
+        title={e.title}
+      >
+        {picture ? <img src={picture} alt="" loading="lazy" referrerpolicy="no-referrer" /> : <Icon name={e.audio ? 'wave' : 'film'} size={26} />}
         <span class="recent__status">
           {status === 'busy' ? (
             <>
@@ -97,8 +106,18 @@ export function Channels({ watches, jobs, send, preferred }: { watches: Watch[];
   };
   // Videos of a list being recorded, by video id.
   const recording = new Map(jobs.filter((j) => isActive(j) && j.entry).map((j) => [j.entry!.id, j]));
+  // A podcast's episodes being saved, by file address.
+  const saving = new Map(jobs.filter((j) => isActive(j) && j.sourceUrl).map((j) => [j.sourceUrl!, j]));
+  const jobOf = (w: Watch, e: FeedEntry) => (w.kind === 'feed' ? (e.url ? saving.get(e.url) : undefined) : recording.get(e.id));
   const qualityOptions = LIST_QUALITIES.map((q) => ({ value: q.id as string, label: q.label, ...(q.height > 1080 ? { detail: t('watchVp9') } : {}) }));
-  const what = (w: Watch) => (w.mode === 'audio' ? `${t('batchModeAudio')}${w.format ? ` · ${FORMAT_NAMES[w.format]}` : ''}` : `${listQuality(w.quality).label}${w.format ? ` · ${FORMAT_NAMES[w.format]}` : ''}`);
+  const what = (w: Watch) =>
+    w.kind === 'feed'
+      ? w.mode === 'audio'
+        ? t('batchModeAudio')
+        : t('batchModeVideo')
+      : w.mode === 'audio'
+        ? `${t('batchModeAudio')}${w.format ? ` · ${FORMAT_NAMES[w.format]}` : ''}`
+        : `${listQuality(w.quality).label}${w.format ? ` · ${FORMAT_NAMES[w.format]}` : ''}`;
   const fmt = new Intl.NumberFormat(uiLang());
 
   return (
@@ -112,7 +131,7 @@ export function Channels({ watches, jobs, send, preferred }: { watches: Watch[];
               class="field__input"
               type="url"
               value={url}
-              placeholder="https://www.youtube.com/@…"
+              placeholder={t('watchUrlPlaceholder')}
               onInput={(e) => setUrl((e.target as HTMLInputElement).value)}
               onKeyDown={(e) => e.key === 'Enter' && url.trim() && !busy && void add()}
             />
@@ -167,7 +186,9 @@ export function Channels({ watches, jobs, send, preferred }: { watches: Watch[];
                       {w.title}
                     </a>
                     <span class="chan__sub">
-                      {[w.kind === 'channel' ? w.handle : t('watchKindPlaylist'), w.subscribers].filter(Boolean).join(' · ') || t('watchKindChannel')}
+                      {w.kind === 'feed'
+                        ? [t('watchKindFeed'), w.site ? new URL(w.site).hostname.replace(/^www\./, '') : ''].filter(Boolean).join(' · ')
+                        : [w.kind === 'channel' ? w.handle : t('watchKindPlaylist'), w.subscribers].filter(Boolean).join(' · ') || t('watchKindChannel')}
                     </span>
                     <span class="chan__facts">
                       <span class="tag">{what(w)}</span>
@@ -182,12 +203,14 @@ export function Channels({ watches, jobs, send, preferred }: { watches: Watch[];
                     </span>
                   </div>
                   <div class="chan__tools">
-                    <Select
-                      label={t('watchWhat')}
-                      value={w.mode === 'audio' ? 'audio' : w.quality}
-                      options={[...qualityOptions.map((q) => ({ ...q, group: t('fmt_group_video') })), { value: 'audio', label: t('batchModeAudio'), group: t('fmt_group_audio') }]}
-                      onChange={(v) => send({ type: 'watch-change', id: w.id, patch: v === 'audio' ? { mode: 'audio' } : { mode: 'video', quality: v } })}
-                    />
+                    {w.kind !== 'feed' && (
+                      <Select
+                        label={t('watchWhat')}
+                        value={w.mode === 'audio' ? 'audio' : w.quality}
+                        options={[...qualityOptions.map((q) => ({ ...q, group: t('fmt_group_video') })), { value: 'audio', label: t('batchModeAudio'), group: t('fmt_group_audio') }]}
+                        onChange={(v) => send({ type: 'watch-change', id: w.id, patch: v === 'audio' ? { mode: 'audio' } : { mode: 'video', quality: v } })}
+                      />
+                    )}
                     <button class="hcard__btn" disabled={!!checking} title={t('watchCheck')} aria-label={t('watchCheck')} onClick={() => void check(w.id)}>
                       <span class={checking === w.id ? 'spinning' : ''}>
                         <Icon name="retry" size={15} />
@@ -215,7 +238,7 @@ export function Channels({ watches, jobs, send, preferred }: { watches: Watch[];
                 {w.recent?.length ? (
                   <ul class="recents" aria-label={t('watchRecent')}>
                     {w.recent.slice(0, 6).map((e, k) => (
-                      <Recent key={e.id} e={e} w={w} index={k} {...(recording.get(e.id) ? { job: recording.get(e.id)! } : {})} />
+                      <Recent key={e.id} e={e} w={w} index={k} {...(jobOf(w, e) ? { job: jobOf(w, e)! } : {})} />
                     ))}
                   </ul>
                 ) : null}

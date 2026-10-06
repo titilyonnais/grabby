@@ -13,6 +13,135 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 ## [Non publié]
 
+## [2.0.0] — 2026-10-06
+
+La grosse mise à jour : une bibliothèque qui retrouve **ce qui est dit** dans tes vidéos,
+un vrai lecteur, des favoris et des collections, le **panneau latéral**, la couleur de ton
+choix, les **podcasts**, les vidéos **à télécharger plus tard**, **toutes les images**
+d'une page en un .zip, la **photo** d'une vidéo, des fichiers **vérifiés** et des erreurs
+qui disent **quoi faire**. Majeure, parce que la bulle sur les vidéos, les réglages et le
+menu du clic droit changent de forme.
+
+### Ajouté
+- **Chercher ce qui est dit** : la recherche de la bibliothèque trouve aussi les mots
+  prononcés dans tes fichiers (leurs sous-titres ou leur transcription par l'IA locale),
+  sans tenir compte des accents ni des majuscules, même à cheval sur deux phrases. Chaque
+  résultat montre les moments où c'est dit ; un clic lance la lecture à cet instant.
+- **Lecteur amélioré** dans la bibliothèque : **vitesse** de 0,5× à 2×, **boucle A-B**,
+  **image par image** (avant et arrière), **photo** de l'image (en PNG, dans le dossier
+  de tes téléchargements), et le **texte synchronisé** à côté : la phrase en cours est
+  surlignée, un clic sur une phrase y saute. Au clavier : Espace, ←/→ (5 s), `,` et `.`
+  (une image), `[` et `]` (vitesse), A et B (boucle), S (photo), Échap.
+- **Reprendre la lecture** : le lecteur se souvient où tu t'es arrêté dans chaque fichier
+  et y reprend (« Reprise à 12:40 », avec « Depuis le début » si tu préfères).
+- **Exporter le texte** d'un fichier en **.txt** (avec les horaires), **.srt** (sous-titres)
+  ou **.md** (Markdown).
+- **Éditeur de sous-titres** : dans le lecteur, **Modifier** permet de corriger chaque
+  phrase, d'en supprimer, et de **décaler** tout le minutage (±0,1 s ou ±1 s) ; le texte
+  corrigé est gardé, cherché et exporté tel quel.
+- **Favoris et collections** : une étoile sur chaque fichier, des collections nommées
+  comme tu veux (un fichier peut être dans plusieurs), et des filtres en haut de la
+  bibliothèque pour n'afficher que les favoris ou une collection.
+- **Sélection multiple** : **Sélectionner**, puis coche des fichiers (ou **Tout
+  sélectionner**) pour les mettre en favoris, dans une collection, les retélécharger ou les
+  retirer d'un coup.
+- **Annuler une suppression** : un fichier retiré de la bibliothèque (ou plusieurs) peut
+  être remis pendant 8 secondes avec **Annuler**.
+- **Raccourcis clavier** de la bibliothèque : `/` pour chercher, flèches pour se déplacer
+  entre les fichiers, Entrée pour lire, F pour le favori, X pour sélectionner, Suppr pour
+  retirer.
+- **Miniatures hors ligne** : la bibliothèque garde une petite copie de l'image de chaque
+  fichier, pour l'afficher même sans réseau ou quand le site l'a retirée.
+- **Statistiques** (nouvelle rubrique de la page complète) : fichiers et place prise,
+  enregistrements des 7 derniers jours, **un graphique par semaine** sur 12 semaines, les
+  **sites** d'où viennent tes fichiers, la répartition **vidéo / son / image**, les
+  formats, ton heure favorite et ton record de jours d'affilée. Tout est compté sur ton
+  ordinateur.
+- **Déjà téléchargé** : la carte d'une vidéo que tu as déjà enregistrée le dit
+  (« Déjà téléchargé il y a 2 jours · MP4 · 1080p · 85 Mo »), avec **Ouvrir** et
+  **Afficher dans le dossier**. Une vidéo YouTube est reconnue par son identifiant, les
+  autres par leur page, leur titre et leur place dans la page (deux vidéos d'une même
+  page ne se confondent pas).
+- **À télécharger plus tard** : mets une vidéo de côté depuis la bulle sur les vidéos
+  (**Plus tard**), le clic droit, ou le bouton **Plus tard** de sa carte. La nouvelle
+  rubrique **Plus tard** de la page complète les liste ; **Tout télécharger** maintenant,
+  une par une, ou **Programmer** une heure (la nuit, par exemple).
+- **Podcasts et flux RSS** : la rubrique **Chaînes suivies**, renommée **Chaînes et
+  podcasts**, suit maintenant aussi un **podcast** ou n'importe quel flux RSS ou Atom qui contient des fichiers audio ou vidéo. Colle
+  l'adresse du flux, ou simplement celle du site du podcast (Grabby trouve le flux qu'il
+  annonce). Chaque nouvel épisode est téléchargé tout seul, **tel quel** (un MP3 reste un
+  MP3, sans réencodage), avec sa pochette.
+- **Toutes les images** d'une page (nouvelle rubrique **Images de la page**) : les
+  images, leurs grandes versions (`srcset`), les liens vers des images, les fonds et
+  l'image de partage ; un filtre de taille (toutes, ≥ 200, 600 ou 1200 px), la sélection,
+  puis **Enregistrer en .zip** (fabriqué sur ton ordinateur) ou **Une par une**. Depuis le
+  clic droit → Grabby → « Toutes les images de la page… », ou le bouton **Images de la
+  page** de la fenêtre.
+- **Photo de la vidéo** (capture instantanée) : depuis la bulle sur les vidéos (**Photo**),
+  ou avec **Alt+Maj+S**. L'image est enregistrée en PNG, nommée d'après la vidéo et le
+  moment (« Titre (photo 4m05s).png »), et apparaît dans la bibliothèque.
+- **Clic droit Grabby** : un menu « Grabby » avec télécharger cette vidéo ou son son,
+  télécharger un lien (ou son son), mettre un lien ou la vidéo de la page **de côté pour
+  plus tard**, et **toutes les images de la page**.
+- **Barre d'adresse « gb »** : tape `gb`, un espace, puis un ou plusieurs liens, et
+  Entrée : Grabby les télécharge (`gb son …` pour le son seul). Les liens sans `https://`
+  sont acceptés.
+- **Plusieurs à la fois** : le nombre de téléchargements simultanés se règle de 1 à 4
+  (Réglages → Téléchargements).
+- **Fichiers vérifiés** (Réglages → Téléchargements → « Vérifier les fichiers », activé par défaut) : chaque fichier fabriqué est relu avant
+  d'être enregistré (sa structure : MP4, MKV/WebM, MP3, Ogg/Opus, FLAC, WAV, JPEG, PNG,
+  GIF, WebP), et un fichier téléchargé directement doit avoir la taille annoncée. Un
+  fichier abîmé ou coupé est **refait une fois** tout seul, puis signalé.
+- **Diagnostic clair** : sous une erreur, **Pourquoi et que faire ?** explique la cause en
+  une phrase et ce qu'il faut faire, et **Copier le rapport** met dans le presse-papiers
+  quelques lignes à joindre à un signalement (version, navigateur, site, erreur,
+  tentatives) — **jamais** l'adresse de la page ni le titre.
+- **Panneau latéral** : Grabby peut s'ouvrir dans le panneau latéral du navigateur
+  (Réglages → IA et pages → **Panneau latéral**). Il reste ouvert à côté de
+  la page et suit l'onglet que tu regardes.
+- **Couleur au choix** : corail, bleu, violet, vert, ambre ou rose, pour la fenêtre, la
+  page complète et la bulle sur les vidéos ; et un mode **contraste élevé** (textes et
+  bordures plus marqués).
+- **Notifications riches** : la notification de fin montre l'**image de la vidéo**, et
+  une ligne « Vidéo · 1080p · 85 Mo ».
+- **Réglages synchronisés** (désactivé par défaut) : tes réglages et tes règles suivent
+  ton compte de navigateur sur tes autres ordinateurs, par la synchronisation du
+  navigateur lui-même (aucun serveur de Grabby). L'historique et les fichiers restent sur
+  chaque ordinateur.
+- **Visite guidée** : quatre bulles au premier lancement présentent la fenêtre, la page
+  complète, les réglages et le reste (bulle, clic droit, `gb`, Alt+Maj+S). Elle se passe
+  d'un clic et se revoit depuis Réglages → IA et pages.
+- **Format vertical 9:16** dans les retouches : un bouton ouvre le recadrage sur un cadre
+  vertical à placer sur l'action, pour les Shorts, Reels et TikTok.
+- **Son plus propre** dans les retouches : moins de souffle et de bruit de fond (débruitage
+  spectral), les grondements et l'extrême aigu coupés, une voix plus régulière. Pour les
+  vidéos comme pour les fichiers son.
+
+### Modifié
+- **Bulle sur les vidéos** : elle n'affiche plus qu'un **rond Grabby** ; un clic la
+  déroule (Télécharger, Son seul, Photo, Plus tard) avec une animation, et elle se replie
+  après l'action. Elle prend la couleur choisie dans les réglages.
+- **Réglages réorganisés, sans défilement** : 7 rubriques en tuiles (Général, Formats,
+  Noms et dossiers, Téléchargements, Raccourcis, IA et pages, Synchro et mises à jour),
+  chacune tenant dans la fenêtre. L'ancienne rubrique « Apparence », qui ne contenait que
+  le thème, est devenue **Général** (thème, couleur, contraste, bulle sur les vidéos,
+  notifications) ; la rubrique « YouTube » a été répartie (bulle dans Général, passages
+  sponsorisés et volume égalisé dans Formats).
+- **Bouton Stop** : le carré du bouton d'arrêt est plus grand et plus lisible.
+- **Encodage plus rapide** : les retouches sans taille cible utilisent un réglage plus
+  rapide de l'encodeur (le fichier est un peu plus gros, fabriqué nettement plus vite).
+- **Menu du clic droit** : ses entrées sont regroupées sous « Grabby » (voir plus haut).
+- La page complète s'ouvre directement sur une rubrique (et sur l'onglet concerné) depuis
+  la fenêtre, le clic droit ou la barre d'adresse.
+
+### Limites connues
+- L'encodage reste fait par ffmpeg dans le navigateur, sur un seul cœur : le
+  multi-cœur demanderait d'isoler la page invisible de l'extension, ce qui empêcherait le
+  lecteur YouTube caché de fonctionner.
+- La photo d'une vidéo dont le site interdit la lecture de l'image passe par une capture
+  de l'onglet : la vidéo doit être visible à l'écran à ce moment-là.
+- Le .zip des images est limité à 1,5 Go ; au-delà, utilise **Une par une**.
+
 ## [1.11.0] — 2026-10-06
 
 Une version de finition : les bugs signalés sont corrigés (YouTube qui passait en 144p,
@@ -991,7 +1120,8 @@ Première version.
 - Capture YouTube expérimentale.
 - Interface en français et en anglais, thème clair et sombre.
 
-[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.11.0...HEAD
+[Non publié]: https://github.com/titilyonnais/grabby/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/titilyonnais/grabby/compare/v1.11.0...v2.0.0
 [1.11.0]: https://github.com/titilyonnais/grabby/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/titilyonnais/grabby/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/titilyonnais/grabby/compare/v1.8.0...v1.9.0

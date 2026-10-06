@@ -2,7 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { buildFilename, folderFor, FOLDER_MODES, NAME_PARTS, namePartsOf, templateOf, type FolderMode, type NamePart } from '../../shared/filename';
 import { AUDIO_FORMATS, FORMAT_NAMES, VIDEO_FORMATS } from '../../shared/formats';
-import type { Settings as S } from '../../shared/settings';
+import { ACCENTS, PARALLEL_CHOICES, type Accent, type Settings as S } from '../../shared/settings';
 import { hhmm, parseHhmm, RATE_LIMITS } from '../../shared/schedule';
 import { size, t } from '../i18n';
 import { Icon, type IconName } from './Icon';
@@ -38,16 +38,19 @@ function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange
   );
 }
 
-function Group({ title, icon, index, children }: { title: string; icon: IconName; index: number; children: ComponentChildren }) {
+function Group({ index, children }: { index: number; children: ComponentChildren }) {
   return (
     <section class="group" style={{ '--i': String(index) }}>
-      <h3 class="group__title">
-        <Icon name={icon} size={14} />
-        {title}
-      </h3>
       <div class="group__body">{children}</div>
     </section>
   );
+}
+
+/** The side panel of this window: Grabby next to the page while browsing. */
+async function openSidePanel() {
+  const win = await chrome.windows.getCurrent();
+  if (win.id !== undefined) await chrome.sidePanel.open({ windowId: win.id }).catch(() => {});
+  window.close();
 }
 
 /** A time of day the user types ("22:00", "7h"); what doesn't read as one goes back as it was. */
@@ -150,6 +153,14 @@ function FilePreview({ name, ext, folder }: { name: string; ext: string; folder:
 }
 
 function Help({ warn, onOpen }: { warn: boolean; onOpen: () => void }) {
+  const [open, setOpen] = useState(false);
+  if (!warn && !open)
+    return (
+      <button class="help-mini" onClick={() => setOpen(true)}>
+        <Icon name="info" size={14} />
+        {t('browserAsksNoteTitle')}
+      </button>
+    );
   return (
     <div class={`help${warn ? ' help--warn' : ''}`} role={warn ? 'alert' : undefined}>
       <span class="help__icon">
@@ -167,17 +178,16 @@ function Help({ warn, onOpen }: { warn: boolean; onOpen: () => void }) {
   );
 }
 
-/** The settings' sections, in the order of the menu. */
-const CATEGORIES = ['look', 'formats', 'files', 'downloads', 'keys', 'youtube', 'pages', 'updates'] as const;
+/** The settings' sections, in the order of the menu (two columns of tiles: no scrolling). */
+const CATEGORIES = ['look', 'formats', 'files', 'downloads', 'keys', 'pages', 'updates'] as const;
 type Category = (typeof CATEGORIES)[number];
 
 const CATEGORY_ICONS: Record<Category, IconName> = {
   look: 'sun',
   formats: 'film',
   files: 'folder',
-  downloads: 'clock',
+  downloads: 'download',
   keys: 'keyboard',
-  youtube: 'skip',
   pages: 'sparkle',
   updates: 'gift',
 };
@@ -186,28 +196,43 @@ const CATEGORY_ICONS: Record<Category, IconName> = {
 function summary(c: Category, s: S, keys: string | null): string {
   switch (c) {
     case 'look':
-      return t(`set_theme_${s.theme}`);
+      return `${t(`set_theme_${s.theme}`)} · ${t(`accent_${s.accent}`)}`;
     case 'formats':
       return `${FORMAT_NAMES[s.videoFormat]} · ${FORMAT_NAMES[s.audioFormat]}`;
     case 'files':
       return [t(`set_folder_${s.folder}`), s.saveAs ? t('set_sum_ask') : ''].filter(Boolean).join(' · ');
     case 'downloads':
-      return [
-        s.scheduleOn ? t('set_sum_hours', [hhmm(s.scheduleFrom), hhmm(s.scheduleTo)]) : t('set_sum_now'),
-        s.rateLimit ? `${size(s.rateLimit)}/s` : '',
-        s.notify ? t('set_sum_notify') : '',
-      ]
+      return [t('set_sum_parallel', String(s.parallel)), s.scheduleOn ? t('set_sum_hours', [hhmm(s.scheduleFrom), hhmm(s.scheduleTo)]) : '', s.rateLimit ? `${size(s.rateLimit)}/s` : '']
         .filter(Boolean)
         .join(' · ');
     case 'keys':
       return [keys || t('set_sum_nokeys'), t(s.quickMode === 'audio' ? 'set_quick_audio' : 'set_quick_video')].join(' · ');
-    case 'youtube':
-      return t(s.skipSponsors ? 'set_sum_sponsors_on' : 'set_sum_sponsors_off');
     case 'pages':
-      return `${t(s.overlayButton ? 'set_sum_overlay_on' : 'set_sum_overlay_off')} · ${t(s.aiModels ? 'set_sum_ai_on' : 'set_sum_ai_off')}`;
+      return t(s.aiModels ? 'set_sum_ai_on' : 'set_sum_ai_off');
     case 'updates':
-      return s.updateCheck ? t('set_sum_updates_on') : t('set_sum_updates_off');
+      return [s.sync ? t('set_sum_sync_on') : '', s.updateCheck ? t('set_sum_updates_on') : t('set_sum_updates_off')].filter(Boolean).join(' · ');
   }
+}
+
+/** Six colors to pick from, each a round swatch. */
+function Swatches({ value, onChange }: { value: Accent; onChange: (a: Accent) => void }) {
+  return (
+    <span class="swatches" role="radiogroup" aria-label={t('set_accent')}>
+      {ACCENTS.map((a) => (
+        <button
+          key={a}
+          class={`swatch swatch--${a}${a === value ? ' swatch--on' : ''}`}
+          role="radio"
+          aria-checked={a === value}
+          aria-label={t(`accent_${a}`)}
+          title={t(`accent_${a}`)}
+          onClick={() => onChange(a)}
+        >
+          <Icon name="check" size={12} />
+        </button>
+      ))}
+    </span>
+  );
 }
 
 export function Settings({ class: className, settings, browserAsks, onChange, onOpenBrowserSettings, install, onInstall, onOpenShortcuts, onClose }: Props) {
@@ -263,7 +288,7 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
 
   const groups: Record<Category, () => preact.JSX.Element> = {
     look: () => (
-      <Group title={t('set_group_look')} icon="sun" index={0}>
+      <Group index={0}>
         <div class="row-setting">
           <span class="setting__label">{t('set_theme')}</span>
           <Segmented
@@ -277,10 +302,17 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
             onChange={(theme) => onChange({ theme })}
           />
         </div>
+        <div class="row-setting">
+          <span class="setting__label">{t('set_accent')}</span>
+          <Swatches value={settings.accent} onChange={(accent) => onChange({ accent })} />
+        </div>
+        <Toggle label={t('set_contrast')} hint={t('set_contrast_hint')} checked={settings.contrast} onChange={(contrast) => onChange({ contrast })} />
+        <Toggle label={t('set_overlay')} hint={t('set_overlay_hint')} checked={settings.overlayButton} onChange={(overlayButton) => onChange({ overlayButton })} />
+        <Toggle label={t('set_notify')} hint={t('set_notify_hint')} checked={settings.notify} onChange={(notify) => onChange({ notify })} />
       </Group>
     ),
     formats: () => (
-      <Group title={t('set_group_formats')} icon="film" index={0}>
+      <Group index={0}>
         <div class="row-setting">
           <span class="setting__label">{t('set_video')}</span>
           <span class="setting__control">
@@ -305,75 +337,79 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
             />
           </span>
         </div>
+        <Toggle label={t('set_normalize')} hint={t('set_normalize_hint')} checked={settings.normalize} onChange={(normalize) => onChange({ normalize })} />
+        <Toggle label={t('set_sponsors')} hint={t('set_sponsors_hint')} checked={settings.skipSponsors} onChange={(skipSponsors) => onChange({ skipSponsors })} />
       </Group>
     ),
     files: () => (
-      <>
-        <Group title={t('set_template')} icon="file" index={0}>
-          <div class="row-setting row-setting--stack">
-            <span class="row-setting__text">
-              <span class="setting__hint">{t('set_template_hint')}</span>
-            </span>
-            <NameTiles template={settings.template} onChange={(template) => onChange({ template })} />
-            <FilePreview name={name} ext={settings.videoFormat} folder={folder} />
-          </div>
-        </Group>
-        <Group title={t('set_group_files')} icon="folder" index={1}>
-          <div class="row-setting">
-            <span class="row-setting__text">
-              <span class="setting__label">{t('set_folder')}</span>
-              <span class="setting__hint">{t('set_folder_hint')}</span>
-            </span>
-            <span class="setting__control">
-              <Select
-                label={t('set_folder')}
-                hideLabel
-                value={settings.folder}
-                options={FOLDER_MODES.map((m) => ({ value: m as FolderMode, label: t(`set_folder_${m}`), detail: t(`set_folder_${m}_detail`) }))}
-                onChange={(folder) => onChange({ folder })}
-              />
-            </span>
-          </div>
-          <Toggle label={t('set_saveAs')} hint={t('set_saveAs_hint')} checked={settings.saveAs} onChange={(saveAs) => onChange({ saveAs })} />
-          {!settings.saveAs && <Help warn={browserAsks} onOpen={onOpenBrowserSettings} />}
-        </Group>
-      </>
+      <Group index={0}>
+        <div class="row-setting row-setting--stack">
+          <span class="row-setting__text">
+            <span class="setting__label">{t('set_template')}</span>
+            <span class="setting__hint">{t('set_template_hint')}</span>
+          </span>
+          <NameTiles template={settings.template} onChange={(template) => onChange({ template })} />
+          <FilePreview name={name} ext={settings.videoFormat} folder={folder} />
+        </div>
+        <div class="row-setting">
+          <span class="row-setting__text">
+            <span class="setting__label">{t('set_folder')}</span>
+          </span>
+          <span class="setting__control">
+            <Select
+              label={t('set_folder')}
+              hideLabel
+              value={settings.folder}
+              options={FOLDER_MODES.map((m) => ({ value: m as FolderMode, label: t(`set_folder_${m}`), detail: t(`set_folder_${m}_detail`) }))}
+              onChange={(folder) => onChange({ folder })}
+            />
+          </span>
+        </div>
+        <Toggle label={t('set_saveAs')} hint={t('set_saveAs_hint')} checked={settings.saveAs} onChange={(saveAs) => onChange({ saveAs })} />
+        {!settings.saveAs && <Help warn={browserAsks} onOpen={onOpenBrowserSettings} />}
+      </Group>
     ),
     downloads: () => (
-      <>
-        <Group title={t('set_group_when')} icon="clock" index={0}>
-          <Toggle label={t('set_schedule')} hint={t('set_schedule_hint')} checked={settings.scheduleOn} onChange={(scheduleOn) => onChange({ scheduleOn })} />
-          {settings.scheduleOn && (
-            <div class="hours" role="group" aria-label={t('set_schedule')}>
-              <HourField label={t('set_schedule_from')} value={settings.scheduleFrom} onCommit={(scheduleFrom) => onChange({ scheduleFrom })} />
-              <HourField label={t('set_schedule_to')} value={settings.scheduleTo} onCommit={(scheduleTo) => onChange({ scheduleTo })} />
-            </div>
-          )}
-          {knowsConnection() && <Toggle label={t('set_wifi')} hint={t('set_wifi_hint')} checked={settings.wifiOnly} onChange={(wifiOnly) => onChange({ wifiOnly })} />}
-          <div class="row-setting">
-            <span class="row-setting__text">
-              <span class="setting__label">{t('set_rate')}</span>
-              <span class="setting__hint">{t('set_rate_hint')}</span>
-            </span>
-            <span class="setting__control">
-              <Select
-                label={t('set_rate')}
-                hideLabel
-                value={String(settings.rateLimit)}
-                options={RATE_LIMITS.map((r) => ({ value: String(r), label: r ? `${size(r)}/s` : t('set_rate_none') }))}
-                onChange={(v) => onChange({ rateLimit: Number(v) })}
-              />
-            </span>
+      <Group index={0}>
+        <div class="row-setting">
+          <span class="row-setting__text">
+            <span class="setting__label">{t('set_parallel')}</span>
+            <span class="setting__hint">{t('set_parallel_hint')}</span>
+          </span>
+          <Segmented
+            label={t('set_parallel')}
+            value={String(settings.parallel)}
+            options={PARALLEL_CHOICES.map((n) => [String(n), String(n)] as [string, string])}
+            onChange={(v) => onChange({ parallel: Number(v) })}
+          />
+        </div>
+        <Toggle label={t('set_schedule')} hint={t('set_schedule_hint')} checked={settings.scheduleOn} onChange={(scheduleOn) => onChange({ scheduleOn })} />
+        {settings.scheduleOn && (
+          <div class="hours" role="group" aria-label={t('set_schedule')}>
+            <HourField label={t('set_schedule_from')} value={settings.scheduleFrom} onCommit={(scheduleFrom) => onChange({ scheduleFrom })} />
+            <HourField label={t('set_schedule_to')} value={settings.scheduleTo} onCommit={(scheduleTo) => onChange({ scheduleTo })} />
           </div>
-        </Group>
-        <Group title={t('set_group_end')} icon="check" index={1}>
-          <Toggle label={t('set_notify')} hint={t('set_notify_hint')} checked={settings.notify} onChange={(notify) => onChange({ notify })} />
-          <Toggle label={t('set_normalize')} hint={t('set_normalize_hint')} checked={settings.normalize} onChange={(normalize) => onChange({ normalize })} />
-        </Group>
-      </>
+        )}
+        {knowsConnection() && <Toggle label={t('set_wifi')} hint={t('set_wifi_hint')} checked={settings.wifiOnly} onChange={(wifiOnly) => onChange({ wifiOnly })} />}
+        <div class="row-setting">
+          <span class="row-setting__text">
+            <span class="setting__label">{t('set_rate')}</span>
+          </span>
+          <span class="setting__control">
+            <Select
+              label={t('set_rate')}
+              hideLabel
+              value={String(settings.rateLimit)}
+              options={RATE_LIMITS.map((r) => ({ value: String(r), label: r ? `${size(r)}/s` : t('set_rate_none') }))}
+              onChange={(v) => onChange({ rateLimit: Number(v) })}
+            />
+          </span>
+        </div>
+        <Toggle label={t('set_verify')} hint={t('set_verify_hint')} checked={settings.verify} onChange={(verify) => onChange({ verify })} />
+      </Group>
     ),
     keys: () => (
-      <Group title={t('set_group_keys')} icon="keyboard" index={0}>
+      <Group index={0}>
         <div class="row-setting row-setting--stack">
           <span class="row-setting__text">
             <span class="setting__label">{t('set_keys')}</span>
@@ -399,16 +435,26 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
             onChange={(quickMode) => onChange({ quickMode })}
           />
         </div>
-      </Group>
-    ),
-    youtube: () => (
-      <Group title={t('set_group_youtube')} icon="skip" index={0}>
-        <Toggle label={t('set_sponsors')} hint={t('set_sponsors_hint')} checked={settings.skipSponsors} onChange={(skipSponsors) => onChange({ skipSponsors })} />
+        <div class="row-setting row-setting--stack">
+          <span class="row-setting__text">
+            <span class="setting__label">{t('set_omnibox')}</span>
+            <span class="setting__hint">{t('set_omnibox_hint')}</span>
+          </span>
+          <span class="keys-row">
+            <kbd class="keys">gb</kbd>
+            <span class="muted">{t('set_omnibox_then')}</span>
+          </span>
+        </div>
+        <div class="row-setting row-setting--stack">
+          <span class="row-setting__text">
+            <span class="setting__label">{t('set_menu')}</span>
+            <span class="setting__hint">{t('set_menu_hint')}</span>
+          </span>
+        </div>
       </Group>
     ),
     pages: () => (
-      <Group title={t('set_group_pages')} icon="sparkle" index={0}>
-        <Toggle label={t('set_overlay')} hint={t('set_overlay_hint')} checked={settings.overlayButton} onChange={(overlayButton) => onChange({ overlayButton })} />
+      <Group index={0}>
         <Toggle label={t('set_ai')} hint={t('set_ai_hint')} checked={settings.aiModels} onChange={(aiModels) => onChange({ aiModels })} />
         <div class="row-setting row-setting--stack">
           <span class="row-setting__text">
@@ -426,12 +472,35 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
               <Icon name="grid" size={15} />
               {t('set_app_open')}
             </button>
+            {chrome.sidePanel && (
+              <button class="btn btn--soft btn--small" onClick={() => void openSidePanel()}>
+                <Icon name="layers" size={15} />
+                {t('set_side_open')}
+              </button>
+            )}
           </span>
+        </div>
+        <div class="row-setting">
+          <span class="row-setting__text">
+            <span class="setting__label">{t('set_tour')}</span>
+            <span class="setting__hint">{t('set_tour_hint')}</span>
+          </span>
+          <button
+            class="btn btn--soft btn--small"
+            onClick={() => {
+              onChange({ tourDone: false });
+              onClose();
+            }}
+          >
+            <Icon name="play" size={14} />
+            {t('set_tour_again')}
+          </button>
         </div>
       </Group>
     ),
     updates: () => (
-      <Group title={t('set_group_updates')} icon="gift" index={0}>
+      <Group index={0}>
+        <Toggle label={t('set_sync')} hint={t('set_sync_hint')} checked={settings.sync} onChange={(sync) => onChange({ sync })} />
         <Toggle label={t('set_updates')} hint={t('set_updates_hint')} checked={settings.updateCheck} onChange={(updateCheck) => onChange({ updateCheck })} />
         <div class="row-setting row-setting--stack">
           <span class="row-setting__text">
@@ -472,16 +541,13 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
           <div key="menu" class={`scat scat--${dir === 'back' ? 'back' : 'first'}`}>
             <nav class="smenu" aria-label={t('openSettings')} style={{ '--n': String(CATEGORIES.length) }}>
               {CATEGORIES.map((c, i) => (
-                <button key={c} data-cat={c} class="smenu__item" style={{ '--i': String(i) }} onClick={() => open(c)}>
+                <button key={c} data-cat={c} class={`smenu__item${i === CATEGORIES.length - 1 ? ' smenu__item--wide' : ''}`} style={{ '--i': String(i) }} onClick={() => open(c)}>
                   <span class={`smenu__icon smenu__icon--${c}`}>
                     <Icon name={CATEGORY_ICONS[c]} size={17} />
                   </span>
                   <span class="smenu__text">
                     <span class="smenu__title">{t(`set_cat_${c}`)}</span>
                     <span class="smenu__sum">{summary(c, settings, keys)}</span>
-                  </span>
-                  <span class="smenu__chevron" aria-hidden="true">
-                    <Icon name="chevron" size={16} />
                   </span>
                 </button>
               ))}

@@ -81,7 +81,7 @@ export function HistoryList({ entries, send }: { entries: HistoryEntry[]; send: 
   const shown = matching(entries, query);
   const remove = (id: string) => {
     setLeaving((l) => [...l, id]);
-    setTimeout(() => send({ type: 'history-remove', id }), reducedMotion() ? 0 : REMOVE_MS);
+    setTimeout(() => send({ type: 'history-remove', ids: [id] }), reducedMotion() ? 0 : REMOVE_MS);
   };
   const days: { label: string; items: HistoryEntry[] }[] = [];
   for (const e of shown) {

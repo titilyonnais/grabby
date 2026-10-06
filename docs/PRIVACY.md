@@ -1,6 +1,6 @@
 # Grabby — Privacy policy / Politique de confidentialité
 
-_Last updated: 2026-10-06 (1.11.0)_
+_Last updated: 2026-10-06 (2.0.0)_
 
 ## English
 
@@ -91,6 +91,39 @@ Grabby does **not** collect, store on a server, sell or share any personal data.
   open yourself; Grabby sends it nowhere.
 - **Notifications.** When a download finishes, a small bubble appears in the page you are
   looking at, and a system notification is shown; both can be turned off in the settings.
+  The system notification shows the video's picture: when it is an address on the web,
+  Grabby fetches it (without cookies) to put it in the notification.
+- **What is said in your files.** When a download has subtitles or a transcription, its
+  text is kept in the extension's storage, so the library can search it, show it beside
+  the player and export it; you can edit it there. It goes when the file is taken out of
+  the library or the history is cleared. Nothing is sent.
+- **Pictures kept offline.** The library keeps a small copy (320 px) of each file's
+  picture in the extension's storage, fetched once (without cookies) from where the page
+  showed it, so it shows without the network.
+- **Where you stopped.** The library's player remembers where you stopped each file (a
+  number of seconds per file), in the extension's storage.
+- **Statistics** are counted from your history, on your device; nothing is sent.
+- **Kept for later.** The videos you put aside (address, title, picture, sound or video)
+  stay in the extension's storage until you download or remove them.
+- **Photo of a video.** When you take a photo of a video (the button on videos, Alt+Shift+S
+  or the library's player), Grabby reads the picture from the video, or, when the site
+  doesn't allow it, takes a screenshot of the visible tab (`captureVisibleTab`) and keeps
+  only the video's rectangle. It is saved as a file on your device; nothing is sent.
+- **All the page's images.** When you ask for them, Grabby lists the pictures of that page
+  (addresses and sizes) and downloads the ones you choose, from where the page loads them,
+  into a .zip made on your device.
+- **Podcasts.** When you follow a podcast or any feed with audio or video files, Grabby
+  reads that feed once an hour (without cookies) and downloads its new episodes from the
+  addresses the feed gives.
+- **Synced settings (off by default).** Only if you turn on "Synced settings": your
+  settings and rules are written to the browser's own synced storage (`chrome.storage.sync`),
+  which your browser carries to your other computers through your browser account. Grabby
+  has no server; your history, files and texts are never synced.
+- **Address bar.** Typing "gb" then links in the address bar hands those links to
+  Grabby, like pasting them in its list; the browser shows nothing to anyone else.
+- **Report to copy.** When a download fails, "Copy the report" puts a few lines in your
+  clipboard (Grabby's version, the browser, the site's name, the error); never the page's
+  address nor the title. You decide where to paste it.
 - **Downloads** are saved through the browser's own download manager to the location you
   choose.
 
@@ -202,7 +235,43 @@ et ne la partage pas.
   toi-même ; Grabby ne l'envoie nulle part.
 - **Notifications.** À la fin d'un téléchargement, une petite bulle apparaît dans la page
   que tu regardes et une notification système s'affiche ; tu peux les désactiver dans les
-  réglages.
+  réglages. La notification système montre l'image de la vidéo : quand c'est une adresse
+  web, Grabby la récupère (sans cookie) pour l'y mettre.
+- **Ce qui est dit dans tes fichiers.** Quand un téléchargement a des sous-titres ou une
+  transcription, son texte est gardé dans la mémoire de l'extension, pour que la
+  bibliothèque puisse le chercher, l'afficher à côté du lecteur et l'exporter ; tu peux
+  l'y modifier. Il part quand le fichier est retiré de la bibliothèque ou l'historique
+  effacé. Rien n'est envoyé.
+- **Miniatures hors ligne.** La bibliothèque garde une petite copie (320 px) de l'image de
+  chaque fichier dans la mémoire de l'extension, récupérée une fois (sans cookie) là où la
+  page l'affichait, pour l'afficher sans réseau.
+- **Où tu t'es arrêté.** Le lecteur de la bibliothèque retient où tu t'es arrêté dans
+  chaque fichier (un nombre de secondes par fichier), dans la mémoire de l'extension.
+- **Statistiques** : comptées à partir de ton historique, sur ton appareil ; rien n'est
+  envoyé.
+- **Plus tard.** Les vidéos mises de côté (adresse, titre, image, son ou vidéo) restent
+  dans la mémoire de l'extension jusqu'à ce que tu les télécharges ou les retires.
+- **Photo d'une vidéo.** Quand tu prends une photo d'une vidéo (la bulle sur les vidéos,
+  Alt+Maj+S ou le lecteur de la bibliothèque), Grabby lit l'image de la vidéo, ou, quand
+  le site ne le permet pas, fait une capture de l'onglet visible (`captureVisibleTab`) et
+  n'en garde que le rectangle de la vidéo. Elle est enregistrée en fichier sur ton
+  appareil ; rien n'est envoyé.
+- **Toutes les images de la page.** Quand tu le demandes, Grabby liste les images de cette
+  page (adresses et tailles) et télécharge celles que tu choisis, là où la page les
+  charge, dans un .zip fabriqué sur ton appareil.
+- **Podcasts.** Quand tu suis un podcast ou tout flux avec des fichiers audio ou vidéo,
+  Grabby lit ce flux une fois par heure (sans cookie) et télécharge ses nouveaux épisodes
+  depuis les adresses que le flux donne.
+- **Réglages synchronisés (désactivé par défaut).** Seulement si tu actives « Réglages
+  synchronisés » : tes réglages et tes règles sont écrits dans la mémoire synchronisée du
+  navigateur lui-même (`chrome.storage.sync`), que ton navigateur transporte vers tes
+  autres ordinateurs par ton compte de navigateur. Grabby n'a pas de serveur ; ton
+  historique, tes fichiers et tes textes ne sont jamais synchronisés.
+- **Barre d'adresse.** Taper « gb » puis des liens dans la barre d'adresse les donne à
+  Grabby, comme si tu les collais dans sa liste ; le navigateur ne montre rien à personne.
+- **Rapport à copier.** Quand un téléchargement échoue, « Copier le rapport » met quelques
+  lignes dans ton presse-papiers (la version de Grabby, le navigateur, le nom du site,
+  l'erreur) ; jamais l'adresse de la page ni le titre. C'est toi qui décides où le coller.
 - **Les téléchargements** passent par le gestionnaire de téléchargements du navigateur,
   vers l'emplacement de ton choix.
 

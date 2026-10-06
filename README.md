@@ -17,8 +17,31 @@
 
 ---
 
-<!-- release:1.11.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
-## Nouveautés de la version 1.11.0
+<!-- release:2.0.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
+## Nouveautés de la version 2.0.0
+
+- **Chercher ce qui est dit** : la bibliothèque retrouve les mots prononcés dans tes
+  vidéos (sous-titres ou transcription locale) et lance la lecture au bon moment.
+- **Lecteur amélioré** : vitesse, boucle A-B, image par image, photo de l'image, **reprise
+  là où tu t'étais arrêté**, texte synchronisé à côté, **éditeur de sous-titres** (corriger,
+  décaler) et **export** en .txt, .srt ou .md.
+- **Favoris, collections, sélection multiple** et **Annuler** après une suppression ;
+  raccourcis clavier ; miniatures gardées hors ligne ; nouvelle rubrique **Statistiques**.
+- **Déjà téléchargé** affiché sur la carte d'une vidéo déjà enregistrée, avec Ouvrir et
+  Afficher dans le dossier.
+- **À télécharger plus tard** (bulle, clic droit, carte), maintenant ou à l'heure choisie ;
+  **podcasts et flux RSS** suivis ; **toutes les images** d'une page en un .zip ; **photo**
+  d'une vidéo (bulle ou Alt+Maj+S) ; menu **clic droit Grabby** ; **`gb` + lien** dans la
+  barre d'adresse ; **1 à 4 téléchargements** à la fois.
+- **Fichiers vérifiés** (refaits une fois s'ils sont abîmés) et **diagnostic clair** :
+  pourquoi ça a échoué, quoi faire, et un rapport à copier (sans adresse ni titre).
+- **Panneau latéral**, **couleur au choix** et **contraste élevé**, **notifications avec
+  l'image** de la vidéo, **réglages synchronisés** (si tu l'actives), **visite guidée**.
+- Retouches : **format vertical 9:16**, **son plus propre**, encodage plus rapide.
+- **Modifié** : la bulle sur les vidéos n'est plus qu'un rond qui se déroule au clic ; les
+  réglages tiennent sans défilement en 7 rubriques ; le carré du bouton Stop est plus grand.
+
+**Rappel de la 1.11.0** :
 
 - **Corrigé** : YouTube ne repasse plus en **144p** après un téléchargement. Le lecteur
   caché de Grabby garde ses choix pour lui ; une qualité forcée par la 1.10.0 est réparée
@@ -26,10 +49,6 @@
 - **Corrigé** : un téléchargement lancé depuis le bouton sur la vidéo n'apparaît plus en
   double dans la fenêtre ; la vidéo et le son d'une même carte s'empilent, chacun avec
   son étiquette.
-- **Bouton sur les vidéos** plus clair : **Télécharger** en grand, **Son seul** en toutes
-  lettres, et une coche verte animée une fois lancé.
-- **Réglages en rubriques** : un menu de 8 rubriques avec un résumé de chacune, au lieu
-  d'une longue liste.
 - **Page complète redessinée** : menu en groupes, animations partout, **téléchargements
   en cours** détaillés dans la bibliothèque, **photo, @nom, abonnés et dernières vidéos**
   des chaînes suivies, qualité jusqu'à **4K** pour les chaînes et playlists.
@@ -237,19 +256,27 @@ Le détail de chaque version est dans le [journal des modifications](CHANGELOG.m
 - **Règles automatiques** par site (vidéo ou son, format, qualité, sous-titres, dossier),
   suivies aussi par le clic droit, le raccourci, le bouton sur les vidéos et la liste
   d'adresses.
-- **Bouton sur les vidéos** : au survol, télécharger d'un clic sans ouvrir Grabby ; sous le
-  lecteur YouTube aussi.
-- **Page complète** : **bibliothèque** avec lecteur et place prise, **liste d'adresses**
-  ouvertes deux par deux en arrière-plan, **chaînes YouTube suivies** (nouvelles vidéos
-  enregistrées seules), **atelier** pour les fichiers de l'ordinateur, **assembler** des
-  vidéos ou des sons bout à bout, **sauvegarde** des réglages dans un fichier.
+- **Bulle sur les vidéos** : un rond Grabby au survol ; un clic le déroule (Télécharger,
+  Son seul, Photo, Plus tard). Sous le lecteur YouTube aussi.
+- **Page complète** : **bibliothèque** (recherche dans ce qui est dit, lecteur avec vitesse,
+  boucle A-B, image par image, reprise, texte synchronisé, éditeur de sous-titres et
+  export ; favoris, collections, sélection multiple, Annuler), **statistiques**, **liste
+  d'adresses** ouvertes deux par deux en arrière-plan, **plus tard** (vidéos mises de côté,
+  à l'heure choisie), **chaînes et podcasts suivis** (nouvelles vidéos et épisodes
+  enregistrés seuls), **images de la page** en .zip, **atelier** pour les fichiers de
+  l'ordinateur, **assembler** des vidéos ou des sons bout à bout, **sauvegarde** des
+  réglages dans un fichier.
+- **Panneau latéral** : la même fenêtre, ouverte à côté de la page.
+- **Fichiers vérifiés** : chaque fichier est relu avant d'être enregistré, refait une fois
+  s'il est abîmé ; une erreur explique quoi faire et donne un rapport à copier.
 - **Quand télécharger** : plage horaire, Wi-Fi seulement (là où le navigateur le sait),
   vitesse maximale ; « Lancer maintenant » pour ne pas attendre.
 - **Prévenir des nouvelles versions**, si tu l'actives : une question par jour à GitHub ;
   **Mettre à jour** les installe en un clic (Windows, avec l'assistant).
-- **Clic droit et raccourcis** : « Télécharger cette vidéo avec Grabby » sur une vidéo,
-  Alt+Maj+G pour ouvrir Grabby, Alt+Maj+D pour télécharger la vidéo de la page (ou son son
-  seul, au choix).
+- **Clic droit, barre d'adresse et raccourcis** : un menu « Grabby » au clic droit
+  (vidéo, son, lien, plus tard, toutes les images), `gb` + un lien dans la barre
+  d'adresse, Alt+Maj+G pour ouvrir Grabby, Alt+Maj+D pour télécharger la vidéo de la page
+  (ou son son seul, au choix), Alt+Maj+S pour une photo de la vidéo.
 - **Vrais titres et miniatures** : métadonnées de la page, sinon une image de la vidéo.
 - **Rapide et reprenable** : morceaux téléchargés en parallèle (connexions ajustées au
   débit), gros fichiers en plusieurs plages ; **pause et reprise**, reprise automatique après
@@ -261,7 +288,8 @@ Le détail de chaque version est dans le [journal des modifications](CHANGELOG.m
 - **Noms de fichiers** à composer (titre, chaîne, qualité, format, site, date) et
   rangement dans Téléchargements, un dossier Grabby, par site ou par type.
 - Assemblage par **ffmpeg.wasm embarqué** : aucun code distant, rien n'est envoyé ailleurs.
-- Interface **français / anglais**, thème **clair / sombre / auto**.
+- Interface **français / anglais**, thème **clair / sombre / auto**, **six couleurs** au
+  choix et un mode **contraste élevé** ; **visite guidée** au premier lancement.
 
 ## Ce que Grabby ne fait pas (et pourquoi)
 
@@ -415,28 +443,36 @@ fichier**, de le **montrer dans son dossier**, de **retélécharger** (la page s
 derrière et le téléchargement repart tout seul, dans la même qualité et le même format) ou
 d'ouvrir la page.
 
-Sans ouvrir Grabby : **clic droit** sur une vidéo → « Télécharger cette vidéo avec
-Grabby », **Alt+Maj+D** pour la vidéo principale de la page (raccourcis modifiables dans
-`chrome://extensions/shortcuts`), ou le **bouton sur les vidéos** qui apparaît au survol
-(**Télécharger**, ou la note pour le son seul) et, sur YouTube, sous le lecteur.
+Sans ouvrir Grabby : **clic droit** → **Grabby** (cette vidéo, son son, un lien, plus tard,
+toutes les images), **Alt+Maj+D** pour la vidéo principale de la page, **Alt+Maj+S** pour
+une photo de la vidéo (raccourcis modifiables dans `chrome://extensions/shortcuts`),
+`gb` puis un ou plusieurs liens dans la barre d'adresse (`gb son …` pour le son seul),
+ou la **bulle sur les vidéos** qui apparaît au survol (un clic la déroule : **Télécharger**,
+**Son seul**, **Photo**, **Plus tard**) et, sur YouTube, sous le lecteur.
 
 **Page complète** (bouton en grille en haut de la popup) :
 
 | Section | Ce qu'elle fait |
 |---|---|
-| Bibliothèque | Tout ce que Grabby a enregistré, en grille : place prise par type, filtres par type et par site, recherche, lecteur intégré (après avoir autorisé « Accès aux URL de fichier » pour Grabby) |
+| Bibliothèque | Tout ce que Grabby a enregistré, en grille : place prise par type, filtres par type, site, favoris et collections, recherche dans les titres **et dans ce qui est dit**, sélection multiple, Annuler après une suppression, raccourcis clavier ; lecteur intégré avec vitesse, boucle A-B, image par image, photo, reprise, texte synchronisé, éditeur de sous-titres et export .txt/.srt/.md (après avoir autorisé « Accès aux URL de fichier » pour Grabby) |
+| Statistiques | Fichiers et place prise, les 7 derniers jours, un graphique sur 12 semaines, les sites, les types et les formats ; compté sur ton ordinateur |
 | Liste d'adresses | Colle des adresses (ou un texte qui en contient) : chaque page s'ouvre en arrière-plan, deux à la fois, sa vidéo est téléchargée selon tes règles (ou en vidéo, ou en son), puis l'onglet se ferme |
-| Chaînes suivies | Les chaînes et playlists YouTube suivies : leurs nouvelles vidéos sont enregistrées toutes seules (vérification toutes les heures), dans la qualité et le format choisis ; Vérifier maintenant, Ne plus suivre |
+| Plus tard | Les vidéos mises de côté (bulle, clic droit, carte) : Tout télécharger, une par une, ou Programmer une heure |
+| Chaînes et podcasts | Les chaînes et playlists YouTube, les podcasts et flux RSS/Atom suivis : leurs nouvelles vidéos et épisodes sont enregistrés tout seuls (vérification toutes les heures) ; Vérifier maintenant, Ne plus suivre |
+| Images de la page | Les images d'une page (grandes versions comprises), un filtre de taille, la sélection, puis un .zip ou une par une |
 | Atelier | Une vidéo ou un son de ton ordinateur, avec les mêmes retouches et la même IA, et un aperçu en direct ; un fichier `.srt`/`.vtt` à incruster ou traduire |
 | Assembler | Plusieurs fichiers mis bout à bout dans l'ordre choisi : copiés tels quels s'ils se ressemblent, sinon refaits en H.264 à la taille du premier |
 | Règles automatiques | Pour un site ou tous : vidéo ou son, format, qualité, langues de sous-titres, dossier |
 | Sauvegarde | Réglages, règles, historique et chaînes suivies dans un fichier JSON ; la restauration ajoute sans rien perdre |
 
-**Réglages** (icône à droite de la lune/du soleil) :
+**Réglages** (icône à droite de la lune/du soleil), en 7 rubriques sans défilement :
+Général, Formats, Noms et dossiers, Téléchargements, Raccourcis, IA et pages, Synchro et
+mises à jour.
 
 | Réglage | Effet |
 |---|---|
 | Thème | Auto, clair ou sombre |
+| Couleur, contraste élevé | Six couleurs pour Grabby (fenêtre, page complète, bulle sur les vidéos) ; textes et bordures plus marqués |
 | Format vidéo / Format audio | Format proposé par défaut dans les listes |
 | Me prévenir à la fin | Bulle dans la page et notification système (un clic ouvre le fichier) |
 | Égaliser le volume des fichiers son | Chaque fichier son au même niveau (−14 LUFS) ; le son est réencodé |
@@ -445,10 +481,14 @@ Grabby », **Alt+Maj+D** pour la vidéo principale de la page (raccourcis modifi
 | Nom du fichier | Cases à cocher : Titre (toujours), Chaîne, Qualité, Format, Site, Date, avec aperçu |
 | Seulement à certaines heures | Les nouveaux téléchargements attendent la plage choisie (« Lancer maintenant » pour ne pas attendre) |
 | Seulement en Wi-Fi | Attend le Wi-Fi ; proposé seulement là où le navigateur connaît la connexion (ChromeOS, Android) |
+| Téléchargements à la fois | De 1 à 4 en même temps (2 par défaut) |
 | Vitesse maximale | Limite le débit de tous les téléchargements (YouTube : le lecteur caché lit moins vite) |
+| Vérifier les fichiers | Relit chaque fichier avant de l'enregistrer et le refait une fois s'il est abîmé (activé par défaut) |
 | Raccourci clavier | La touche qui télécharge sans ouvrir Grabby (Changer ouvre la page des raccourcis) et ce qu'elle prend : la vidéo ou le son seul |
 | Retirer les passages sponsorisés | YouTube : coupe les sponsors et l'autopromotion repérés par SponsorBlock (désactivé par défaut) |
-| Bouton sur les vidéos | La barre Télécharger au survol des vidéos et sous le lecteur YouTube (activé par défaut) |
+| Bouton sur les vidéos | La bulle au survol des vidéos et les boutons sous le lecteur YouTube (activé par défaut) |
+| Panneau latéral, visite guidée | Ouvre Grabby à côté de la page ; revoit la visite guidée |
+| Réglages synchronisés | Réglages et règles suivent ton compte de navigateur sur tes autres ordinateurs (désactivé par défaut) |
 | IA locale | Autorise le téléchargement unique des modèles de transcription et de traduction (désactivé par défaut) |
 | Prévenir des nouvelles versions | Une fois par jour, demande à GitHub la dernière version (désactivé par défaut) |
 | Installer la dernière version | Bouton Mettre à jour : télécharge, vérifie et installe la dernière version (Windows, avec l'assistant) |

@@ -2,7 +2,7 @@
  * Followed channels and playlists: once an hour Grabby reads their public feed and records
  * each new video with the hidden player, in the quality and format chosen when following.
  */
-import { channelIdIn, channelProfile, feedUrl, newEntries, parseFeed, watchTarget, type FeedEntry, type Watch, type WatchKind } from '../shared/feeds';
+import { channelIdIn, channelProfile, feedLinkIn, feedUrl, newEntries, parseFeed, parsePodcast, watchTarget, type FeedEntry, type Watch, type WatchKind } from '../shared/feeds';
 import { uid } from '../shared/ids';
 import { LIST_DEFAULT, LIST_QUALITIES } from '../shared/ytlist';
 import type { JobManager } from './jobs';
@@ -71,9 +71,57 @@ async function readProfile(kind: WatchKind, key: string): Promise<Partial<Watch>
 }
 
 /** Follows the channel or playlist of an address; its videos published so far are skipped. */
+/** A podcast: the feed at this address, or the one its page names. */
+async function addPodcast(url: string, choice: Pick<Watch, 'mode'>): Promise<Watch | WatchAddError> {
+  let key = url;
+  let text = await fetchText(key);
+  if (text === null) return 'offline';
+  let pod = parsePodcast(text, key);
+  if (!pod) {
+    const named = feedLinkIn(text, key);
+    if (!named) return 'not_found';
+    key = named;
+    text = await fetchText(key);
+    pod = text === null ? null : parsePodcast(text, key);
+  }
+  if (!pod) return 'not_found';
+  const found = pod;
+  return serial(async () => {
+    const list = await getWatches();
+    if (list.some((w) => w.kind === 'feed' && w.key === key)) return 'already' as const;
+    if (list.length >= MAX_WATCHES) return 'too_many' as const;
+    const watch: Watch = {
+      id: uid(),
+      kind: 'feed',
+      key,
+      title: found.title || new URL(key).hostname,
+      // Sound stays sound; a video podcast follows the choice.
+      mode: choice.mode === 'audio' || found.entries.every((e) => e.audio) ? 'audio' : 'video',
+      quality: LIST_DEFAULT,
+      since: Date.now(),
+      seen: found.entries.map((e) => e.id).slice(0, MAX_SEEN),
+      lastCheck: Date.now(),
+      got: 0,
+      recent: found.entries.slice(0, MAX_RECENT),
+      ...(found.image ? { avatar: found.image } : {}),
+      ...(found.site ? { site: found.site } : {}),
+    };
+    await save([...list, watch]);
+    return watch;
+  });
+}
+
 export async function addWatch(url: string, choice: Pick<Watch, 'mode' | 'quality' | 'format'>): Promise<Watch | WatchAddError> {
   let target = watchTarget(url);
-  if (!target) return 'bad_url';
+  if (!target) {
+    const plain = /^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`;
+    try {
+      new URL(plain);
+    } catch {
+      return 'bad_url';
+    }
+    return addPodcast(plain, choice);
+  }
   if ('page' in target) {
     const html = await fetchText(target.page);
     if (html === null) return 'offline';
@@ -143,13 +191,32 @@ export function checkWatches(jobs: JobManager, only?: string): Promise<number> {
         continue;
       }
       const xml = await fetchText(feedUrl(w.kind, w.key));
-      const feed = xml === null ? null : parseFeed(xml);
+      const feed = xml === null ? null : w.kind === 'feed' ? parsePodcast(xml, w.key) : parseFeed(xml);
       if (!feed) {
         next.push({ ...w, lastCheck: Date.now(), error: true });
         continue;
       }
       const fresh: FeedEntry[] = newEntries(feed.entries, w.seen, w.since).reverse();
-      const n = fresh.length ? await jobs.startEntries(fresh, { quality: w.quality, mode: w.mode, ...(w.format ? { format: w.format } : {}), ...(w.kind === 'channel' ? { author: w.title } : {}) }) : 0;
+      const n = !fresh.length
+        ? 0
+        : w.kind === 'feed'
+          ? await jobs.startFiles(
+              fresh.map((e) => ({
+                url: e.url!,
+                title: e.title,
+                pageUrl: e.link ?? w.site ?? w.key,
+                audio: !!e.audio,
+                author: w.title,
+                ...((e.thumbnail ?? w.avatar) ? { thumbnail: e.thumbnail ?? w.avatar } : {}),
+              })),
+              { mode: w.mode },
+            )
+          : await jobs.startEntries(fresh, {
+              quality: w.quality,
+              mode: w.mode,
+              ...(w.format ? { format: w.format } : {}),
+              ...(w.kind === 'channel' ? { author: w.title } : {}),
+            });
       started += n;
       // Its picture and subscribers, once a day.
       const profile = !w.profileAt || Date.now() - w.profileAt > PROFILE_EVERY ? await readProfile(w.kind, w.key) : null;

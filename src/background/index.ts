@@ -1,11 +1,11 @@
-import type { AppRequest, BgToPopup, BlockedReason, ContentToBg, OffscreenToBg, PopupState, PopupToBg } from '../shared/messages';
+import type { AppRequest, BgToContent, BgToPopup, BlockedReason, ContentToBg, OffscreenToBg, PopupState, PopupToBg } from '../shared/messages';
 import { getSettings, setSettings } from '../shared/settings';
 import { cleanTitle } from '../shared/title';
 import { hostOf } from '../parsers/url';
 import { forgetBadge, paintTab, showJobs, updateBadge } from './badge';
 import { startDetector } from './detector';
 import { resetHeaderRules } from './headers';
-import { clearHistory, getHistory, historyWithPresence, removeHistory } from './history';
+import { allThumbs, allTranscripts, clearHistory, saveEditedTranscript, forgetTexts, getHistory, historyWithPresence, markHistory, removeHistory, restoreHistory } from './history';
 import { forgetRedo, redo, redoIfWaiting } from './redo';
 import { saveThumbnail } from './thumbnail';
 import { findVisible } from './visible';
@@ -17,8 +17,12 @@ import { Registry, sessionKV } from './registry';
 import { forgetTab, rememberTabUrl, samePage, tabUrl } from './tabs';
 import { visibleItems } from './visible';
 import { deleteJob, listTrackMimes, putChunk } from '../shared/idb';
-import { quickDownload } from './quick';
+import { pickFor, quickDownload } from './quick';
+import { saveSnapshot } from './snapshot';
+import { startSync } from './sync';
+import { addLater, getLater, LATER_ALARM, laterAt, launchLater, removeLater, scheduleLater } from './later';
 import { Batch, BATCH_ALARM } from './batch';
+import { omniboxRequest } from '../shared/batch';
 import { exportBackup, importBackup } from './backup';
 import { addWatch, changeWatch, checkWatches, getWatches, removeWatch, syncWatchAlarm, WATCH_ALARM } from './watch';
 
@@ -30,6 +34,8 @@ const batch = new Batch(registry, jobs, () => pushAll());
 // A new document replaced the page: recordings in that tab can't continue.
 startDetector(registry, (tabId) => void jobs.onTabGone(tabId));
 listenNotificationClicks();
+// Settings and rules shared with the user's other computers (when asked).
+startSync();
 
 chrome.runtime.onStartup.addListener(() => {
   void resetHeaderRules();
@@ -41,22 +47,91 @@ chrome.runtime.onStartup.addListener(() => {
 chrome.runtime.onInstalled.addListener(() => {
   void resetHeaderRules();
   void getSettings().then((s) => watchUpdates(s.updateCheck));
-  // Right-click on a video (or anywhere on a page whose player hides its own menu).
+  // Right-click on a video, on a link, or anywhere on a page (whose player may hide its own menu).
   chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({ id: 'grabby-media', title: chrome.i18n.getMessage('menuMedia'), contexts: ['video', 'audio'] });
-    chrome.contextMenus.create({ id: 'grabby-page', title: chrome.i18n.getMessage('menuPage'), contexts: ['page', 'frame', 'link', 'image'] });
+    const item = (id: string, contexts: NonNullable<chrome.contextMenus.CreateProperties['contexts']>) => chrome.contextMenus.create({ id, title: chrome.i18n.getMessage(`menu_${id}`), contexts });
+    item('media', ['video', 'audio']);
+    item('media_audio', ['video', 'audio']);
+    item('link', ['link']);
+    item('link_audio', ['link']);
+    item('link_later', ['link']);
+    item('page', ['page', 'frame', 'image']);
+    item('page_later', ['page', 'frame', 'image']);
+    item('images', ['page', 'frame', 'image']);
   });
 });
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (tab?.id === undefined || tab.id < 0) return;
-  void quickDownload(registry, jobs, tab.id, info.menuItemId === 'grabby-media' ? info.srcUrl : undefined);
+  const id = String(info.menuItemId);
+  const tabId = tab?.id ?? -1;
+  void (async () => {
+    if (id === 'link' || id === 'link_audio') {
+      // The page behind the link is opened behind, its video downloaded, the tab closed.
+      if (info.linkUrl) await batch.add(info.linkUrl, id === 'link' ? 'auto' : 'audio');
+      return;
+    }
+    if (id === 'link_later') {
+      if (info.linkUrl) await addLater({ url: info.linkUrl, title: info.selectionText || info.linkUrl, mode: 'auto' });
+      if (tabId >= 0) await toastIn(tabId, true, 'laterAdded', info.linkUrl ?? '');
+      return;
+    }
+    if (tabId < 0) return;
+    if (id === 'images') return void (await openApp('images', tabId));
+    if (id === 'page_later') return void (await keepForLater(tabId, tab));
+    await quickDownload(registry, jobs, tabId, id.startsWith('media') ? info.srcUrl : undefined, id === 'media_audio' ? 'audio' : undefined);
+  })();
 });
+
+/** A short bubble in the page. */
+async function toastIn(tabId: number, ok: boolean, title: string, detail: string) {
+  await chrome.tabs.sendMessage(tabId, { type: 'toast', ok, title: chrome.i18n.getMessage(title), detail } satisfies BgToContent, { frameId: 0 }).catch(() => {});
+}
+
+/** « Plus tard »: the video the user means (else the page itself) kept aside. */
+async function keepForLater(tabId: number, tab?: chrome.tabs.Tab, src?: string) {
+  const item = pickFor(visibleItems(await registry.get(tabId)), src);
+  const url = item ? (item.fromList || /^https?:/i.test(item.pageUrl) ? item.pageUrl : item.url) : (tab?.url ?? (await tabUrl(tabId)));
+  if (!/^https?:/i.test(url)) return;
+  const title = item?.title || (tab?.title ? cleanTitle(tab.title, hostOf(url)) : url);
+  await addLater({ url, title, ...(item?.thumbnail ? { thumbnail: item.thumbnail } : {}), mode: 'auto' });
+  pushAll();
+  await toastIn(tabId, true, 'laterAdded', title);
+}
+
+/** The full page, on a section (and the tab it is about). */
+async function openApp(section?: string, tabId?: number) {
+  const base = chrome.runtime.getURL('app.html');
+  const hash = section ? `#${encodeURIComponent(section)}${tabId !== undefined ? `?tab=${tabId}` : ''}` : '';
+  const url = `${base}${hash}`;
+  // Already open: shown again, on the section asked for.
+  const [open] = await chrome.tabs.query({ url: `${base}*` });
+  if (open?.id !== undefined) {
+    await chrome.tabs.update(open.id, { active: true, ...(section ? { url } : {}) });
+    if (open.windowId !== undefined) await chrome.windows.update(open.windowId, { focused: true }).catch(() => {});
+  } else await chrome.tabs.create({ url });
+  return true;
+}
+// « gb » + a link in the address bar: its page opened behind, its video downloaded (« gb son … »: the sound).
+chrome.omnibox?.setDefaultSuggestion({ description: chrome.i18n.getMessage('omniboxHint') });
+chrome.omnibox?.onInputChanged.addListener((text, suggest) => {
+  const { urls, mode } = omniboxRequest(text);
+  if (urls.length) chrome.omnibox.setDefaultSuggestion({ description: chrome.i18n.getMessage(mode === 'audio' ? 'omniboxAudio' : 'omniboxVideo', String(urls.length)) });
+  else chrome.omnibox.setDefaultSuggestion({ description: chrome.i18n.getMessage('omniboxHint') });
+  suggest([]);
+});
+chrome.omnibox?.onInputEntered.addListener((text) => {
+  const { urls, mode } = omniboxRequest(text);
+  if (urls.length) void batch.add(urls.join('\n'), mode).then(() => pushAll());
+  else void openApp('batch');
+});
+
 // Keyboard shortcut: the page's best video, straight away.
 chrome.commands.onCommand.addListener((command, tab) => {
-  if (command !== 'download-best') return;
+  if (command !== 'download-best' && command !== 'video-photo') return;
   void (async () => {
     const id = tab?.id ?? (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]?.id;
-    if (id !== undefined && id >= 0) await quickDownload(registry, jobs, id);
+    if (id === undefined || id < 0) return;
+    if (command === 'video-photo') return void chrome.tabs.sendMessage(id, { type: 'photo' } satisfies BgToContent).catch(() => {});
+    await quickDownload(registry, jobs, id);
   })();
 });
 // A download waiting for the network tries again, even if the worker went to sleep meanwhile.
@@ -65,6 +140,7 @@ chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === UPDATE_ALARM) void checkUpdate();
   if (a.name === WATCH_ALARM) void checkWatches(jobs);
   if (a.name === BATCH_ALARM) void batch.pump();
+  if (a.name === LATER_ALARM) void launchLater(batch).then(() => pushAll());
 });
 // Wi-Fi only: the connection changed (only some systems tell its type).
 (navigator as Navigator & { connection?: EventTarget }).connection?.addEventListener?.('change', () => void jobs.wake());
@@ -118,7 +194,7 @@ async function buildState(tabId: number): Promise<PopupState> {
   // An invalid id throws synchronously (not a rejected promise).
   const tab = await (async () => chrome.tabs.get(tabId))().catch(() => undefined);
   const tabTitle = tab?.title ? cleanTitle(tab.title, hostOf(tab.url ?? pageUrl)) : undefined;
-  const [items, history, settings, asks, update, ytList, watches, pasted] = await Promise.all([
+  const [items, history, settings, asks, update, ytList, watches, pasted, later, laterTime] = await Promise.all([
     registry.get(tabId, tabTitle),
     historyWithPresence(),
     getSettings(),
@@ -128,6 +204,8 @@ async function buildState(tabId: number): Promise<PopupState> {
     getWatches(),
     // The pasted addresses: only the full page shows them.
     tabId < 0 ? batch.list() : undefined,
+    getLater(),
+    laterAt(),
   ]);
   return {
     tabId,
@@ -144,6 +222,8 @@ async function buildState(tabId: number): Promise<PopupState> {
     ...(ytList ? { ytList } : {}),
     ...(watches.length ? { watches } : {}),
     ...(pasted?.length ? { batch: pasted } : {}),
+    ...(later.length ? { later } : {}),
+    ...(laterTime ? { laterAt: laterTime } : {}),
   };
 }
 
@@ -197,7 +277,7 @@ jobs.onChange(() => {
 
 // The browser was found asking where to save: open popups explain it right away.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && (BROWSER_ASKS_KEY in changes || 'watches' in changes)) pushAll();
+  if (area === 'local' && (BROWSER_ASKS_KEY in changes || 'watches' in changes || 'later' in changes || 'laterAt' in changes)) pushAll();
 });
 
 chrome.tabs.onActivated.addListener(({ tabId }) => void paintTab(tabId));
@@ -295,9 +375,21 @@ async function onPopupMessage(port: chrome.runtime.Port, msg: PopupToBg) {
       await clearHistory();
       schedulePush(port);
       return;
-    case 'history-remove':
-      await removeHistory(msg.id);
-      schedulePush(port);
+    case 'history-remove': {
+      const ids = msg.ids.slice(0, 500);
+      await removeHistory(ids);
+      pushAll();
+      // « Annuler » is offered a few seconds: after that, what was said in them goes too.
+      setTimeout(() => void forgetTexts(ids), 30_000);
+      return;
+    }
+    case 'history-restore':
+      await restoreHistory(msg.entries.slice(0, 500));
+      pushAll();
+      return;
+    case 'history-mark':
+      await markHistory(msg.ids.slice(0, 500), msg.patch);
+      pushAll();
       return;
     case 'settings':
       await setSettings(msg.patch);
@@ -317,6 +409,19 @@ async function onPopupMessage(port: chrome.runtime.Port, msg: PopupToBg) {
       return removeWatch(msg.id);
     case 'watch-change':
       return changeWatch(msg.id, msg.patch);
+    case 'later-add': {
+      const tabId = ports.get(port);
+      const item = tabId === undefined ? undefined : findVisible(await registry.get(tabId), msg.mediaId);
+      if (item) await addLater({ url: /^https?:/i.test(item.pageUrl) ? item.pageUrl : item.url, title: item.title, ...(item.thumbnail ? { thumbnail: item.thumbnail } : {}), mode: msg.mode ?? 'auto' });
+      return;
+    }
+    case 'later-remove':
+      return removeLater(msg.id);
+    case 'later-launch':
+      await launchLater(batch, msg.ids);
+      return;
+    case 'later-schedule':
+      return scheduleLater(msg.at);
   }
 }
 
@@ -340,17 +445,16 @@ async function onAppRequest(msg: AppRequest): Promise<unknown> {
       }
       return done;
     }
-    case 'open-app': {
-      const base = chrome.runtime.getURL('app.html');
-      const url = `${base}${msg.section ? `#${encodeURIComponent(msg.section)}` : ''}`;
-      // Already open: shown again, on the section asked for.
-      const [open] = await chrome.tabs.query({ url: `${base}*` });
-      if (open?.id !== undefined) {
-        await chrome.tabs.update(open.id, { active: true, ...(msg.section ? { url } : {}) });
-        if (open.windowId !== undefined) await chrome.windows.update(open.windowId, { focused: true }).catch(() => {});
-      } else await chrome.tabs.create({ url });
-      return true;
-    }
+    case 'open-app':
+      return openApp(msg.section, msg.tabId);
+    case 'texts':
+      return allTranscripts(msg.ids.slice(0, 500));
+    case 'thumbs':
+      return allThumbs(msg.ids.slice(0, 500));
+    case 'text-save':
+      return saveEditedTranscript(msg.id, msg.text);
+    case 'page-images':
+      return chrome.tabs.sendMessage(msg.tabId, { type: 'images' } satisfies BgToContent, { frameId: 0 }).catch(() => null);
     case 'file-paths': {
       const ids = msg.ids.filter((n) => Number.isInteger(n)).slice(0, 500);
       const found = ids.length ? await Promise.all(ids.map((id) => chrome.downloads.search({ id }).then((r) => r[0]))) : [];
@@ -412,6 +516,17 @@ chrome.runtime.onMessage.addListener((msg: ContentToBg | OffscreenToBg | AppRequ
     case 'grab':
       // The button over a video: that video, straight away.
       void quickDownload(registry, jobs, tabId, msg.src, msg.mode);
+      break;
+    case 'snap':
+      void (async () => {
+        const item = pickFor(visibleItems(await registry.get(tabId)));
+        const ok = await saveSnapshot(sender.tab!, msg, item);
+        await toastIn(tabId, ok, ok ? 'photoSaved' : 'photoFailed', ok ? (item?.title ?? sender.tab?.title ?? '') : '');
+        sendResponse(ok);
+      })();
+      return true;
+    case 'later':
+      void keepForLater(tabId, sender.tab, msg.src);
       break;
     case 'show-download':
       // Only downloads Grabby made can be shown from a page.

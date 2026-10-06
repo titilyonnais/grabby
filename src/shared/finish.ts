@@ -27,6 +27,8 @@ export interface Edit {
   speed?: number;
   /** Without its sound. */
   mute?: boolean;
+  /** « Son plus propre »: less hiss and hum, a steadier voice. */
+  clean?: boolean;
 }
 
 export interface Finish {
@@ -84,6 +86,7 @@ export function cleanEdit(input: unknown, audioOnly: boolean): Edit | undefined 
   const out: Edit = {};
   const speed = typeof e.speed === 'number' && Number.isFinite(e.speed) ? Math.min(4, Math.max(0.25, Math.round(e.speed * 100) / 100)) : 1;
   if (speed !== 1) out.speed = speed;
+  if (e.clean === true && e.mute !== true) out.clean = true;
   if (!audioOnly) {
     const crop = cleanCrop(e.crop);
     if (crop) out.crop = crop;
@@ -139,6 +142,17 @@ export function atempo(speed: number): string[] {
 }
 
 const num = (n: number) => String(Math.round(n * 10000) / 10000);
+
+/**
+ * « Son plus propre »: the rumble under the voice cut, the steady hiss taken out (spectral
+ * denoise), the very top cut, then the level evened out gently (no pumping on music).
+ */
+export const CLEAN_SOUND = ['highpass=f=70', 'afftdn=nr=12:nf=-35', 'lowpass=f=15000', 'dynaudnorm=f=250:g=15:p=0.9'];
+
+/** The sound's filters, in order: made cleaner, then played at its new speed. */
+export function audioFilters(e: Edit | undefined): string[] {
+  return [...(e?.clean ? CLEAN_SOUND : []), ...(e?.speed && e.speed !== 1 ? atempo(e.speed) : [])];
+}
 
 /** The font subtitles are written with (shipped with Grabby, see THIRD_PARTY_NOTICES). */
 export const FONT_DIR = '/fonts';
@@ -235,7 +249,7 @@ export function editedExt(ext: string): string {
  */
 export function encodeAttempts(j: EncodeJob): { args: string[]; out: string; ext: string }[] {
   const speed = j.edit?.speed && j.edit.speed !== 1 ? j.edit.speed : undefined;
-  const tempo = speed ? atempo(speed) : [];
+  const tempo = audioFilters(j.edit);
   const chapterIn = j.chapters ? ['-i', j.chapters] : [];
   // Chapters: moved to the new speed, or kept as they are.
   const chapterMap = j.chapters ? ['-map_chapters', '1'] : speed ? ['-map_chapters', '-1'] : [];
@@ -259,7 +273,9 @@ export function encodeAttempts(j: EncodeJob): { args: string[]; out: string; ext
   const filters = videoFilters(j.edit, { ...(b?.height ? { height: b.height } : {}), ...(j.burn ? { burn: j.burn } : {}) });
   const picture = [
     ...(filters.length ? ['-vf', filters.join(',')] : []),
-    '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
+    // « Encodage plus rapide »: superfast when no size is aimed at (a little bigger, much quicker);
+    // veryfast when the bitrate is counted (it then makes the better picture).
+    '-c:v', 'libx264', '-preset', b ? 'veryfast' : 'superfast', '-pix_fmt', 'yuv420p',
     ...(b ? ['-b:v', `${b.video}k`, '-maxrate', `${Math.round(b.video * 1.3)}k`, '-bufsize', `${b.video * 2}k`] : ['-crf', '23']),
   ];
   // Subtitle tracks are dropped when their times no longer fit, or when they are burned in (shown twice otherwise).
@@ -271,7 +287,7 @@ export function encodeAttempts(j: EncodeJob): { args: string[]; out: string; ext
   const head = ['-y', '-i', j.input, ...chapterIn, ...maps];
   const tries = [];
   // The sound is copied when it stays as it is (and the container takes it).
-  if (!speed && !b && !mute) tries.push({ ext, out, args: [...head, ...picture, ...sound(true), ...subs, ...tail] });
+  if (!tempo.length && !b && !mute) tries.push({ ext, out, args: [...head, ...picture, ...sound(true), ...subs, ...tail] });
   tries.push({ ext, out, args: [...head, ...picture, ...sound(false), ...subs, ...tail] });
   // Subtitle tracks a container can't take must not cost the file.
   tries.push({ ext, out, args: ['-y', '-i', j.input, ...chapterIn, '-map', '0:v:0', ...(mute ? [] : ['-map', '0:a:0?']), ...picture, ...sound(false), '-sn', ...tail] });

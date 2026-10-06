@@ -10,8 +10,8 @@ import type { AudioFormat, Clip, OutputFormat, VideoFormat } from '../../shared/
 import { canShrink, scaleChoices, SHRUNK_FORMATS } from '../../shared/scale';
 import { applyRule, ruleFor, type Rule } from '../../shared/rules';
 import { SHEET_EVERY, sheetCount } from '../../shared/sheet';
-import type { Job, MediaItem, Variant } from '../../shared/types';
-import { size, t, uiLang } from '../i18n';
+import type { HistoryEntry, Job, MediaItem, Variant } from '../../shared/types';
+import { relativeTime, size, t, uiLang } from '../i18n';
 import { useUnfold } from '../unfold';
 import { Icon } from './Icon';
 import { canPause, isActive, JobBar } from './JobBar';
@@ -49,6 +49,8 @@ interface Props {
   rules?: Rule[];
   /** The local AI: whether its models may be downloaded, and agreeing to it. */
   ai?: { allowed: boolean; allow: () => void };
+  /** « Déjà téléchargé »: the file saved from it before, still there. */
+  saved?: HistoryEntry | undefined;
 }
 
 /** What a download makes, when a card has several: "Vidéo · MP4", "Son · M4A". */
@@ -81,6 +83,25 @@ function JobStack({ job, others, send, listed }: { job: Job; others: Job[]; send
           {listed(j) ? <InQueue job={j} /> : <JobBar job={j} send={send} />}
         </div>
       ))}
+    </div>
+  );
+}
+
+/** « Déjà téléchargé »: when, in what, and the file one click away. */
+function SavedBefore({ entry, send }: { entry: HistoryEntry; send: (m: PopupToBg) => void }) {
+  return (
+    <div class="saved">
+      <Icon name="check" size={15} />
+      <span class="saved__text">
+        <strong>{t('savedBefore', relativeTime(entry.date))}</strong>
+        <span>{[entry.filename.split('.').pop()?.toUpperCase(), entry.quality, size(entry.size)].filter(Boolean).join(' · ')}</span>
+      </span>
+      <button class="hcard__btn" title={t('historyOpenFile')} aria-label={t('historyOpenFile')} onClick={() => send({ type: 'open-file', downloadId: entry.downloadId! })}>
+        <Icon name="play" size={15} />
+      </button>
+      <button class="hcard__btn" title={t('showFile')} aria-label={t('showFile')} onClick={() => send({ type: 'show', downloadId: entry.downloadId! })}>
+        <Icon name="folder" size={15} />
+      </button>
     </div>
   );
 }
@@ -125,7 +146,7 @@ function Thumb({ item }: { item: MediaItem }) {
   );
 }
 
-export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen, onToggle: toggleOpen, index, preferred, send, select, rules, ai }: Props) {
+export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen, onToggle: toggleOpen, index, preferred, send, select, rules, ai, saved }: Props) {
   // The site's rule: its quality, format and subtitles are chosen already (still changeable).
   const rule = ruleFor(rules, item.pageUrl);
   const ruled = rule ? applyRule(item, rule, preferred) : undefined;
@@ -172,6 +193,8 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
   const [liveMinutes, setLiveMinutes] = useState(120);
   // "Aperçu": a file plays here; anything else in the page's own player.
   const [previewing, setPreviewing] = useState(false);
+  // « Plus tard »: kept aside (the button says so).
+  const [kept, setKept] = useState(false);
   const image = isImageFormat(format);
   const whole = (c: Clip) => !!item.duration && c.start <= 0 && c.end >= Math.floor(item.duration);
   const chosen = trimming && parts ? parts.filter((c) => !whole(c) || parts.length > 1) : [];
@@ -190,8 +213,8 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
   const wholeSize =
     (!audio && scale && shrunkSize(scale)) || (!audio && variant && variantSize(variant, format, item.duration)) || item.size;
   // Parts weigh their share of the whole.
-  const kept = chosen.reduce((n, c) => n + (c.end - c.start), 0);
-  const shownSize = image ? undefined : chosen.length && wholeSize ? Math.round((wholeSize * kept) / item.duration!) : wholeSize;
+  const keptLength = chosen.reduce((n, c) => n + (c.end - c.start), 0);
+  const shownSize = image ? undefined : chosen.length && wholeSize ? Math.round((wholeSize * keptLength) / item.duration!) : wholeSize;
   // YouTube: a hidden player records it, the user keeps watching — it's a plain download for them.
   const hidden = !!item.ytId;
   const blocked = item.protection !== 'none';
@@ -362,6 +385,12 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
               </span>
             ) : null}
             {(blocked || live) && !open && <Icon name={live ? 'live' : 'lock'} size={14} />}
+            {saved && !running && !open && (
+              <span class="card__saved" title={t('savedBefore', relativeTime(saved.date))}>
+                <Icon name="check" size={13} />
+                {t('savedShort')}
+              </span>
+            )}
           </p>
           {/* A download running in a row: its bar under the text, not over the layout. */}
           {running && !open && <span class="card__progress" style={{ '--p': String(job!.progress) }} aria-hidden="true" />}
@@ -480,6 +509,7 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
             </>
           ) : (
             <>
+              {!showJob && saved && <SavedBefore entry={saved} send={send} />}
               {!showJob && (
                 <div class="pickers">
                   {qualityOptions.length > 1 && !(format === 'jpg' && stillKind !== 'frame') && (
@@ -557,6 +587,24 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
                     <Icon name={finishing ? 'close' : 'wand'} size={16} />
                     {finishing ? t('finishClose') : finishCount(finish) ? t('finishOpenCount', String(finishCount(finish))) : t('finishOpen')}
                   </button>
+                  {/^https?:/i.test(item.pageUrl) && (
+                    <button
+                      class={`trim-toggle${kept ? ' trim-toggle--done' : ''}`}
+                      disabled={kept}
+                      title={t('laterAddHint')}
+                      onClick={() => {
+                        send({
+                          type: 'later-add',
+                          mediaId: item.id,
+                          mode: audio ? 'audio' : 'auto',
+                        });
+                        setKept(true);
+                      }}
+                    >
+                      <Icon name={kept ? 'check' : 'later'} size={16} />
+                      {kept ? t('laterKept') : t('laterAdd')}
+                    </button>
+                  )}
                 </div>
               )}
               {!showJob && previewing && previewUrl && (

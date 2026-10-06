@@ -37,6 +37,9 @@ export function buildManifest(version) {
       default_icon: { 16: ICONS[16], 32: ICONS[32] },
     },
     background: { service_worker: 'background.js', type: 'module' },
+    side_panel: { default_path: 'sidepanel.html' },
+    // « gb » + a link in the address bar.
+    omnibox: { keyword: 'gb' },
     permissions: [
       'storage',
       'unlimitedStorage',
@@ -49,12 +52,15 @@ export function buildManifest(version) {
       'declarativeNetRequestWithHostAccess',
       'alarms',
       'contextMenus',
+      // Grabby next to the page, in the browser's side panel.
+      'sidePanel',
     ],
     // Asked for when "Update" is first clicked: talking to the update helper.
     optional_permissions: ['nativeMessaging'],
     commands: {
       _execute_action: { suggested_key: { default: 'Alt+Shift+G' }, description: '__MSG_cmdOpen__' },
       'download-best': { suggested_key: { default: 'Alt+Shift+D' }, description: '__MSG_cmdDownload__' },
+      'video-photo': { suggested_key: { default: 'Alt+Shift+S' }, description: '__MSG_cmdPhoto__' },
     },
     host_permissions: ['<all_urls>'],
     content_scripts: [

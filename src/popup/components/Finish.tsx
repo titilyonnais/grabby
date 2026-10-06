@@ -1,4 +1,4 @@
-import { useRef, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { COMPRESS_SIZES, COMPRESSIBLE_AUDIO, ROTATIONS, SPEEDS, canBurn, cleanCrop, type Crop, type Finish, type Rotation } from '../../shared/finish';
 import { languageName } from '../../shared/sublabels';
 import { PAIR_MB, TRANSLATE_TARGETS, WHISPER_MB } from '../../shared/translate';
@@ -25,10 +25,12 @@ const SHAPES: [string, number][] = [
  * Cropping on the video's picture: a frame to move and resize (or draw anew), and the usual
  * shapes. Values are shares of the picture, so they fit any quality.
  */
-function CropBox({ picture, crop, onChange }: { picture?: string; crop?: Crop; onChange: (c: Crop | undefined) => void }) {
+function CropBox({ picture, crop, onChange, start }: { picture?: string; crop?: Crop; onChange: (c: Crop | undefined) => void; start?: string }) {
   const box = useRef<HTMLDivElement>(null);
   const [aspect, setAspect] = useState(16 / 9);
-  const [shape, setShape] = useState('free');
+  const [shape, setShape] = useState(start ?? 'free');
+  // A shape asked for on opening (« Format vertical »): framed once the picture's own shape is known.
+  const started = useRef(!start);
   const c = crop ?? { x: 0, y: 0, w: 1, h: 1 };
   const drag = useRef<{ kind: 'move' | 'draw' | 'nw' | 'ne' | 'sw' | 'se'; x: number; y: number; start: Crop } | null>(null);
   const ratio = SHAPES.find(([k]) => k === shape)?.[1] ?? 0;
@@ -49,12 +51,12 @@ function CropBox({ picture, crop, onChange }: { picture?: string; crop?: Crop; o
     return { x, y, w, h };
   };
   const set = (n: Crop) => onChange(cleanCrop(n));
-  const pick = (k: string) => {
+  const pick = (k: string, own = aspect) => {
     setShape(k);
     const r = SHAPES.find(([s]) => s === k)?.[1] ?? 0;
     if (!r) return;
     // The biggest frame of that shape, in the middle.
-    const want = r / aspect;
+    const want = r / own;
     const w = want >= 1 ? 1 : want;
     const h = want >= 1 ? 1 / want : 1;
     set({ x: (1 - w) / 2, y: (1 - h) / 2, w, h });
@@ -85,6 +87,11 @@ function CropBox({ picture, crop, onChange }: { picture?: string; crop?: Crop; o
     }
   };
   const up = () => (drag.current = null);
+  useEffect(() => {
+    if (started.current || picture) return;
+    started.current = true;
+    pick(start!);
+  }, []);
   const nudge = (e: KeyboardEvent) => {
     const step = e.shiftKey ? 0.05 : 0.01;
     const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
@@ -112,7 +119,12 @@ function CropBox({ picture, crop, onChange }: { picture?: string; crop?: Crop; o
             draggable={false}
             onLoad={(e) => {
               const i = e.currentTarget;
-              if (i.naturalWidth && i.naturalHeight) setAspect(i.naturalWidth / i.naturalHeight);
+              if (!i.naturalWidth || !i.naturalHeight) return;
+              setAspect(i.naturalWidth / i.naturalHeight);
+              if (!started.current) {
+                started.current = true;
+                pick(start!, i.naturalWidth / i.naturalHeight);
+              }
             }}
           />
         ) : (
@@ -162,6 +174,8 @@ interface Props {
 /** "Retouches et IA": what is done to the file once it is made. */
 export function FinishPanel({ value: f, onChange, audio, format, picture, subsChosen, chapters, aiAllowed, onAllowAi }: Props) {
   const [cropping, setCropping] = useState(!!f.edit?.crop);
+  // « Format vertical »: the crop opens on a 9:16 frame, to move where the action is.
+  const [cropStart, setCropStart] = useState<string | undefined>();
   const edit = f.edit ?? {};
   const setEdit = (patch: Partial<NonNullable<Finish['edit']>>) => {
     const next = { ...edit, ...patch };
@@ -192,11 +206,33 @@ export function FinishPanel({ value: f, onChange, audio, format, picture, subsCh
       {!audio && (
         <section class="finish__group" aria-label={t('finishPicture')}>
           <h3 class="finish__title">{t('finishPicture')}</h3>
-          <button class="trim-toggle" aria-expanded={cropping} onClick={() => setCropping((v) => !v)}>
-            <Icon name="crop" size={16} />
-            {edit.crop ? t('cropOn') : t('cropOpen')}
-          </button>
-          {cropping && <CropBox {...(picture ? { picture } : {})} {...(edit.crop ? { crop: edit.crop } : {})} onChange={(crop) => setEdit({ crop })} />}
+          <div class="card__actions">
+            <button class="trim-toggle" aria-expanded={cropping} onClick={() => setCropping((v) => !v)}>
+              <Icon name="crop" size={16} />
+              {edit.crop ? t('cropOn') : t('cropOpen')}
+            </button>
+            <button
+              class="trim-toggle"
+              title={t('verticalHint')}
+              onClick={() => {
+                setCropStart('9:16');
+                setCropping(true);
+                setEdit({ crop: undefined });
+              }}
+            >
+              <Icon name="vertical" size={16} />
+              {t('verticalOpen')}
+            </button>
+          </div>
+          {cropping && (
+            <CropBox
+              key={cropStart ?? 'free'}
+              {...(picture ? { picture } : {})}
+              {...(edit.crop ? { crop: edit.crop } : {})}
+              {...(cropStart ? { start: cropStart } : {})}
+              onChange={(crop) => setEdit({ crop })}
+            />
+          )}
           <Segmented
             label={t('rotateLabel')}
             value={String(edit.rotate ?? 0)}
@@ -215,6 +251,13 @@ export function FinishPanel({ value: f, onChange, audio, format, picture, subsCh
           <Select label={t('speedLabel')} value={String(edit.speed ?? 1)} options={speedOptions} onChange={(v) => setEdit({ speed: Number(v) })} />
           {canCompress && <Select label={t('compressLabel')} value={String(f.compress ?? '')} options={sizeOptions} onChange={(v) => set('compress', v ? Number(v) : undefined)} />}
         </div>
+        <label class={`option${edit.mute ? ' option--off' : ''}`}>
+          <span>
+            {t('cleanLabel')}
+            <span class="option__detail">{t('cleanDetail')}</span>
+          </span>
+          <input class="switch" type="checkbox" role="switch" disabled={!!edit.mute} checked={!!edit.clean && !edit.mute} onChange={(e) => setEdit({ clean: e.currentTarget.checked })} />
+        </label>
         {!audio && (
           <label class="option">
             <span>{t('muteLabel')}</span>

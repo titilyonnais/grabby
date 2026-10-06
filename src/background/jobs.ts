@@ -4,14 +4,16 @@ import { audioChoices } from '../shared/audio';
 import { canShrink, scaleChoices, SHRUNK_FORMATS } from '../shared/scale';
 import { buildFilename, folderFor, pieceFilename } from '../shared/filename';
 import { canClip, clipLabel, clock, sameClip } from '../shared/clip';
-import { uid } from '../shared/ids';
+import { hashId, uid } from '../shared/ids';
 import type { BgToContent, ContentToBg, DownloadExtra, OffscreenToBg } from '../shared/messages';
 import { planSubs, subsIds, type Clip, type ErrorCode, type OutputFormat, type Plan, type VideoFormat } from '../shared/plan';
 import { DEFAULT_SETTINGS, getSettings, type Settings } from '../shared/settings';
 import { holdOf, playbackCap, type Hold } from '../shared/schedule';
 import type { Job, JobMode, JobStatus, MediaItem } from '../shared/types';
 import { fetchTextAs, sweepHeaderRules, withPageHeaders } from './headers';
-import { addHistory } from './history';
+import { addHistory, saveTranscript } from './history';
+import { sizeMatches } from '../shared/verify';
+import type { Transcript } from '../shared/transcript';
 import { notifyFinished } from './notify';
 import { scheduleOffscreenClose, sendOffscreen } from './offscreen-client';
 import { buildPlan, imageClip, joinedParts, PlanError, validClip } from './plan';
@@ -38,7 +40,6 @@ const BOOT_KEY = 'booted';
 const WAKE_ALARM = 'grabby-resume';
 /** Rings when the time window chosen for downloads opens. */
 export const SCHEDULE_ALARM = 'grabby-schedule';
-const MAX_PARALLEL = 2;
 /** Jobs started without a page (a followed channel's videos): they belong to no tab. */
 export const NO_TAB = -1;
 /** Tries in a row for the network before giving up (about 40 min of waiting in all). */
@@ -141,9 +142,11 @@ export class JobManager {
   private rate = new Map<string, { at: number; bytes: number }>();
   /** Plans of jobs that may be resumed (also in storage, for after a restart). */
   private plans = new Map<string, Plan>();
+  /** What is said in files being saved: kept with their library entry once saved. */
+  private transcripts = new Map<string, Transcript>();
   private listeners: (() => void)[] = [];
   /** "Quand télécharger": the time window, Wi-Fi only, the speed limit (kept in step with the settings). */
-  private gate: Pick<Settings, 'scheduleOn' | 'scheduleFrom' | 'scheduleTo' | 'wifiOnly' | 'rateLimit'> = DEFAULT_SETTINGS;
+  private gate: Pick<Settings, 'scheduleOn' | 'scheduleFrom' | 'scheduleTo' | 'wifiOnly' | 'rateLimit' | 'parallel' | 'verify'> = DEFAULT_SETTINGS;
   private pollTimer: ReturnType<typeof setInterval> | undefined;
   private persistTimer: ReturnType<typeof setTimeout> | undefined;
   readonly ready: Promise<void>;
@@ -447,7 +450,8 @@ export class JobManager {
     return job;
   }
 
-  async retry(jobId: string): Promise<void> {
+  /** `mark`: set on the new download (made again because the first file was damaged). */
+  async retry(jobId: string, mark?: Partial<Job>): Promise<void> {
     await this.ready;
     const j = this.jobs.get(jobId);
     if (!j || !FINISHED.includes(j.status)) return;
@@ -455,7 +459,7 @@ export class JobManager {
     // A video of a list: found again from what the job kept.
     if (j.entry && !this.items.has(`${j.tabId}:${j.mediaId}`)) this.items.set(`${j.tabId}:${j.mediaId}`, listItem(j.entry, j.tabId, j.variantId ?? '', j.title));
     // The video may be gone from the page: the card still has to update.
-    if (!(await this.start(j.tabId, j.mediaId, j.variantId, j.mode, j.format, {
+    const again = await this.start(j.tabId, j.mediaId, j.variantId, j.mode, j.format, {
         ...(j.scale ? { scale: j.scale } : {}),
         ...(j.parts ? { parts: j.parts } : j.clip ? { clip: j.clip } : {}),
         ...(j.subtitles ? { subtitles: j.subtitles } : {}),
@@ -466,7 +470,9 @@ export class JobManager {
         ...(j.folder ? { folder: j.folder } : {}),
         ...(j.finish ? { finish: j.finish } : {}),
         ...(j.live ? { live: j.live } : {}),
-      }))) this.changed();
+      });
+    if (!again) this.changed();
+    else if (mark) this.update(again.id, mark);
   }
 
   async dismiss(jobId: string): Promise<void> {
@@ -645,7 +651,8 @@ export class JobManager {
 
   private pump() {
     const running = [...this.jobs.values()].filter((j) => ['downloading', 'processing', 'saving'].includes(j.status)).length;
-    let free = MAX_PARALLEL - running;
+    // As many at once as the user chose (1 to 4).
+    let free = Math.min(4, Math.max(1, this.gate.parallel || DEFAULT_SETTINGS.parallel)) - running;
     let hidden = [...this.jobs.values()].filter((j) => j.status === 'capturing' && j.hidden).length;
     // A page records one player at a time.
     const busyTabs = new Set([...this.jobs.values()].filter((j) => j.status === 'capturing' && !j.hidden).map((j) => j.tabId));
@@ -715,7 +722,7 @@ export class JobManager {
       this.releases.set(job.id, await withPageHeaders(job.pageUrl, perHost));
       if (this.gone(job.id)) return void this.cleanup(job.id);
       this.update(job.id, { blob: true, ...(plan.live && !job.liveSince ? { liveSince: Date.now() } : {}) });
-      await sendOffscreen({ target: 'offscreen', type: 'run', jobId: job.id, plan, rate: this.gate.rateLimit });
+      await sendOffscreen({ target: 'offscreen', type: 'run', jobId: job.id, plan, rate: this.gate.rateLimit, verify: this.gate.verify });
     } catch (e) {
       if (this.gone(job.id)) return;
       if (e instanceof PlanError) this.fail(job.id, e.code);
@@ -767,6 +774,39 @@ export class JobManager {
       const item = { ...listItem(entry, NO_TAB, o.quality), ...(o.author ? { author: o.author } : {}) };
       this.items.set(`${NO_TAB}:${item.id}`, item);
       if (await this.start(NO_TAB, item.id, o.mode === 'video' ? item.variants[0]!.id : undefined, o.mode, o.format)) n++;
+    }
+    return n;
+  }
+
+  /** Files of a followed podcast: each saved as it is (its sound is never converted again). */
+  async startFiles(files: { url: string; title: string; pageUrl: string; audio: boolean; thumbnail?: string; author?: string }[], o: { mode: JobMode }): Promise<number> {
+    await this.ready;
+    let n = 0;
+    for (const f of files) {
+      const id = hashId(f.url);
+      const item: MediaItem = {
+        id,
+        tabId: NO_TAB,
+        frameUrl: f.pageUrl,
+        pageUrl: f.pageUrl,
+        kind: 'file',
+        url: f.url,
+        title: f.title,
+        variants: [],
+        audioTracks: [],
+        protection: 'none',
+        live: false,
+        detectedAt: Date.now(),
+        ...(f.audio ? { audioOnly: true } : {}),
+        ...(f.thumbnail ? { thumbnail: f.thumbnail } : {}),
+        ...(f.author ? { author: f.author } : {}),
+      };
+      this.items.set(`${NO_TAB}:${id}`, item);
+      const ext = /\.([a-z0-9]{2,4})(\?|#|$)/i.exec(new URL(f.url).pathname)?.[1]?.toLowerCase();
+      const mode: JobMode = f.audio || o.mode === 'audio' ? 'audio' : 'video';
+      // The file's own format: kept as it is.
+      const own = ext && (mode === 'audio' ? isAudioFormat(ext as OutputFormat) : (VIDEO_FORMATS as readonly string[]).includes(ext)) ? (ext as OutputFormat) : undefined;
+      if (await this.start(NO_TAB, id, undefined, mode, own)) n++;
     }
     return n;
   }
@@ -1185,6 +1225,7 @@ export class JobManager {
       const filename = msg.name ? pieceFilename(whole, msg.name, msg.ext) : whole;
       if (this.gone(job.id)) return;
       this.update(job.id, { status: 'saving', progress: 1, bytes: msg.size, total: msg.size, totalApprox: false, speed: 0, filename });
+      if (msg.transcript) this.transcripts.set(job.id, msg.transcript);
       try {
         // The other pieces first: the job is over (and its files let go) once the first one is saved.
         for (const p of msg.pieces ?? []) {
@@ -1205,6 +1246,7 @@ export class JobManager {
 
   private async onJobError(job: Job, error: ErrorCode) {
     if (error === 'network') return this.retryLater(job.id);
+    if (error === 'damaged') return this.madeAgain(job);
     // The server can't send ranges: the browser downloads the file itself, as before.
     if (error === 'no_ranges') {
       const plan = await this.planOf(job.id);
@@ -1223,6 +1265,18 @@ export class JobManager {
     this.fail(job.id, error);
   }
 
+/** A damaged file: downloaded and made again once from the start (a recording can't be). */
+  private async madeAgain(job: Job, downloadId?: number) {
+    if (downloadId !== undefined) {
+      await chrome.downloads.removeFile(downloadId).catch(() => {});
+      await chrome.downloads.erase({ id: downloadId }).catch(() => {});
+    }
+    if (job.redone || job.kind === 'capture') return this.fail(job.id, 'damaged');
+    this.update(job.id, { status: 'error', error: 'damaged', speed: 0 });
+    await this.cleanup(job.id);
+    await this.retry(job.id, { redone: true });
+  }
+
   private async onDownloadChanged(d: chrome.downloads.DownloadDelta) {
     await this.ready;
     const job = [...this.jobs.values()].find((j) => j.downloadId === d.id);
@@ -1239,13 +1293,19 @@ export class JobManager {
     if (d.state?.current === 'complete') {
       const [info] = await chrome.downloads.search({ id: d.id });
       const size = info?.fileSize || info?.totalBytes || job.bytes;
+      // A file the browser fetched itself, smaller (or bigger) than announced: cut short.
+      if (this.gate.verify && !job.blob && job.total && !job.totalApprox && !sizeMatches(size, job.total)) return this.madeAgain(job, d.id);
       this.update(job.id, { status: 'done', progress: 1, speed: 0, bytes: size });
-      const thumbnail = this.items.get(`${job.tabId}:${job.mediaId}`)?.thumbnail;
+      const thumbnail = this.items.get(`${job.tabId}:${job.mediaId}`)?.thumbnail ?? job.thumbnail;
+      const transcript = this.transcripts.get(job.id);
+      this.transcripts.delete(job.id);
+      if (transcript) await saveTranscript(job.id, transcript);
       await addHistory({
         id: job.id,
         filename: job.filename,
         title: job.title,
         pageUrl: job.pageUrl,
+        media: job.mediaId,
         size,
         date: Date.now(),
         downloadId: d.id,
@@ -1253,6 +1313,7 @@ export class JobManager {
         ...(job.mode === 'video' && job.quality ? { quality: job.quality } : {}),
         mode: job.mode,
         ...(job.format ? { format: job.format } : {}),
+        ...(transcript ? { text: true } : {}),
       });
       void notifyFinished(this.jobs.get(job.id) ?? job);
       await this.cleanup(job.id);

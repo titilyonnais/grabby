@@ -144,7 +144,7 @@ async function recordDownloads(sw: Worker) {
 async function setSettings(sw: Worker, patch: Record<string, unknown>) {
   await sw.evaluate(async (p) => {
     const cur = ((await chrome.storage.local.get('settings')) as { settings?: object }).settings ?? {};
-    await chrome.storage.local.set({ settings: { ...cur, ...p } });
+    await chrome.storage.local.set({ settings: { ...cur, tourDone: true, ...p } });
   }, patch);
 }
 
@@ -394,8 +394,8 @@ test('settings open as a full page; the file name is built from checkboxes', asy
   await expect(popup.getByRole('heading', { name: 'Settings' })).toBeVisible();
   await expect(popup.getByRole('heading', { name: 'Sample: direct clip' })).toHaveCount(0);
   // A menu of sections, each with what is set in it.
-  await expect(popup.locator('.smenu__item')).toHaveCount(8);
-  await expect(popup.getByRole('button', { name: /^Default formats\s*MP4 · M4A/ })).toBeVisible();
+  await expect(popup.locator('.smenu__item')).toHaveCount(7);
+  await expect(popup.getByRole('button', { name: /^Formats\s*MP4 · M4A/ })).toBeVisible();
   await settingsSection(popup, 'Names and folders');
   await expect(popup.getByRole('heading', { name: 'Names and folders' })).toBeVisible();
   // Tick "Site": the saved template gains {site}.
@@ -464,7 +464,7 @@ async function everyFormat(popup: Page, sw: Worker, expected: string[]) {
     await pick(popup, 'Format', fmt);
     // A picture is saved, not downloaded.
     await popup.getByRole('button', { name: /^(Download|Save the picture|Save the animation)$/ }).click();
-    await expect(popup.getByText('Saved'), `${fmt}: saved`).toBeVisible({ timeout: 60_000 });
+    await expect(popup.locator('.job__msg', { hasText: 'Saved' }), `${fmt}: saved`).toBeVisible({ timeout: 60_000 });
     const { bytes, filename } = await nextDownload(sw, before);
     const check = FORMAT_CHECKS[fmt]!;
     expect(check.magic(bytes), `${fmt}: magic bytes`).toBe(true);
@@ -1254,7 +1254,7 @@ test('settings: the hours and the speed limit; the update check tells about a ne
   await expect(popup.getByRole('switch', { name: /Only on Wi-Fi/ })).toHaveCount(0);
   // Off by default; on: GitHub is asked at once, and the daily check is set.
   await popup.getByRole('button', { name: 'Back to the settings' }).click();
-  await settingsSection(popup, 'Updates');
+  await settingsSection(popup, 'Sync and updates');
   const updates = popup.getByRole('switch', { name: /Tell me about new versions/ });
   await expect(updates).not.toBeChecked();
   await updates.check();
@@ -1268,7 +1268,7 @@ test('settings: the hours and the speed limit; the update check tells about a ne
   await expect(popup.getByText('Grabby 99.0.0 is out')).toHaveCount(0);
   // Off again: no more checks.
   await popup.getByRole('button', { name: 'Settings' }).click();
-  await settingsSection(popup, 'Updates');
+  await settingsSection(popup, 'Sync and updates');
   await popup.getByRole('switch', { name: /Tell me about new versions/ }).uncheck();
   await expect.poll(() => sw.evaluate(async () => !!(await chrome.alarms.get('grabby-update')))).toBe(false);
 });
@@ -1504,10 +1504,15 @@ test('the button on videos downloads the one under the pointer; it can be turned
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await expect.poll(() => page.evaluate(() => !!document.querySelector('grabby-overlay'))).toBe(true);
   const before = await completed(sw);
-  // The bar is in a closed shadow root, at the video's top left corner: the logo, then
-  // "Download" (the video), then "Sound only".
-  await page.mouse.move(box.x + 80, box.y + 31);
-  await page.mouse.click(box.x + 80, box.y + 31);
+  // The bubble is in a closed shadow root, at the video's top left corner: only the logo,
+  // which a click unrolls into "Download" (the video), "Sound only"…
+  await page.mouse.move(box.x + 32, box.y + 32);
+  await page.mouse.click(box.x + 32, box.y + 32);
+  await page.waitForTimeout(500);
+  // The video itself didn't get the click.
+  expect(await page.evaluate(() => document.querySelector('video')!.paused)).toBe(true);
+  await page.mouse.move(box.x + 90, box.y + 31);
+  await page.mouse.click(box.x + 90, box.y + 31);
   const { bytes } = await nextDownload(sw, before);
   expect(isMp4(bytes)).toBe(true);
   // The video itself didn't get the click.
@@ -1670,7 +1675,7 @@ test('full page: the library lists what was saved, and followed channels can be 
       ],
     }),
   );
-  await app.getByRole('link', { name: /Followed channels/ }).click();
+  await app.getByRole('link', { name: /Channels and podcasts/ }).click();
   await expect(app.getByText('Ma chaîne')).toBeVisible();
   await expect(app.getByText(/videos saved: 2/)).toBeVisible();
   // Its @name, its subscribers and its latest videos, each with what became of it.
@@ -1689,4 +1694,74 @@ test('full page: the library lists what was saved, and followed channels can be 
   await app.getByRole('button', { name: 'Stop following?' }).click();
   await expect(app.getByText('Ma chaîne')).toHaveCount(0);
   await expect.poll(() => sw.evaluate(async () => ((await chrome.storage.local.get('watches')) as { watches?: unknown[] }).watches?.length)).toBe(0);
+});
+
+test('2.0: a saved video says so; kept for later, it is listed in the full page; statistics count it', async ({ context, sw, extId }) => {
+  await setSettings(sw, { firstRunAck: true });
+  const { tabId } = await openFixture(context, sw, 'direct.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  await expect(popup.getByText(/Already downloaded/)).toHaveCount(0);
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
+  await expect(popup.locator('.job__msg', { hasText: 'Saved' })).toBeVisible({ timeout: 60_000 });
+  // Back to the choices: the card says it was saved, with Open and Show in folder.
+  await popup.getByRole('button', { name: 'Download again' }).click();
+  const again = popup;
+  await expect(again.getByText(/Already downloaded/).first()).toBeVisible();
+  await expect(again.getByRole('button', { name: 'Show in folder' }).first()).toBeVisible();
+  // Kept for later, then found in the full page.
+  await again.getByRole('button', { name: 'Later', exact: true }).first().click();
+  await expect(again.getByText('Kept aside').first()).toBeVisible();
+  await expect.poll(() => sw.evaluate(async () => ((await chrome.storage.local.get('later')) as { later?: unknown[] }).later?.length ?? 0)).toBe(1);
+  const app = await openApp(context, extId, 'later');
+  await expect(app.locator('.later__item')).toHaveCount(1);
+  await expect(app.locator('.later__item')).toContainText('Sample: direct clip');
+  await app.locator('.later__item').getByRole('button', { name: 'Remove from the list' }).click();
+  await expect(app.locator('.later__item')).toHaveCount(0);
+  // The figures count the file, and stay on the computer.
+  await app.goto(`chrome-extension://${extId}/app.html#stats`);
+  await expect(app.getByRole('heading', { name: 'Statistics' })).toBeVisible();
+  await expect(app.getByText('These figures never leave your computer.')).toBeVisible();
+  await expect(app.locator('.kpi').filter({ hasText: 'Files' }).locator('.kpi__value')).toHaveText('1');
+});
+
+test('2.0: the images of a page are saved together in one .zip', async ({ context, sw, extId }) => {
+  await setSettings(sw, { firstRunAck: true });
+  const { tabId } = await openFixture(context, sw, 'images.html');
+  const app = await openApp(context, extId, `images?tab=${tabId}`);
+  await expect(app.locator('.itile')).toHaveCount(2);
+  const before = await completed(sw);
+  await app.getByRole('button', { name: 'Save as .zip (2)' }).click();
+  const { bytes } = await nextDownload(sw, before);
+  expect(bytes.subarray(0, 4).toString('latin1')).toBe('PK\u0003\u0004');
+  // Two pictures inside, each one a whole JPEG.
+  let files = 0;
+  for (let at = bytes.indexOf('PK\u0003\u0004'); at >= 0; at = bytes.indexOf('PK\u0003\u0004', at + 4)) files++;
+  expect(files).toBe(2);
+});
+
+test('2.0: a guided tour on first opening, once; the side panel shows the same window', async ({ context, sw, extId }) => {
+  await setSettings(sw, { firstRunAck: true, tourDone: false });
+  const { tabId } = await openFixture(context, sw, 'direct.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  const tour = popup.getByRole('dialog');
+  await expect(tour).toContainText("The page's videos");
+  for (const title of ['The full page', 'Settings', 'And everywhere else']) {
+    await tour.getByRole('button', { name: 'Next' }).click();
+    await expect(tour).toContainText(title);
+  }
+  await tour.getByRole('button', { name: "Let's go" }).click();
+  await expect(popup.getByRole('dialog')).toHaveCount(0);
+  await expect.poll(() => sw.evaluate(async () => ((await chrome.storage.local.get('settings')) as { settings: { tourDone?: boolean } }).settings.tourDone)).toBe(true);
+  // Not shown again.
+  await popup.reload();
+  await expect(popup.getByRole('heading', { name: 'Sample: direct clip' })).toBeVisible();
+  await expect(popup.getByRole('dialog')).toHaveCount(0);
+
+  const side = await context.newPage();
+  await side.setViewportSize({ width: 420, height: 900 });
+  await side.goto(`chrome-extension://${extId}/sidepanel.html?tab=${tabId}`);
+  await expect(side.getByRole('heading', { name: 'Sample: direct clip' })).toBeVisible();
+  expect(await side.evaluate(() => document.documentElement.hasAttribute('data-side'))).toBe(true);
 });

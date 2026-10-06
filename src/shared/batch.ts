@@ -33,3 +33,14 @@ export function parseUrls(text: string): string[] {
   }
   return out;
 }
+
+/** What « gb … » typed in the address bar asks for: the links in it, the sound only when it starts with « son » / « audio » / « sound ». */
+export function omniboxRequest(text: string): { urls: string[]; mode: BatchMode } {
+  const audio = /^\s*(son|audio|sound|mp3)\b/i.test(text);
+  // "youtu.be/abc" typed without https://.
+  const words = text
+    .trim()
+    .split(/\s+/)
+    .map((w) => (/^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(w) ? `https://${w}` : w));
+  return { urls: parseUrls(words.join(' ')), mode: audio ? 'audio' : 'auto' };
+}

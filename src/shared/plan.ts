@@ -157,4 +157,6 @@ export type ErrorCode =
   | 'expired'
   /** Internal: the server can't send ranges (a fast download goes back to the browser's). */
   | 'no_ranges'
+  /** The file made doesn't hold together (cut short, damaged): made again once, then this. */
+  | 'damaged'
   | 'unknown';

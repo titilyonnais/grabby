@@ -2,6 +2,10 @@
  * Offscreen document: downloads stream segments, assembles them with ffmpeg.wasm and
  * hands a Blob URL back to the service worker, which saves it with chrome.downloads.
  */
+import { checkFile, sizeMatches } from '../shared/verify';
+/** Files bigger than this are not read again whole (memory): their size is checked instead. */
+const VERIFY_MAX = 400 * 1024 * 1024;
+import { transcriptOf } from '../shared/transcript';
 import type { BgToOffscreen, OffscreenToBg } from '../shared/messages';
 import { planSubs, type Chapter, type Clip, type ErrorCode, type OutputFormat, type Plan, type PlanSubs, type SegRef, type TrackPlan } from '../shared/plan';
 import { clipChapters, ffmetadata, partChapters, spanChapters } from '../shared/chapters';
@@ -520,7 +524,7 @@ async function coverFile(f: FFmpeg, dir: string, url: string, signal: AbortSigna
 /** Jobs paused by the user: their abort is not an error, and their pieces stay. */
 const pausing = new Set<string>();
 
-async function run(jobId: string, plan: Plan) {
+async function run(jobId: string, plan: Plan, verify = false) {
   const ctl = new AbortController();
   controllers.set(jobId, ctl);
   const signal = ctl.signal;
@@ -612,6 +616,13 @@ async function run(jobId: string, plan: Plan) {
       });
       rep.send('saving', 1, true);
       result = await joinRaw(jobId, plan);
+      // A file copied as it is: whole when it has the size it was announced with (its bytes are
+      // the server's own). Pieces put end to end: read again (not when huge: memory).
+      const damaged =
+        plan.kind === 'file'
+          ? !sizeMatches(result.blob.size, plan.estimatedSize)
+          : result.blob.size <= VERIFY_MAX && !checkFile(new Uint8Array(await result.blob.arrayBuffer()), result.ext).ok;
+      if (verify && damaged) throw Object.assign(new Error('damaged'), { code: 'damaged' });
     } else {
       const f = ff!;
       await f.mkdir(dir);
@@ -720,6 +731,7 @@ async function run(jobId: string, plan: Plan) {
           const fin = await finishFile(f, dir, made, { plan, texts, apart, signal, report: (step, p) => rep.send('processing', p, false, step) });
           made = fin;
           apart = fin.apart;
+          texts.splice(0, texts.length, ...fin.texts);
           notes = fin.notes;
           firstName = fin.name;
           for (const p of fin.pieces ?? []) {
@@ -730,6 +742,10 @@ async function run(jobId: string, plan: Plan) {
       }
       const data = await f.read(made.out);
       await f.rmdir(dir);
+      if (verify) {
+        const checked = checkFile(data as Uint8Array, made.ext);
+        if (!checked.ok) throw Object.assign(new Error(`damaged: ${checked.reason}`), { code: 'damaged' });
+      }
       result = { blob: new Blob([data as Uint8Array<ArrayBuffer>], { type: MIME[made.ext] ?? 'application/octet-stream' }), ext: made.ext };
     }
 
@@ -746,6 +762,7 @@ async function run(jobId: string, plan: Plan) {
       ...(apart.length ? { subtitles: apart } : {}),
       ...(pieces.length ? { pieces, ...(firstName ? { name: firstName } : {}) } : {}),
       ...(notes.length ? { notes } : {}),
+      ...(transcriptOf(texts) ? { transcript: transcriptOf(texts)! } : {}),
     });
   } catch (e) {
     if (ff) await ff.rmdir(dir).catch(() => {});
@@ -769,7 +786,7 @@ chrome.runtime.onMessage.addListener((msg: BgToOffscreen) => {
   switch (msg.type) {
     case 'run':
       limiter.set(msg.rate ?? 0);
-      void run(msg.jobId, msg.plan);
+      void run(msg.jobId, msg.plan, !!msg.verify);
       break;
     case 'rate':
       limiter.set(msg.rate);

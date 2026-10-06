@@ -51,6 +51,8 @@ export interface Finished {
   /** One file per chapter: the first is `out` (named `name`), these the others. */
   pieces?: { path: string; name: string }[];
   name?: string;
+  /** The texts on the clock of the file made (its speed may have changed). */
+  texts: TextTrack[];
 }
 
 const own = (key: string, sub?: string) => (typeof chrome !== 'undefined' && chrome.i18n?.getMessage?.(key, sub)) || key;
@@ -79,6 +81,9 @@ async function write(f: FFmpeg, path: string, text: string) {
   await f.create(path);
   await f.append(path, new TextEncoder().encode(text));
 }
+
+/** The texts on the new clock of a file played faster or slower. */
+const timed = (texts: TextTrack[], speed: number): TextTrack[] => (speed === 1 ? texts : texts.map((t) => ({ ...t, cues: speedCues(t.cues, speed) })));
 
 export async function finishFile(
   f: FFmpeg,
@@ -253,9 +258,9 @@ export async function finishFile(
         made2.push({ path, name: pieceName(p.n, pieces.length, p.title) });
       }
       if (made2.length >= 2) {
-        return { out: made2[0]!.path, ext: made.ext, name: made2[0]!.name, pieces: made2.slice(1), apart, notes };
+        return { out: made2[0]!.path, ext: made.ext, name: made2[0]!.name, pieces: made2.slice(1), apart, notes, texts: timed(texts, speed) };
       }
     }
   }
-  return { ...made, apart, notes };
+  return { ...made, apart, notes, texts: timed(texts, speed) };
 }

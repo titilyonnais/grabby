@@ -196,6 +196,8 @@ export interface Job {
   replanned?: boolean;
   /** Taken up again after a pause: links that fail now may just have expired. */
   resumed?: boolean;
+  /** Made again once already because the first file was damaged. */
+  redone?: boolean;
   /** Started at least once (a job that never did waits for the time window or Wi-Fi). */
   begun?: boolean;
   /** Waiting to start: outside the time window chosen, or for Wi-Fi. */
@@ -224,6 +226,8 @@ export interface HistoryEntry {
   filename: string;
   title: string;
   pageUrl: string;
+  /** Which of the page's videos it was (its id), to tell two of one page apart. */
+  media?: string;
   size: number;
   date: number;
   downloadId?: number;
@@ -236,4 +240,10 @@ export interface HistoryEntry {
   format?: OutputFormat;
   /** Set when the state is built: the file was moved, deleted or erased from the browser's list. */
   missing?: boolean;
+  /** What is said in it is kept (see transcript.ts): searchable, exportable. */
+  text?: boolean;
+  /** Marked as a favorite. */
+  fav?: boolean;
+  /** The collections it is in (their names). */
+  tags?: string[];
 }

@@ -11,13 +11,23 @@ import { BulkBar, bulkable, BulkStart } from './components/Bulk';
 import type { OutputFormat } from '../shared/plan';
 import { FirstRun, HistoryList, StateCard } from './components/Panels';
 import { Settings } from './components/Settings';
+import { Tour } from './components/Tour';
 import { t } from './i18n';
 import { reducedMotion } from './motion';
 import { rank } from '../shared/rank';
+import { savedBefore } from '../shared/saved';
 import { useGrabby } from './store';
-import { rememberTheme } from './theme';
+import { applyLook, rememberTheme } from './theme';
 
 const prefersDark = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
+/** In the browser's side panel: the page stays open when the full page opens. */
+const inSidePanel = () => 'side' in document.documentElement.dataset;
+
+/** The full page, on a section (and about this tab). */
+function openApp(section?: string, tabId?: number) {
+  void chrome.runtime.sendMessage({ app: 'open-app', ...(section ? { section } : {}), ...(tabId !== undefined && tabId >= 0 ? { tabId } : {}) }).catch(() => {});
+  if (!inSidePanel()) window.close();
+}
 /** How long the settings take to go away (groups, then title, then the page) before they leave the DOM. */
 const SETTINGS_OUT_MS = 490;
 const TABS = ['page', 'history'] as const;
@@ -99,6 +109,9 @@ export function App() {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light';
     rememberTheme(theme);
   }, [dark, theme]);
+  useEffect(() => {
+    if (settings) applyLook(settings);
+  }, [settings?.accent, settings?.contrast]);
 
   const items = useMemo(() => rank(state?.items ?? []), [state?.items]);
   // Jobs of this tab go on their cards; the others (another tab, before a restart) get a list.
@@ -166,24 +179,16 @@ export function App() {
                 <Icon name={dark ? 'sun' : 'moon'} />
               </span>
             </button>
-            <button
-              class="icon-btn"
-              aria-label={t('openApp')}
-              title={t('openApp')}
-              onClick={() => {
-                void chrome.runtime.sendMessage({ app: 'open-app' }).catch(() => {});
-                window.close();
-              }}
-            >
+            <button data-tour="app" class="icon-btn" aria-label={t('openApp')} title={t('openApp')} onClick={() => openApp()}>
               <Icon name="grid" />
             </button>
-            <button ref={gear} class="icon-btn" aria-label={t('openSettings')} title={t('openSettings')} onClick={openSettings}>
+            <button ref={gear} data-tour="settings" class="icon-btn" aria-label={t('openSettings')} title={t('openSettings')} onClick={openSettings}>
               <Icon name="settings" />
             </button>
           </span>
         </header>
 
-        <nav class="seg" role="tablist" style={{ '--n': '2', '--at': String(TABS.indexOf(tab)) }}>
+        <nav data-tour="tabs" class="seg" role="tablist" style={{ '--n': '2', '--at': String(TABS.indexOf(tab)) }}>
           <span class="seg__thumb" aria-hidden="true">
             {/* Keyed by tab: the pill squashes against the side it lands on, never past it. */}
             <span key={tab} class={`seg__jelly${dir === 'same' ? '' : ` seg__jelly--${dir}`}`} />
@@ -249,6 +254,7 @@ export function App() {
                           job={latestJob(here, i.id)}
                           others={otherJobs(here, i.id, latestJob(here, i.id))}
                           inQueue={rows.map((j) => j.id)}
+                          saved={savedBefore(state.history, i)}
                           open={i.id === openCard}
                           onToggle={() => setOpenId(i.id === openCard ? '' : i.id)}
                           preferred={prefs}
@@ -281,6 +287,20 @@ export function App() {
                   {state.ytList && !state.blocked && items.length > 0 && !picked && (
                     <Playlist key={state.ytList.title} list={state.ytList} pageUrl={state.pageUrl} preferred={prefs} send={send} compact />
                   )}
+                  {/^https?:/i.test(state.pageUrl ?? '') && !state.blocked && !picked && (
+                    <div class="pagetools">
+                      <button class="pagetools__btn" onClick={() => openApp('images', state.tabId)}>
+                        <Icon name="image" size={15} />
+                        {t('pageImages')}
+                      </button>
+                      {state.later?.length ? (
+                        <button class="pagetools__btn" onClick={() => openApp('later')}>
+                          <Icon name="later" size={15} />
+                          {t('pageLater', String(state.later.length))}
+                        </button>
+                      ) : null}
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -288,6 +308,7 @@ export function App() {
         </main>
       </div>
 
+      {state && settings && settings.firstRunAck && !settings.tourDone && !settingsOpen && <Tour onDone={() => send({ type: 'settings', patch: { tourDone: true } })} />}
       {settingsOpen && state && settings && (
         <Settings
           class={settingsClosing ? 'page--out' : 'page--in'}

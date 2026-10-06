@@ -3,15 +3,23 @@
  * the one YouTube offers to everyone — no account, no key, no token.
  */
 import { child, children, parseXml, type XmlNode } from '../parsers/xml';
+import { hashId } from './ids';
 import type { OutputFormat } from './plan';
 
-export type WatchKind = 'channel' | 'playlist';
+/** `feed`: a podcast, or any RSS or Atom feed with audio or video files in it. */
+export type WatchKind = 'channel' | 'playlist' | 'feed';
 
 export interface FeedEntry {
   id: string;
   title: string;
   /** When it was published (ms). */
   published: number;
+  /** A podcast's episode: its file, its page, its picture. */
+  url?: string;
+  link?: string;
+  thumbnail?: string;
+  /** The file is sound only. */
+  audio?: boolean;
 }
 
 const VIDEO_ID = /^[\w-]{11}$/;
@@ -19,6 +27,7 @@ const CHANNEL_ID = /^UC[\w-]{22}$/;
 const PLAYLIST_ID = /^(PL|UU|OL|FL)[\w-]{10,64}$/;
 
 export function feedUrl(kind: WatchKind, key: string): string {
+  if (kind === 'feed') return key;
   return `https://www.youtube.com/feeds/videos.xml?${kind === 'channel' ? 'channel_id' : 'playlist_id'}=${encodeURIComponent(key)}`;
 }
 
@@ -123,6 +132,121 @@ export function channelProfile(html: string): ChannelProfile {
   return out;
 }
 
+const MEDIA_FILE = /\.(mp3|m4a|aac|opus|ogg|oga|flac|wav|mp4|m4v|mov|webm|mkv)(\?|#|$)/i;
+const AUDIO_FILE = /\.(mp3|m4a|aac|opus|ogg|oga|flac|wav)(\?|#|$)/i;
+const httpUrl = (u: string | undefined, base?: string) => {
+  if (!u) return undefined;
+  try {
+    const url = new URL(u.trim(), base);
+    return /^https?:$/.test(url.protocol) ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
+};
+const textOf = (n: XmlNode | undefined) =>
+  (n?.text ?? '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/** A podcast or any feed with audio or video files: its title, picture, site and episodes (newest first). */
+export function parsePodcast(
+  xml: string,
+  base?: string,
+): {
+  title: string;
+  image?: string;
+  site?: string;
+  entries: FeedEntry[];
+} | null {
+  let doc: XmlNode;
+  try {
+    doc = parseXml(xml);
+  } catch {
+    return null;
+  }
+  const entries: FeedEntry[] = [];
+  const add = (o: { guid?: string; title: string; date?: string; url?: string; type?: string; link?: string; image?: string }) => {
+    const url = httpUrl(o.url, base);
+    if (!url) return;
+    const media = /^(audio|video)\//i.test(o.type ?? '') || MEDIA_FILE.test(url);
+    if (!media) return;
+    const published = Date.parse(o.date ?? '');
+    const raw = o.guid?.trim() || url;
+    const link = httpUrl(o.link, base);
+    const thumbnail = httpUrl(o.image, base);
+    entries.push({
+      // Long guids (whole addresses) are kept short.
+      id: raw.length > 120 ? `h${hashId(raw)}` : raw,
+      title: o.title.slice(0, 300) || url.split('/').pop()!.slice(0, 120),
+      published: Number.isFinite(published) ? published : 0,
+      url,
+      ...(link ? { link } : {}),
+      ...(thumbnail ? { thumbnail } : {}),
+      ...(/^audio\//i.test(o.type ?? '') || AUDIO_FILE.test(url) ? { audio: true } : {}),
+    });
+  };
+  let title = '';
+  let image: string | undefined;
+  let site: string | undefined;
+  if (doc.name === 'rss' || doc.name === 'RDF') {
+    const channel = child(doc, 'channel');
+    if (!channel) return null;
+    title = textOf(child(channel, 'title'));
+    image = httpUrl(child(channel, 'image')?.attrs.href ?? textOf(child(child(channel, 'image') ?? doc, 'url')), base);
+    site = httpUrl(textOf(child(channel, 'link')), base);
+    for (const item of [...children(channel, 'item'), ...children(doc, 'item')]) {
+      const enc = child(item, 'enclosure') ?? child(item, 'content');
+      add({
+        guid: textOf(child(item, 'guid')),
+        title: textOf(child(item, 'title')),
+        date: textOf(child(item, 'pubDate')) || textOf(child(item, 'date')),
+        url: enc?.attrs.url,
+        type: enc?.attrs.type,
+        link: textOf(child(item, 'link')),
+        image: child(item, 'image')?.attrs.href ?? child(item, 'thumbnail')?.attrs.url,
+      });
+    }
+  } else if (doc.name === 'feed') {
+    title = textOf(child(doc, 'title'));
+    image = httpUrl(textOf(child(doc, 'logo')) || textOf(child(doc, 'icon')), base);
+    site = httpUrl(children(doc, 'link').find((l) => (l.attrs.rel ?? 'alternate') === 'alternate')?.attrs.href, base);
+    for (const e of children(doc, 'entry')) {
+      const links = children(e, 'link');
+      const enc = links.find((l) => l.attrs.rel === 'enclosure');
+      add({
+        guid: textOf(child(e, 'id')),
+        title: textOf(child(e, 'title')),
+        date: textOf(child(e, 'published')) || textOf(child(e, 'updated')),
+        url: enc?.attrs.href,
+        type: enc?.attrs.type,
+        link: links.find((l) => (l.attrs.rel ?? 'alternate') === 'alternate')?.attrs.href,
+      });
+    }
+  } else return null;
+  // A feed without any file (a blog's) isn't one to follow.
+  if (!entries.length) return null;
+  entries.sort((a, b) => b.published - a.published);
+  return {
+    title: title.slice(0, 200),
+    ...(image ? { image } : {}),
+    ...(site ? { site } : {}),
+    entries,
+  };
+}
+
+/** A page that names its feed (<link rel="alternate" type="application/rss+xml">). */
+export function feedLinkIn(html: string, base: string): string | undefined {
+  for (const m of html.matchAll(/<link\b[^>]*>/gi)) {
+    const tag = m[0];
+    if (!/rel=["']?alternate/i.test(tag) || !/type=["']?application\/(rss|atom)\+xml/i.test(tag)) continue;
+    const href = /href=["']([^"']+)["']/i.exec(tag)?.[1];
+    const url = httpUrl(href?.replace(/&amp;/g, '&'), base);
+    if (url) return url;
+  }
+  return undefined;
+}
+
 /** The videos of a feed not seen yet and published since following it (a little margin). */
 export function newEntries(entries: readonly FeedEntry[], seen: readonly string[], since: number): FeedEntry[] {
   const known = new Set(seen);
@@ -158,4 +282,6 @@ export interface Watch {
   recent?: FeedEntry[];
   /** Videos Grabby started from it (the latest ones). */
   taken?: string[];
+  /** A podcast's site. */
+  site?: string;
 }

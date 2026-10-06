@@ -2,8 +2,15 @@ import type { AudioFormat, VideoFormat } from './plan';
 import type { FolderMode } from './filename';
 import type { Rule } from './rules';
 
+/** Grabby's own color (buttons, bars, the round button on videos). */
+export const ACCENTS = ['coral', 'blue', 'violet', 'green', 'amber', 'pink'] as const;
+export type Accent = (typeof ACCENTS)[number];
+
 export interface Settings {
   theme: 'auto' | 'light' | 'dark';
+  accent: Accent;
+  /** Stronger lines and text, for reading more easily. */
+  contrast: boolean;
   videoFormat: VideoFormat;
   audioFormat: AudioFormat;
   /** System notification when a download finishes. */
@@ -37,10 +44,20 @@ export interface Settings {
   overlayButton: boolean;
   /** The user agreed to download the local AI's models (transcription, translation). */
   aiModels: boolean;
+  /** How many downloads run at the same time (the others wait their turn). */
+  parallel: number;
+  /** Every file read again once made: a damaged one is made again. */
+  verify: boolean;
+  /** Settings and rules follow the browser's account (the browser's own sync). */
+  sync: boolean;
+  /** The guided tour was seen (or skipped). */
+  tourDone: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'auto',
+  accent: 'coral',
+  contrast: false,
   videoFormat: 'mp4',
   audioFormat: 'm4a',
   notify: true,
@@ -60,7 +77,13 @@ export const DEFAULT_SETTINGS: Settings = {
   rules: [],
   overlayButton: true,
   aiModels: false,
+  parallel: 2,
+  verify: true,
+  sync: false,
+  tourDone: false,
 };
+
+export const PARALLEL_CHOICES = [1, 2, 3, 4] as const;
 
 const KEY = 'settings';
 
@@ -69,7 +92,9 @@ export async function getSettings(): Promise<Settings> {
   const stored = (res[KEY] as Partial<Settings>) ?? {};
   // Set before 1.9 as "in a Grabby folder".
   const folder = stored.folder ?? (stored.subfolder ? 'grabby' : 'none');
-  return { ...DEFAULT_SETTINGS, ...stored, folder, rules: Array.isArray(stored.rules) ? stored.rules : [] };
+  const accent = (ACCENTS as readonly string[]).includes(stored.accent as string) ? stored.accent! : DEFAULT_SETTINGS.accent;
+  const parallel = Math.min(4, Math.max(1, Math.round(Number(stored.parallel) || DEFAULT_SETTINGS.parallel)));
+  return { ...DEFAULT_SETTINGS, ...stored, folder, accent, parallel, rules: Array.isArray(stored.rules) ? stored.rules : [] };
 }
 
 let writing: Promise<unknown> = Promise.resolve();
