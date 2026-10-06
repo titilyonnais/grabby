@@ -4,7 +4,7 @@
  */
 import type { BgToOffscreen, OffscreenToBg } from '../shared/messages';
 import { planSubs, type Chapter, type Clip, type ErrorCode, type OutputFormat, type Plan, type PlanSubs, type SegRef, type TrackPlan } from '../shared/plan';
-import { clipChapters, ffmetadata, partChapters } from '../shared/chapters';
+import { clipChapters, ffmetadata, partChapters, spanChapters } from '../shared/chapters';
 import { clipLabel } from '../shared/clip';
 import { isImageFormat } from '../shared/formats';
 import type { JobStatus } from '../shared/types';
@@ -563,7 +563,7 @@ async function run(jobId: string, plan: Plan) {
 
       let made: { out: string; ext: string };
       if (plan.image || isImageFormat(plan.output)) {
-        made = await run1(f, imageAttempts(inputs.video ?? inputs.audio!, plan.output, `${dir}/out`, plan.clip?.video ?? 0, plan.clip?.duration ?? 1), rep, fetched, signal);
+        made = await run1(f, imageAttempts(inputs.video ?? inputs.audio!, plan.output, `${dir}/out`, plan.clip?.video ?? 0, plan.clip?.duration ?? 1, plan.image?.sheet), rep, fetched, signal);
       } else {
         let spans: Spans = null;
         if (plan.parts?.length && plan.clip) {
@@ -574,7 +574,9 @@ async function run(jobId: string, plan: Plan) {
           delete inputs.audio;
           delete inputs.audios;
           spans = joined.spans;
-          plan = { ...plan, chapters: joined.chapters };
+          // Sponsored parts left out: the video's own chapters, where they now fall (no
+          // chapter per piece: the user didn't choose them).
+          plan = { ...plan, chapters: plan.sponsors ? spanChapters(plan.chapters ?? [], joined.spans) : joined.chapters };
           delete plan.clip;
         } else if (plan.clip) {
           // A part whose picture is copied starts on a keyframe, a little earlier: the sound,
@@ -609,6 +611,7 @@ async function run(jobId: string, plan: Plan) {
           await f.append(inputs.chapters, new TextEncoder().encode(ffmetadata(plan.chapters, Number.isFinite(total) ? total : (plan.chapters.at(-1)!.start + 1))));
         }
         if (plan.meta) inputs.meta = { ...(plan.meta.title ? { title: plan.meta.title } : {}), ...(plan.meta.artist ? { artist: plan.meta.artist } : {}) };
+        if (plan.normalize && plan.audioOnly) inputs.normalize = true;
         if (plan.meta?.cover && plan.audioOnly) {
           const cover = await coverFile(f, dir, plan.meta.cover, signal);
           if (cover) inputs.cover = cover;

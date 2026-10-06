@@ -143,7 +143,7 @@ describe('a plan with subtitles', () => {
 
   it('fetches the chosen track as a third one, to put in the video', async () => {
     const p = await plan({ subtitles: { ids: ['s'], separate: false } });
-    expect(p.subtitles).toMatchObject([{ label: 'Français', lang: 'fr', separate: false }]);
+    expect(p.subtitles).toMatchObject([{ label: 'French', lang: 'fr', separate: false }]);
     expect(p.subtitles![0]!.track.segments.map((s) => s.url)).toEqual(['https://cdn.com/fr0.vtt', 'https://cdn.com/fr1.vtt']);
   });
 
@@ -189,7 +189,7 @@ describe('YouTube subtitles', () => {
 
   it('are kept from what the hidden player loads, nothing is fetched', async () => {
     const p = await buildPlan(yt, { mode: 'video', settings: DEFAULT_SETTINGS, fetchText: () => Promise.reject(new Error('no fetch')), subtitles: { ids: ['s'], separate: false } });
-    expect(p.subtitles).toMatchObject([{ captured: { lang: 'en', auto: true }, label: 'English (auto-generated)', separate: false }]);
+    expect(p.subtitles).toMatchObject([{ captured: { lang: 'en', auto: true }, label: 'English (automatic)', separate: false }]);
     expect(p.subtitles![0]!.track.segments).toEqual([]);
   });
 });

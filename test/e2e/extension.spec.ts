@@ -1,5 +1,5 @@
 import { test as base, chromium, expect, type BrowserContext, type Page, type Worker } from '@playwright/test';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -488,9 +488,9 @@ test('a WebM video can be saved as WebM, MP4 and MKV, and its sound in every aud
   await everyFormat(popup, sw, ['MP4', 'WebM', 'MKV', 'M4A', 'MP3', 'Opus', 'OGG', 'FLAC', 'WAV', 'JPEG', 'GIF', 'WebP']);
 });
 
-test('file options: Grabby folder, name parts, Save As and notification off', async ({ context, sw, extId }) => {
+test('file options: folder by site, name parts, Save As and notification off', async ({ context, sw, extId }) => {
   const asked = await recordDownloads(sw);
-  await setSettings(sw, { subfolder: true, template: '{site} - {title}', saveAs: false, notify: false, firstRunAck: true });
+  await setSettings(sw, { folder: 'site', template: '{site} - {title}', saveAs: false, notify: false, firstRunAck: true });
   const { page, tabId } = await openFixture(context, sw, 'direct.html');
   await expect.poll(() => badge(sw, tabId)).toBe('1');
   const popup = await openPopup(context, extId, tabId);
@@ -499,20 +499,28 @@ test('file options: Grabby folder, name parts, Save As and notification off', as
   let got = await asked();
   expect(got).toHaveLength(1);
   // "Sample: direct clip": the colon Windows refuses becomes a dash.
-  expect(got[0]!.filename).toBe('Grabby/127.0.0.1 - Sample - direct clip.mp4');
+  expect(got[0]!.filename).toBe('Grabby/127.0.0.1/127.0.0.1 - Sample - direct clip.mp4');
   expect(got[0]!.saveAs).toBe(false);
   // Notifications off: no bubble in the page.
   await page.waitForTimeout(1500);
   await expect(page.locator('grabby-toast')).toHaveCount(0);
 
   // Other choices: no folder, title then date, Save As on (the request carries it).
-  await setSettings(sw, { subfolder: false, template: '{title} - {date}', saveAs: true });
+  await setSettings(sw, { folder: 'none', template: '{title} - {date}', saveAs: true });
   await popup.getByRole('button', { name: 'Download again' }).click();
   await popup.getByRole('button', { name: 'Download', exact: true }).click();
   await expect.poll(async () => (await asked()).length).toBe(2);
   got = await asked();
   expect(got[1]!.filename).toMatch(/^Sample - direct clip - \d{4}-\d{2}-\d{2}\.mp4$/);
   expect(got[1]!.saveAs).toBe(true);
+
+  // By type, with the format in the name.
+  await setSettings(sw, { folder: 'type', template: '{title} - {format}', saveAs: false });
+  await popup.getByRole('button', { name: 'Download again' }).click();
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
+  await expect.poll(async () => (await asked()).length).toBe(3);
+  got = await asked();
+  expect(got[2]!.filename).toBe('Grabby/Videos/Sample - direct clip - MP4.mp4');
 });
 
 test('cards unfold one at a time and fold back', async ({ context, sw, extId }) => {
@@ -556,13 +564,17 @@ test('the file name keeps at least one part; the title can be unticked', async (
   await popup.getByRole('checkbox', { name: 'Quality' }).click();
   await expect(popup.getByRole('checkbox', { name: 'Quality' })).toHaveAttribute('aria-checked', 'true');
   expect(await template()).toBe('{quality}');
-  // All four fit on one line.
+  // All six on two lines of three.
   await popup.getByRole('checkbox', { name: 'Site' }).click();
   await popup.getByRole('checkbox', { name: 'Date' }).click();
   await popup.getByRole('checkbox', { name: 'Title' }).click();
-  await expect.poll(template).toBe('{title} - {quality} - {site} - {date}');
+  await popup.getByRole('checkbox', { name: 'Channel' }).click();
+  await popup.getByRole('checkbox', { name: 'Format' }).click();
+  await expect.poll(template).toBe('{title} - {channel} - {quality} - {format} - {site} - {date}');
   const tops = await popup.locator('.tile').evaluateAll((els) => els.map((e) => (e as HTMLElement).offsetTop));
-  expect(new Set(tops).size).toBe(1);
+  expect(tops).toHaveLength(6);
+  expect(new Set(tops).size).toBe(2);
+  expect(tops.filter((t) => t === tops[0])).toHaveLength(3);
 });
 
 test('restricted pages show an explanation instead of an empty list', async ({ context, sw, extId }) => {
@@ -755,7 +767,7 @@ function embeddedSrt(file: string): string | null {
 const lines = (srt: string) => srt.split(/\r?\n/).filter((l) => l && !/^\d+$/.test(l));
 
 for (const [page, format, label, track] of [
-  ['hls.html', 'MP4', 'HLS in MP4', 'Français'],
+  ['hls.html', 'MP4', 'HLS in MP4', 'French'],
   ['dash.html', 'MKV', 'DASH in MKV', 'French'],
 ] as const) {
   test(`subtitles of ${label}: put in the video, each line once`, async ({ context, sw, extId }) => {
@@ -792,7 +804,7 @@ test('subtitles a format can not hold are saved next to it, as .srt named after 
   const asked = await recordDownloads(sw);
   const popup = await openPopup(context, extId, tabId);
   await pick(popup, 'Format', 'TS');
-  await pick(popup, 'Subtitles', 'Français');
+  await pick(popup, 'Subtitles', 'French');
   const apart = popup.getByRole('switch', { name: 'In a separate .srt file' });
   await expect(apart).toBeChecked();
   await expect(apart).toBeDisabled();
@@ -845,7 +857,7 @@ test('a file with a <track>: its subtitles are put in the video', async ({ conte
   const { tabId } = await openFixture(context, sw, 'track.html');
   await expect.poll(() => badge(sw, tabId)).toBe('1');
   const popup = await openPopup(context, extId, tabId);
-  await pick(popup, 'Subtitles', 'Français');
+  await pick(popup, 'Subtitles', 'French');
   await popup.getByRole('button', { name: 'Download', exact: true }).click();
   await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
   const { video, srt } = await videoAndSrt(sw, false);
@@ -879,7 +891,7 @@ test('a clip of a recorded player, with the subtitles of its <track>', async ({ 
   await page.waitForSelector('body[data-ready="1"]');
   await expect.poll(() => badge(sw, tabId)).toBe('1');
   const popup = await openPopup(context, extId, tabId);
-  await pick(popup, 'Subtitles', 'Français');
+  await pick(popup, 'Subtitles', 'French');
   await popup.getByRole('switch', { name: 'In a separate .srt file' }).check();
   await cutClip(popup, '0:02', '0:05');
   await popup.getByRole('button', { name: 'Record the clip' }).click();
@@ -1240,4 +1252,97 @@ test('settings: the hours and the speed limit; the update check tells about a ne
   await popup.getByRole('button', { name: 'Settings' }).click();
   await popup.getByRole('switch', { name: /Tell me about new versions/ }).uncheck();
   await expect.poll(() => sw.evaluate(async () => !!(await chrome.alarms.get('grabby-update')))).toBe(false);
+});
+
+test('the queue: waiting downloads are put in another order, all paused and all resumed', async ({ context, sw, extId }) => {
+  // A window that opens in two hours: both downloads wait their turn.
+  const from = ((new Date().getHours() + 2) % 24) * 60;
+  await setSettings(sw, { scheduleOn: true, scheduleFrom: from, scheduleTo: (from + 60) % 1440, firstRunAck: true });
+  const { tabId } = await openFixture(context, sw, 'two.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('2');
+  const popup = await openPopup(context, extId, tabId);
+  const cards = popup.locator('.card');
+  await cards.nth(0).getByRole('button', { name: 'Download', exact: true }).click();
+  await cards.nth(1).locator('.card__head').click();
+  await cards.nth(1).getByRole('button', { name: 'Download', exact: true }).click();
+  const queue = popup.locator('section.others');
+  await expect(queue.getByRole('heading', { name: '2 downloads' })).toBeVisible();
+  // Both videos have the page's title: told apart by their download.
+  const titles = () => queue.locator('.jrow').evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.job ?? ''));
+  await expect.poll(async () => (await titles()).length).toBe(2);
+  const [first, second] = (await titles()) as [string, string];
+  expect(first).not.toBe(second);
+  // With the keyboard: the second one goes up.
+  const grips = queue.locator('.jrow__grip');
+  await expect(grips).toHaveCount(2);
+  await grips.nth(1).focus();
+  await grips.nth(1).press('ArrowUp');
+  await expect.poll(titles).toEqual([second, first]);
+  // Dragged by its handle below the other one: back in the first order.
+  const rows = queue.locator('.jrow');
+  const box = (await rows.nth(1).boundingBox())!;
+  await grips.nth(0).dragTo(rows.nth(1), { targetPosition: { x: 40, y: box.height - 6 } });
+  await expect.poll(titles).toEqual([first, second]);
+  // The order holds once the popup is opened again.
+  await popup.reload();
+  await expect
+    .poll(() => popup.locator('section.others .jrow').evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.job)))
+    .toEqual([first, second]);
+  // All paused, then all resumed (they wait for their window again).
+  await popup.getByRole('button', { name: 'Pause all' }).click();
+  await expect(popup.locator('section.others .jrow__meta').filter({ hasText: 'Paused' })).toHaveCount(2);
+  await popup.getByRole('button', { name: 'Resume all' }).click();
+  await expect(popup.locator('section.others .jrow__meta').filter({ hasText: /^Starts at/ })).toHaveCount(2);
+});
+
+test('a JPEG: a contact sheet of the whole video, or its thumbnail at its biggest', async ({ context, sw, extId }) => {
+  const asked = await recordDownloads(sw);
+  await setSettings(sw, { firstRunAck: true });
+  const { tabId } = await openFixture(context, sw, 'poster.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  await pick(popup, 'Format', 'JPEG');
+  const kinds = popup.getByRole('radiogroup', { name: 'Which picture' });
+  await expect(kinds.getByRole('radio')).toHaveText(['One picture', 'Sheet', 'Thumbnail']);
+  // A sheet: a picture every second of the 6-second video, in a grid.
+  await kinds.getByRole('radio', { name: 'Sheet' }).click();
+  await pick(popup, 'How often', 'Automatic');
+  const before = await completed(sw);
+  await popup.getByRole('button', { name: 'Save the sheet' }).click();
+  const sheet = await nextDownload(sw, before);
+  expect((await asked()).at(-1)!.filename).toMatch(/Sample - with a poster \(sheet\)\.jpg$/);
+  expect(sheet.bytes.subarray(0, 2).toString('hex')).toBe('ffd8');
+  const grid = pictureSize(sheet.filename);
+  // 6 pictures 320 wide: 4 a line, two lines.
+  if (grid) expect(Number(grid.split('x')[0])).toBeGreaterThan(1200);
+
+  // The thumbnail: the page's own picture, untouched.
+  await popup.getByRole('button', { name: 'Download again' }).click();
+  await pick(popup, 'Format', 'JPEG');
+  await popup.getByRole('radiogroup', { name: 'Which picture' }).getByRole('radio', { name: 'Thumbnail' }).click();
+  const n = await completed(sw);
+  await popup.getByRole('button', { name: 'Save the thumbnail' }).click();
+  await expect(popup.getByRole('button', { name: 'Thumbnail saved' })).toBeVisible();
+  const thumb = await nextDownload(sw, n);
+  expect((await asked()).at(-1)!.filename).toMatch(/Sample - with a poster \(thumbnail\)\.jpg$/);
+  expect(thumb.bytes.equals(readFileSync(resolve('test/fixtures/media/poster.jpg')))).toBe(true);
+  expect((await asked()).at(-1)!.url).toBe(`${origin}/media/poster.jpg`);
+});
+
+test('sound evened out: the file is encoded with the loudness filter, and plays', async ({ context, sw, extId }) => {
+  await setSettings(sw, { normalize: true, firstRunAck: true });
+  const { tabId } = await openFixture(context, sw, 'direct.html');
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  await pick(popup, 'Format', 'M4A');
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
+  await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
+  const { filename } = await lastDownload(sw);
+  const f = probeFormat(filename);
+  // AAC (and its cover, a picture of the video).
+  if (f) expect(f.codecs.filter((c) => c !== 'mjpeg')).toEqual(['aac']);
+  // Measured again (when ffmpeg is installed): about -14 LUFS, where the sample is at -22.
+  const run = spawnSync('ffmpeg', ['-hide_banner', '-nostats', '-i', filename, '-af', 'ebur128', '-f', 'null', '-'], { encoding: 'utf8' });
+  const m = /I:\s+(-?[\d.]+) LUFS/.exec(String(run.stderr ?? '').split('Summary:').pop() ?? '');
+  if (m) expect(Math.abs(Number(m[1]) + 14)).toBeLessThan(2.5);
 });

@@ -1,4 +1,5 @@
 import type { AudioFormat, VideoFormat } from './plan';
+import type { FolderMode } from './filename';
 
 export interface Settings {
   theme: 'auto' | 'light' | 'dark';
@@ -7,7 +8,10 @@ export interface Settings {
   /** System notification when a download finishes. */
   notify: boolean;
   saveAs: boolean;
-  subfolder: boolean;
+  /** Before 1.9: files in a "Grabby" folder. Read once into `folder`. */
+  subfolder?: boolean;
+  /** Where files go in the downloads folder. */
+  folder: FolderMode;
   template: string;
   firstRunAck: boolean;
   /** Downloads start only between these times (minutes since midnight). */
@@ -20,6 +24,12 @@ export interface Settings {
   rateLimit: number;
   /** Once a day, ask GitHub whether a newer version is out. */
   updateCheck: boolean;
+  /** What the keyboard shortcut and the right-click menu download: the video, or its sound only. */
+  quickMode: 'video' | 'audio';
+  /** Sound files: the loudness evened out (every file as loud as the others). */
+  normalize: boolean;
+  /** YouTube: the parts marked as sponsored (SponsorBlock) left out of the file. */
+  skipSponsors: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -28,7 +38,7 @@ export const DEFAULT_SETTINGS: Settings = {
   audioFormat: 'm4a',
   notify: true,
   saveAs: false,
-  subfolder: false,
+  folder: 'none',
   template: '{title}',
   firstRunAck: false,
   scheduleOn: false,
@@ -37,13 +47,19 @@ export const DEFAULT_SETTINGS: Settings = {
   wifiOnly: false,
   rateLimit: 0,
   updateCheck: false,
+  quickMode: 'video',
+  normalize: false,
+  skipSponsors: false,
 };
 
 const KEY = 'settings';
 
 export async function getSettings(): Promise<Settings> {
   const res = await chrome.storage.local.get(KEY);
-  return { ...DEFAULT_SETTINGS, ...((res[KEY] as Partial<Settings>) ?? {}) };
+  const stored = (res[KEY] as Partial<Settings>) ?? {};
+  // Set before 1.9 as "in a Grabby folder".
+  const folder = stored.folder ?? (stored.subfolder ? 'grabby' : 'none');
+  return { ...DEFAULT_SETTINGS, ...stored, folder };
 }
 
 let writing: Promise<unknown> = Promise.resolve();

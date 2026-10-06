@@ -1,3 +1,5 @@
+import { sheetLayout } from '../shared/sheet';
+import { browserLanguage, browserWords, languageName, trackTitle } from '../shared/sublabels';
 import { parseDash, type DashRep } from '../parsers/dash';
 import { parseHls, type HlsMedia } from '../parsers/hls';
 import { extOf, reachableFrom } from '../parsers/url';
@@ -40,6 +42,8 @@ export interface PlanOptions {
   parts?: Clip[];
   /** A still picture (JPEG): where in the video. */
   at?: number;
+  /** A contact sheet (JPEG): a picture every so many seconds (0: chosen from its length). */
+  sheet?: number;
   settings: Settings;
   fetchText: (url: string) => Promise<string>;
 }
@@ -337,8 +341,8 @@ async function withSubs(plan: Plan, item: MediaItem, o: PlanOptions): Promise<Pl
     track: got.track,
     ...(got.clock ? { clock: got.clock } : {}),
     ...(got.captured ? { captured: got.captured } : {}),
-    // Translated: named after the language it became.
-    label: sub.tlang ? languageName(sub.tlang) : sub.label,
+    // Named after its language, in the browser's language, said when automatic or translated.
+    label: trackTitle(sub, browserWords(), browserLanguage()),
     // Translated: in the language it was translated into.
     ...(sub.tlang ? { lang: sub.tlang } : sub.lang ? { lang: sub.lang } : {}),
     separate,
@@ -357,6 +361,15 @@ function withMeta(plan: Plan, item: MediaItem, o: PlanOptions): Plan {
     delete out.fast;
   }
   if (chapters && !out.raw && !out.direct) out.chapters = item.chapters!;
+  // A sound file evened out: a file saved as is (small enough) goes through ffmpeg too.
+  if (o.settings.normalize && plan.audioOnly && !plan.image) {
+    if (out.kind === 'file' && (out.direct || out.raw) && (item.size ?? 0) <= RAW_THRESHOLD) {
+      out = { ...out, raw: false };
+      delete out.direct;
+      delete out.fast;
+    }
+    if (!out.raw && !out.direct) out.normalize = true;
+  }
   if (!out.raw && !out.direct && !plan.image) {
     // A video of a list: its own title, not the numbered file name.
     const title = item.fromList?.title ?? item.title;
@@ -369,15 +382,7 @@ function withMeta(plan: Plan, item: MediaItem, o: PlanOptions): Plan {
   return out;
 }
 
-/** "Français" for "fr", in the browser's language (the code itself when unknown). */
-export function languageName(code: string, ui = (typeof chrome !== 'undefined' && chrome.i18n?.getUILanguage?.()) || 'en'): string {
-  try {
-    const name = new Intl.DisplayNames([ui], { type: 'language' }).of(code);
-    return name ? name[0]!.toLocaleUpperCase(ui) + name.slice(1) : code;
-  } catch {
-    return code;
-  }
-}
+export { languageName };
 
 /** The longest an animated picture can be (it holds every frame as a picture). */
 export const MAX_ANIMATION = 30;
@@ -408,6 +413,8 @@ async function imagePlan(item: MediaItem, o: PlanOptions): Promise<Plan> {
   delete plan.scale;
   // The sound of a stream isn't needed (a recording records it anyway).
   if (plan.kind === 'stream' && plan.video) delete plan.audio;
+  // A contact sheet: pictures of the whole video, side by side.
+  if (o.sheet !== undefined && len) return { ...plan, output: 'jpg', image: { sheet: sheetLayout(len, o.sheet) } };
   const cut = len ? applyClip(plan, clip, o, item.duration) : { ...plan, clip: { start: clip.start, duration: clip.end - clip.start, video: clip.start } };
   return { ...cut, output: o.format!, image: { at: clip.start } };
 }

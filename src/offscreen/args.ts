@@ -1,3 +1,4 @@
+import { SHEET_TILE, type SheetLayout } from '../shared/sheet';
 import { extOf } from '../parsers/url';
 import type { Container, OutputFormat } from '../shared/plan';
 import { iso3, SUB_CODEC } from '../shared/subtitles';
@@ -29,7 +30,15 @@ export interface MuxInputs {
   audioMeta?: { lang?: string; title?: string };
   /** A single input holding several sound tracks (parts joined): all of them are kept. */
   allAudio?: boolean;
+  /** A sound file: its loudness evened out, so every file sounds as loud as the others. */
+  normalize?: boolean;
 }
+
+/**
+ * Evening out the loudness: EBU R128, -14 LUFS (what music services play at), peaks kept
+ * under -1.5 dB. One pass, so it works on a stream as it goes.
+ */
+export const LOUDNORM = ['-af', 'loudnorm=I=-14:TP=-1.5:LRA=11'];
 
 /** Containers that hold chapters (and audio formats, for a sound file). */
 const CHAPTERS = CHAPTER_FORMATS;
@@ -167,10 +176,12 @@ export function muxAttempts(
     // from WebM/Ogg: that's Opus or Vorbis, which an MP4 file accepts but Apple players refuse.
     const opusOrVorbis = /\.(webm|ogg|opus|mka)$/i.test(src);
     // OGG means Vorbis here (Opus has its own choice): always encoded, never an Opus copy.
-    const copyable = ext === 'm4a' ? !opusOrVorbis : ext === 'opus';
+    // Evened out: the sound is changed, so it is always encoded.
+    const copyable = !inputs.normalize && (ext === 'm4a' ? !opusOrVorbis : ext === 'opus');
+    const level = inputs.normalize ? LOUDNORM : [];
     const tries = (body: string[]) => [
       ...(copyable ? [mk(ext, [...body, '-c:a', 'copy', ...tags])] : []),
-      mk(ext, [...body, ...AUDIO_ENCODE[ext]!, ...tags]),
+      mk(ext, [...body, ...level, ...AUDIO_ENCODE[ext]!, ...tags]),
     ];
     // A cover that can't be read must not cost the file: the same without it.
     return cover ? [...tries(withCover), ...tries(plain)] : tries(plain);
@@ -220,9 +231,19 @@ const ANIMATION_WIDTH = 480;
  * A picture made from the video, `at` seconds into the input: a still (JPEG, the frame
  * exactly there) or an animation of `duration` seconds (GIF with its own palette, WebP).
  */
-export function imageAttempts(input: string, output: OutputFormat, outBase: string, at: number, duration: number): Attempt[] {
+export function imageAttempts(input: string, output: OutputFormat, outBase: string, at: number, duration: number, sheet?: SheetLayout): Attempt[] {
   const from = seek(at);
   const scale = `scale=${ANIMATION_WIDTH}:-2:flags=lanczos`;
+  if (sheet && output === 'jpg') {
+    // A picture every `every` seconds (from the middle of each stretch: never the black first
+    // frame), made small, laid out in a grid on white.
+    const pick = `fps=1/${sheet.every},scale=${SHEET_TILE}:-2`;
+    const grid = (tile: string) => ['-y', '-i', input, '-an', '-vf', `${pick},${tile}`, '-frames:v', '1', '-c:v', 'mjpeg', '-huffman', '0', '-pix_fmt', 'yuvj420p', '-q:v', '3', `${outBase}.jpg`];
+    return [
+      { ext: 'jpg', out: `${outBase}.jpg`, args: grid(`tile=${sheet.cols}x${sheet.rows}:padding=6:margin=6:color=white`) },
+      { ext: 'jpg', out: `${outBase}.jpg`, args: grid(`tile=${sheet.cols}x${sheet.rows}`) },
+    ];
+  }
   switch (output) {
     case 'jpg': {
       // Computing optimal Huffman tables crashes this ffmpeg.wasm build: the standard ones.

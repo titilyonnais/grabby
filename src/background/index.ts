@@ -5,9 +5,12 @@ import { hostOf } from '../parsers/url';
 import { forgetBadge, paintTab, showJobs, updateBadge } from './badge';
 import { startDetector } from './detector';
 import { resetHeaderRules } from './headers';
-import { clearHistory, historyWithPresence, removeHistory } from './history';
+import { clearHistory, getHistory, historyWithPresence, removeHistory } from './history';
+import { forgetRedo, redo, redoIfWaiting } from './redo';
+import { saveThumbnail } from './thumbnail';
+import { findVisible } from './visible';
 import { BROWSER_ASKS_KEY, JobManager, SCHEDULE_ALARM } from './jobs';
-import { checkUpdate, seenUpdate, UPDATE_ALARM, updateNotice, watchUpdates } from './updates';
+import { checkUpdate, installState, installUpdate, seenUpdate, UPDATE_ALARM, updateNotice, watchUpdates } from './updates';
 import { listenNotificationClicks } from './notify';
 import { handlePageInfo } from './pageinfo';
 import { Registry, sessionKV } from './registry';
@@ -81,6 +84,7 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   forgetTab(tabId);
+  forgetRedo(tabId);
   void registry.remove(tabId);
   void jobs.onTabGone(tabId);
 });
@@ -122,6 +126,7 @@ async function buildState(tabId: number): Promise<PopupState> {
     settings,
     ...(asks[BROWSER_ASKS_KEY] ? { browserAsks: true } : {}),
     ...(update ? { update } : {}),
+    ...(installState() ? { install: installState() } : {}),
     ...(ytList ? { ytList } : {}),
   };
 }
@@ -159,6 +164,8 @@ function pushTab(tabId: number) {
 registry.onChange((tabId) => {
   void registry.get(tabId).then((items) => updateBadge(tabId, items));
   pushTab(tabId);
+  // A page opened again from the history: its download starts once its video is found.
+  void redoIfWaiting(tabId, registry, jobs);
 });
 
 jobs.onChange(() => {
@@ -213,6 +220,18 @@ async function onPopupMessage(port: chrome.runtime.Port, msg: PopupToBg) {
       return jobs.pause(msg.jobId);
     case 'resume':
       return jobs.resume(msg.jobId);
+    case 'reorder':
+      return jobs.reorder(msg.jobId, msg.before);
+    case 'pause-all':
+      return jobs.pauseAll();
+    case 'save-thumb': {
+      const tabId = ports.get(port);
+      const item = tabId === undefined ? undefined : findVisible(await registry.get(tabId), msg.mediaId);
+      if (item) await saveThumbnail(item);
+      return;
+    }
+    case 'resume-all':
+      return jobs.resumeAll();
     case 'open-browser-downloads':
       // chrome://settings is Brave's, Edge's… settings too (each one redirects it).
       await chrome.tabs.create({ url: 'chrome://settings/downloads' });
@@ -227,11 +246,29 @@ async function onPopupMessage(port: chrome.runtime.Port, msg: PopupToBg) {
       await seenUpdate(msg.version);
       schedulePush(port);
       return;
+    case 'update-install':
+      await installUpdate(jobs.isBusy(), () => {
+        for (const p of ports.keys()) schedulePush(p);
+      });
+      return;
     case 'dismiss':
       return jobs.dismiss(msg.jobId);
     case 'show':
       chrome.downloads.show(msg.downloadId);
       return;
+    case 'open-shortcuts':
+      // chrome://extensions/shortcuts is Brave's, Edge's… page too (each one redirects it).
+      await chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
+      return;
+    case 'open-file':
+      // Only a file Grabby saved, still where it was (the browser checks it).
+      chrome.downloads.open(msg.downloadId);
+      return;
+    case 'redo': {
+      const entry = (await getHistory()).find((e) => e.id === msg.id);
+      if (entry) await redo(entry);
+      return;
+    }
     case 'clear-history':
       await clearHistory();
       schedulePush(port);

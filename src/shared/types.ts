@@ -122,6 +122,14 @@ export interface Job {
   title: string;
   pageUrl: string;
   quality?: string;
+  /** The channel or author, when the site tells it (file names). */
+  author?: string;
+  /** YouTube: sponsored parts left out of the file (SponsorBlock). */
+  sponsors?: number;
+  /** Its place in the queue, when the user moved it (otherwise when it was asked for). */
+  order?: number;
+  /** A contact sheet: a picture every so many seconds (0: chosen from the video's length). */
+  sheet?: number;
   kind: MediaKind;
   error?: string;
   raw?: boolean;
@@ -207,6 +215,9 @@ export interface HistoryEntry {
   thumbnail?: string;
   /** "1080p", "360p"… */
   quality?: string;
+  /** What was asked for, to download it again the same way. */
+  mode?: JobMode;
+  format?: OutputFormat;
   /** Set when the state is built: the file was moved, deleted or erased from the browser's list. */
   missing?: boolean;
 }

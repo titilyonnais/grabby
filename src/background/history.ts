@@ -1,7 +1,7 @@
 import type { HistoryEntry } from '../shared/types';
 
 const KEY = 'history';
-const MAX = 50;
+const MAX = 500;
 /** Thumbnails kept in the history: page URLs or small stills, not big data: URLs. */
 const MAX_THUMB = 120_000;
 /** How long a "is the file still there?" answer is reused (state is rebuilt several times a second). */

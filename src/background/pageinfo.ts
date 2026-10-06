@@ -53,7 +53,7 @@ async function upsertYouTube(registry: Registry, ctx: DetectContext, frameId: nu
     // Recorded discreetly by a hidden player when YouTube allows embedding it.
     ...(p?.embeddable ? { ytId: p.id } : {}),
     ...(variants[0]?.sizes.mp4 ? { size: variants[0].sizes.mp4 } : {}),
-    ...(p?.captions?.length ? { subtitles: youtubeSubs(p.captions, p.translations) } : {}),
+    ...(p?.captions?.length ? { subtitles: youtubeSubs(p.captions, p.translations, p.translationNames) } : {}),
     ...(p?.author ? { author: p.author.slice(0, 200) } : {}),
     ...(p?.chapters?.length ? { chapters: p.chapters.slice(0, 200) } : {}),
   });
@@ -81,13 +81,16 @@ function trackSubs(v: PageVideo): SubtitleTrack[] {
     });
 }
 
+/** The most translations offered (YouTube has about 130 languages). */
+const MAX_TRANSLATIONS = 200;
+
 /**
- * YouTube's subtitles, the ones made by speech recognition said so. When none is in the
- * browser's language but YouTube can translate into it, a translated track is offered too.
+ * YouTube's subtitles, the ones made by speech recognition said so, and YouTube's
+ * translation of the video's own track into every other language it offers.
  */
-export function youtubeSubs(captions: NonNullable<YtInfo['captions']>, translations: string[] = [], ui = uiLanguage()): SubtitleTrack[] {
+export function youtubeSubs(captions: NonNullable<YtInfo['captions']>, translations: string[] = [], names: Record<string, string> = {}): SubtitleTrack[] {
   const own = captions
-    .filter((c) => typeof c.url === 'string' && /^https:\/\/([\w-]+\.)*youtube\.com\//.test(c.url))
+    .filter((c) => typeof c.url === 'string' && /^https:\/\/([\w-]+\.)*youtube\.com\//.test(c.url) && typeof c.lang === 'string' && /^[\w-]{2,20}$/.test(c.lang))
     .slice(0, 40)
     .map<SubtitleTrack>((c) => ({
       id: hashId(c.url),
@@ -98,13 +101,29 @@ export function youtubeSubs(captions: NonNullable<YtInfo['captions']>, translati
       ...(c.auto ? { auto: true } : {}),
     }));
   const base = (l: string) => l.toLowerCase().split(/[-_]/)[0]!;
-  const into = translations.find((t) => base(t) === base(ui));
-  const source = own.find((c) => !c.auto) ?? own[0];
-  if (!into || !source || own.some((c) => !c.auto && base(c.lang!) === base(ui))) return own;
-  return [...own, { id: hashId(`${source.url}#tlang=${into}`), url: source.url, label: source.label, lang: source.lang!, ...(source.auto ? { auto: true } : {}), tlang: into }];
+  // Translated from the language spoken in the video (the automatic track's): its written
+  // track when there is one, else the automatic one; without either, English, else the first.
+  const spoken = own.find((c) => c.auto);
+  const written = (l?: string) => own.find((c) => !c.auto && (l === undefined || base(c.lang!) === base(l)));
+  const source = (spoken && (written(spoken.lang) ?? spoken)) ?? written('en') ?? written() ?? own[0];
+  if (!source) return own;
+  // Not into a language the video has its own written track in, nor into the source's.
+  const has = new Set([...own.filter((c) => !c.auto).map((c) => base(c.lang!)), base(source.lang!)]);
+  const seen = new Set<string>();
+  const into = translations.filter((t) => typeof t === 'string' && /^[\w-]{2,20}$/.test(t) && !has.has(base(t)) && !seen.has(t) && !!seen.add(t));
+  return [
+    ...own,
+    ...into.slice(0, MAX_TRANSLATIONS).map<SubtitleTrack>((t) => ({
+      id: hashId(`${source.url}#tlang=${t}`),
+      url: source.url,
+      // YouTube's name for it: used when the browser can't name the language.
+      label: typeof names[t] === 'string' && names[t] ? names[t]! : t,
+      lang: source.lang!,
+      ...(source.auto ? { auto: true } : {}),
+      tlang: t,
+    })),
+  ];
 }
-
-const uiLanguage = (): string => (typeof chrome !== 'undefined' && chrome.i18n?.getUILanguage?.()) || 'en';
 
 function captureItem(ctx: DetectContext, frameId: number, index: number, over: Partial<MediaItem>): MediaItem {
   return {

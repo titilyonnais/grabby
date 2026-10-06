@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildFilename, namePartsOf, sanitizeFilename, templateOf } from '../../src/shared/filename';
+import { buildFilename, folderFor, namePartsOf, sanitizeFilename, templateOf } from '../../src/shared/filename';
 
 describe('sanitizeFilename', () => {
   it('replaces Windows-forbidden characters with what a person would type', () => {
@@ -73,5 +73,31 @@ describe('file name parts (checkboxes in the settings)', () => {
     expect(buildFilename(templateOf(['title', 'quality']), { ...ctx, quality: undefined }, 'mp4')).toBe('Film.mp4');
     // Only the quality, and there is none (a recording): the title stands in.
     expect(buildFilename(templateOf(['quality']), { ...ctx, quality: undefined }, 'mp4')).toBe('Film.mp4');
+  });
+});
+
+describe('channel, format and folders (1.9)', () => {
+  const ctx = { title: 'Spring', site: 'youtube.com', quality: '1080p', channel: 'Blender', format: 'MP4', date: new Date(2026, 9, 6) };
+  const names = { video: 'Vidéos', audio: 'Musique', image: 'Images' };
+
+  it('the channel and the format can be in the name', () => {
+    expect(buildFilename('{title} - {channel} - {format}', ctx, 'mp4')).toBe('Spring - Blender - MP4.mp4');
+    expect(templateOf(['date', 'channel', 'title', 'format'])).toBe('{title} - {channel} - {format} - {date}');
+    expect(namePartsOf('{channel} - {title}')).toEqual(['title', 'channel']);
+    // No channel known: its place disappears with its dash.
+    expect(buildFilename('{title} - {channel} - {quality}', { ...ctx, channel: undefined }, 'mp4')).toBe('Spring - 1080p.mp4');
+  });
+
+  it('files sorted in Grabby, by site or by kind', () => {
+    expect(folderFor('none', { site: 'youtube.com', kind: 'video' }, names)).toBeUndefined();
+    expect(folderFor('grabby', { site: 'youtube.com', kind: 'video' }, names)).toBe('Grabby');
+    expect(folderFor('site', { site: 'youtube.com', kind: 'video' }, names)).toBe('Grabby/youtube.com');
+    expect(folderFor('type', { site: 'youtube.com', kind: 'audio' }, names)).toBe('Grabby/Musique');
+    expect(buildFilename('{title}', ctx, 'mp3', folderFor('type', { site: 'x', kind: 'audio' }, names))).toBe('Grabby/Musique/Spring.mp3');
+  });
+
+  it('each folder of the path is made safe on its own', () => {
+    expect(buildFilename('{title}', ctx, 'mp4', 'Grabby/a:b?c')).toBe('Grabby/a-bc/Spring.mp4');
+    expect(buildFilename('{title}', ctx, 'mp4', 'Grabby//../x')).toBe('Grabby/x/Spring.mp4');
   });
 });

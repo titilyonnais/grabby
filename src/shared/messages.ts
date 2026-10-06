@@ -18,23 +18,8 @@ export interface DownloadExtra {
   noChapters?: boolean;
   /** A still picture: where in the video. */
   at?: number;
-}
-
-/** What a download asks for besides the quality and the format. */
-export interface DownloadExtra {
-  /** A smaller quality made by shrinking the picture (e.g. 360 for 360p). */
-  scale?: number;
-  /** Only this part of the video. */
-  clip?: Clip;
-  /** Several parts joined in one file. */
-  parts?: Clip[];
-  subtitles?: SubsChoice;
-  /** Sound tracks (other languages), the main one first. */
-  audios?: string[];
-  /** Leave the chapters out. */
-  noChapters?: boolean;
-  /** A still picture: where in the video. */
-  at?: number;
+  /** A contact sheet (JPEG): a picture every so many seconds (0: chosen from its length). */
+  sheet?: number;
 }
 import type { Settings } from './settings';
 
@@ -70,6 +55,8 @@ export interface YtInfo {
   captions?: { url: string; lang: string; name: string; auto: boolean }[];
   /** Languages YouTube can translate its subtitles into. */
   translations?: string[];
+  /** Their names, as YouTube writes them (code → name). */
+  translationNames?: Record<string, string>;
   /** Its channel. */
   author?: string;
   /** Chapters its description lists. */
@@ -130,6 +117,8 @@ export interface PopupState {
   browserAsks?: boolean;
   /** A newer Grabby is out (only when the user asked to be told). */
   update?: Release;
+  /** Where installing a new version got to ("Update" clicked). */
+  install?: InstallState;
   /** The YouTube playlist or channel on screen. */
   ytList?: YtList;
 }
@@ -142,6 +131,12 @@ export type PopupToBg =
   | { type: 'cancel'; jobId: string }
   | { type: 'pause'; jobId: string }
   | { type: 'resume'; jobId: string }
+  /** A waiting download moved in the queue: before `before`, or last. */
+  | { type: 'reorder'; jobId: string; before?: string }
+  | { type: 'pause-all' }
+  /** The video's own picture (its thumbnail), at its best. */
+  | { type: 'save-thumb'; mediaId: string }
+  | { type: 'resume-all' }
   /** Opens the browser's download settings ("ask where to save"). */
   | { type: 'open-browser-downloads' }
   | { type: 'finish-capture'; jobId: string }
@@ -150,8 +145,12 @@ export type PopupToBg =
   | { type: 'start-now'; jobId: string }
   /** Hides the "new version" notice until the next one. */
   | { type: 'update-seen'; version: string }
+  | { type: 'update-install' }
   | { type: 'dismiss'; jobId: string }
   | { type: 'show'; downloadId: number }
+  | { type: 'open-file'; downloadId: number }
+  | { type: 'open-shortcuts' }
+  | { type: 'redo'; id: string }
   | { type: 'clear-history' }
   | { type: 'history-remove'; id: string }
   | { type: 'settings'; patch: Partial<Settings> };
@@ -188,3 +187,12 @@ export type OffscreenToBg =
   | { target: 'bg'; type: 'job-paused'; jobId: string }
   /** capture-sink → SW: may this job write capture chunks? */
   | { target: 'bg'; type: 'sink-check'; jobId: string };
+
+/** Installing a new version through the update helper. */
+export type InstallStep = 'working' | 'done' | 'uptodate' | 'helper_missing' | 'busy' | 'failed';
+export interface InstallState {
+  step: InstallStep;
+  version?: string;
+  /** failed: the helper's code (offline, bad_digest…). */
+  error?: string;
+}

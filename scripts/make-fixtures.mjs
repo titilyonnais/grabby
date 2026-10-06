@@ -29,6 +29,10 @@ if (process.argv.includes('--subs')) {
   await subtitles();
   process.exit(0);
 }
+if (process.argv.includes('--v19')) {
+  await v19();
+  process.exit(0);
+}
 if (process.argv.includes('--v18')) {
   await v18();
   process.exit(0);
@@ -293,4 +297,9 @@ async function v18() {
   ].join('\n'));
   await mkdir(join(out, 'subs'), { recursive: true });
   await writeFile(join(out, 'subs/chapters.vtt'), ['WEBVTT', '', '00:00.000 --> 00:02.000', 'Début', '', '00:02.000 --> 00:04.000', 'Milieu', '', '00:04.000 --> 00:06.000', 'Fin', ''].join('\n'));
+}
+
+// 1.9: a page's preview picture (og:image), big like YouTube's.
+async function v19() {
+  ff('-f', 'lavfi', '-i', 'testsrc2=size=1280x720:rate=1', '-frames:v', '1', '-q:v', '3', join(out, 'poster.jpg'));
 }

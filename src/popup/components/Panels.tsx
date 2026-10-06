@@ -62,16 +62,29 @@ function HistoryThumb({ entry }: { entry: HistoryEntry }) {
   );
 }
 
+/** Entries whose title, file name or site has every word typed (accents and case aside). */
+export function matching(entries: HistoryEntry[], query: string): HistoryEntry[] {
+  const fold = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+  const words = fold(query).split(/\s+/).filter(Boolean);
+  if (!words.length) return entries;
+  return entries.filter((e) => {
+    const text = fold(`${e.title} ${e.filename} ${e.pageUrl.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}`);
+    return words.every((w) => text.includes(w));
+  });
+}
+
 export function HistoryList({ entries, send }: { entries: HistoryEntry[]; send: (m: PopupToBg) => void }) {
   // Entries the user just removed: they fold away before the list forgets them.
   const [leaving, setLeaving] = useState<string[]>([]);
+  const [query, setQuery] = useState('');
   if (!entries.length) return <StateCard icon="folder" title={t('tabHistory')} body={t('historyEmpty')} />;
+  const shown = matching(entries, query);
   const remove = (id: string) => {
     setLeaving((l) => [...l, id]);
     setTimeout(() => send({ type: 'history-remove', id }), reducedMotion() ? 0 : REMOVE_MS);
   };
   const days: { label: string; items: HistoryEntry[] }[] = [];
-  for (const e of entries) {
+  for (const e of shown) {
     const label = dayLabel(e.date);
     const last = days[days.length - 1];
     if (last?.label === label) last.items.push(e);
@@ -86,6 +99,13 @@ export function HistoryList({ entries, send }: { entries: HistoryEntry[]; send: 
           {t('clearHistory')}
         </button>
       </header>
+      {entries.length > 3 && (
+        <label class="search">
+          <Icon name="search" size={16} />
+          <input type="search" value={query} placeholder={t('historySearch')} aria-label={t('historySearch')} onInput={(e) => setQuery((e.target as HTMLInputElement).value)} />
+        </label>
+      )}
+      {!shown.length && <p class="hint history__none">{t('historyNoMatch')}</p>}
       {days.map((d) => (
         <div key={d.label} class="history__day">
           <h3 class="history__date">{d.label}</h3>
@@ -114,6 +134,16 @@ export function HistoryList({ entries, send }: { entries: HistoryEntry[]; send: 
                     </span>
                   </button>
                   <span class="hcard__tools">
+                    {canShow && (
+                      <button class="hcard__btn" title={t('historyOpenFile')} aria-label={t('historyOpenFile')} onClick={() => send({ type: 'open-file', downloadId: e.downloadId! })}>
+                        <Icon name="play" size={15} />
+                      </button>
+                    )}
+                    {/^https?:/i.test(e.pageUrl) && (
+                      <button class="hcard__btn" title={t('historyRedo')} aria-label={t('historyRedo')} onClick={() => send({ type: 'redo', id: e.id })}>
+                        <Icon name="retry" size={15} />
+                      </button>
+                    )}
                     {/^https?:/i.test(e.pageUrl) && (
                       <a class="hcard__btn" href={e.pageUrl} target="_blank" rel="noreferrer" title={t('historyOpenPage')} aria-label={t('historyOpenPage')}>
                         <Icon name="external" size={15} />

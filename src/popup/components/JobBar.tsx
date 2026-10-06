@@ -68,8 +68,12 @@ export function jobStats(job: Job): string[] {
     parts.push(`${size(job.speed)}/s`);
     if (total) parts.push(t('jobLeft', duration((total - job.bytes) / job.speed)));
   }
+  if (job.sponsors) parts.push(sponsorsLeftOut(job.sponsors));
   return parts;
 }
+
+/** "2 sponsored parts left out" (SponsorBlock). */
+export const sponsorsLeftOut = (n: number): string => (n === 1 ? t('jobSponsorsOne') : t('jobSponsors', String(n)));
 
 /** A little burst of confetti around the check when a file is saved. */
 function Burst() {
@@ -88,7 +92,7 @@ function Burst() {
  */
 export function JobBar({ job, send, canFinish = true }: { job: Job; send: (m: PopupToBg) => void; canFinish?: boolean }) {
   if (job.status === 'done') {
-    return (
+    const done = (
       <div class="job job--done" role="status">
         <span class="job__msg">
           <span class="job__check">
@@ -111,6 +115,17 @@ export function JobBar({ job, send, canFinish = true }: { job: Job; send: (m: Po
           </button>
         </div>
       </div>
+    );
+    // What was left out (SponsorBlock), under it: the line has no room to spare.
+    return job.sponsors ? (
+      <div class="job-wrap">
+        {done}
+        <p class="job__stats">
+          <span>{sponsorsLeftOut(job.sponsors)}</span>
+        </p>
+      </div>
+    ) : (
+      done
     );
   }
 

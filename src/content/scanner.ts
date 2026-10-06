@@ -249,8 +249,13 @@ function collect(): PageInfo {
   if (isTop) {
     const yt = readYouTubeInfo(document, location.href);
     if (yt) info.youtube = { ...yt, ...(ytPlayer && yt.id === ytPlayer.id ? { player: ytPlayer } : {}) };
-    const list = /(^|\.)youtube\.com$/.test(location.hostname) ? readYtList(document, location.href) : null;
-    if (list) info.ytList = list;
+    // The page's list is a bonus: whatever YouTube changes in it, the video is still found.
+    try {
+      const list = /(^|\.)youtube\.com$/.test(location.hostname) ? readYtList(document, location.href) : null;
+      if (list) info.ytList = list;
+    } catch {
+      /* no list */
+    }
   }
   return info;
 }

@@ -2,7 +2,7 @@ import { hostOf } from '../parsers/url';
 import { isAudioFormat, isImageFormat, VIDEO_FORMATS } from '../shared/formats';
 import { audioChoices } from '../shared/audio';
 import { canShrink, scaleChoices, SHRUNK_FORMATS } from '../shared/scale';
-import { buildFilename } from '../shared/filename';
+import { buildFilename, folderFor } from '../shared/filename';
 import { canClip, clipLabel, clock, sameClip } from '../shared/clip';
 import { uid } from '../shared/ids';
 import type { BgToContent, ContentToBg, DownloadExtra, OffscreenToBg } from '../shared/messages';
@@ -26,6 +26,7 @@ import { storedEnd } from '../shared/mediatime';
 import { rank } from '../shared/rank';
 import { cuesOf, toSrt } from '../shared/subtitles';
 import { listItem, numbered, type YtList } from '../shared/ytlist';
+import { sponsorParts, withoutSponsors } from '../shared/sponsors';
 
 const STORE_KEY = 'jobs';
 /** A job's download plan, kept apart (it can be big) for resuming. */
@@ -61,7 +62,8 @@ const INTERRUPT_REASONS: Record<string, ErrorCode> = {
 };
 
 /** The name a file gets from its job: the title, and which part of the video it holds. */
-export function titleOf(job: Pick<Job, 'title' | 'clip' | 'parts' | 'at'>): string {
+export function titleOf(job: Pick<Job, 'title' | 'clip' | 'parts' | 'at' | 'sheet'>): string {
+  if (job.sheet !== undefined) return `${job.title} (${(typeof chrome !== 'undefined' && chrome.i18n?.getMessage('sheetName')) || 'contact sheet'})`;
   if (job.at !== undefined) return `${job.title} (${clock(job.at).replace(':', 'm')})`;
   if (job.parts?.length) return `${job.title} (${job.parts.map(clipLabel).join(' + ')})`;
   return job.clip ? `${job.title} (${clipLabel(job.clip)})` : job.title;
@@ -163,7 +165,7 @@ export class JobManager {
   }
 
   list(tabId?: number): Job[] {
-    const all = [...this.jobs.values()].sort((a, b) => a.startedAt - b.startedAt);
+    const all = [...this.jobs.values()].sort((a, b) => queueRank(a) - queueRank(b));
     return tabId === undefined ? all : all.filter((j) => j.tabId === tabId);
   }
 
@@ -345,12 +347,17 @@ export class JobManager {
     if (!item) return undefined;
     const image = isImageFormat(format) && !item.audioOnly && mode === 'video' ? format : undefined;
     if (isImageFormat(format) && !image) return undefined;
+    // A contact sheet: the whole video, in its smallest quality (each picture is small).
+    const sheet = image === 'jpg' && extra.sheet !== undefined && item.duration && Number.isFinite(extra.sheet) ? Math.max(0, Math.round(extra.sheet)) : undefined;
+    if (sheet !== undefined && item.variants.length) variantId = smallest(item.variants).id;
     // Only the smaller qualities the card offers.
     if (scale !== undefined && (mode !== 'video' || image || !canShrink(item) || !scaleChoices(item.variants).includes(scale))) scale = undefined;
     // Several parts joined (the recording, or the download, covers them all).
     const parts = !image && canClip(item) ? joinedParts(extra.parts, item.duration) : undefined;
     // A part of the video, when it can be cut and isn't the whole of it. A picture: its part.
-    clip = image
+    clip = sheet !== undefined
+      ? undefined
+      : image
       ? imageClip(image === 'jpg', extra.at ?? extra.clip?.start, extra.clip, item.duration)
       : parts
         ? { start: parts[0]!.start, end: parts[parts.length - 1]!.end }
@@ -364,13 +371,13 @@ export class JobManager {
     const offered = audioChoices(item).map((a) => a.id);
     const audios = !image && extra.audios?.length ? extra.audios.filter((id) => offered.includes(id)) : [];
     const noChapters = !!extra.noChapters && !!item.chapters?.length;
-    const at = image === 'jpg' ? clip!.start : undefined;
+    const at = image === 'jpg' && sheet === undefined ? clip!.start : undefined;
     const same = (a?: string[], b?: string[]) => (a ?? []).join() === (b ?? []).join();
     const dup = [...this.jobs.values()].find(
       (j) =>
         j.tabId === tabId && j.mediaId === mediaId && j.mode === mode && j.variantId === variantId && j.scale === scale && sameClip(j.clip, clip) &&
         same(subsIds(j.subtitles), subtitles?.ids) && same(j.audios, audios) && (j.format ?? '') === (format ?? '') &&
-        same(j.parts?.map(clipLabel), parts?.map(clipLabel)) && !FINISHED.includes(j.status),
+        same(j.parts?.map(clipLabel), parts?.map(clipLabel)) && j.sheet === sheet && j.at === at && !FINISHED.includes(j.status),
     );
     if (dup) return dup;
 
@@ -389,6 +396,7 @@ export class JobManager {
       pageUrl: item.pageUrl,
       kind: item.kind,
       startedAt: Date.now(),
+      ...(item.author ? { author: item.author.slice(0, 120) } : {}),
       ...(variantId ? { variantId } : {}),
       ...(clip ? { clip } : {}),
       ...(parts ? { parts } : {}),
@@ -396,6 +404,7 @@ export class JobManager {
       ...(audios.length ? { audios } : {}),
       ...(noChapters ? { noChapters } : {}),
       ...(at !== undefined ? { at } : {}),
+      ...(sheet !== undefined ? { sheet } : {}),
       ...(scale ? { scale, quality: `${scale}p` } : mode === 'video' && variant && !image ? { quality: variant.label } : {}),
       // A recording's size is known beforehand only when the site tells it (YouTube).
       ...(item.kind === 'capture' && mode === 'video' && !image && (variant?.sizes?.[format as VideoFormat] ?? item.size)
@@ -436,6 +445,7 @@ export class JobManager {
         ...(j.audios ? { audios: j.audios } : {}),
         ...(j.noChapters ? { noChapters: true } : {}),
         ...(j.at !== undefined ? { at: j.at } : {}),
+        ...(j.sheet !== undefined ? { sheet: j.sheet } : {}),
       }))) this.changed();
   }
 
@@ -476,6 +486,43 @@ export class JobManager {
     else if (prev === 'downloading') await sendOffscreen({ target: 'offscreen', type: 'pause', jobId }).catch(() => {});
     await this.releaseRules(jobId);
     this.pump();
+  }
+
+  /**
+   * A waiting download moved in the queue (before `before`, or last). The waiting ones swap
+   * their places among themselves: the others keep theirs.
+   */
+  async reorder(jobId: string, before?: string): Promise<void> {
+    await this.ready;
+    const waiting = this.list().filter((j) => j.status === 'queued');
+    const moving = waiting.find((j) => j.id === jobId);
+    if (!moving || before === jobId) return;
+    const places = reorderedPlaces(waiting.map((j) => ({ id: j.id, rank: queueRank(j) })), jobId, before);
+    let moved = false;
+    for (const [id, rank] of places) {
+      const j = this.jobs.get(id)!;
+      if (queueRank(j) === rank) continue;
+      j.order = rank;
+      moved = true;
+    }
+    if (!moved) return;
+    this.changed();
+    this.pump();
+  }
+
+  /** "Tout mettre en pause": every download that can be paused. */
+  async pauseAll(): Promise<void> {
+    await this.ready;
+    // The waiting ones first: none of them starts in the place of one being paused.
+    const all = this.list().filter((j) => JobManager.canPause(j));
+    all.sort((a, b) => Number(b.status === 'queued') - Number(a.status === 'queued'));
+    for (const j of all) await this.pause(j.id);
+  }
+
+  /** "Tout reprendre": every paused download, in the queue's order. */
+  async resumeAll(): Promise<void> {
+    await this.ready;
+    for (const j of this.list().filter((x) => x.status === 'paused')) await this.resume(j.id);
   }
 
   /** Carries on with a paused job: from where it stopped, with what was already stored. */
@@ -676,22 +723,46 @@ export class JobManager {
     return n;
   }
 
-  private planFor(job: Job, item: MediaItem | null, settings: Settings): Promise<Plan> {
+  private async planFor(job: Job, item: MediaItem | null, settings: Settings): Promise<Plan> {
     if (!item) throw new PlanError('expired');
-    return buildPlan(item, {
+    const cut = await this.sponsorFree(job, item, settings);
+    const plan = await buildPlan(item, {
       mode: job.mode,
       ...(job.format ? { format: job.format } : {}),
       settings,
       fetchText: (u) => fetchTextAs(u, item.pageUrl),
       ...(job.variantId ? { variantId: job.variantId } : {}),
       ...(job.scale ? { scale: job.scale } : {}),
-      ...(job.clip ? { clip: job.clip } : {}),
-      ...(job.parts ? { parts: job.parts } : {}),
+      ...(cut.clip ? { clip: cut.clip } : {}),
+      ...(cut.parts ? { parts: cut.parts } : {}),
       ...(job.subtitles ? { subtitles: job.subtitles } : {}),
       ...(job.audios ? { audios: job.audios } : {}),
       ...(job.noChapters ? { noChapters: true } : {}),
       ...(job.at !== undefined ? { at: job.at } : {}),
+      ...(job.sheet !== undefined ? { sheet: job.sheet } : {}),
     });
+    if (!cut.sponsors) return plan;
+    this.update(job.id, { sponsors: cut.sponsors });
+    return { ...plan, sponsors: cut.sponsors };
+  }
+
+  /**
+   * YouTube, when the user asked for it: the sponsored parts (SponsorBlock) left out of what
+   * was asked (the whole video, a part or several). Nothing found: what was asked, as is.
+   */
+  private async sponsorFree(job: Job, item: MediaItem, settings: Settings): Promise<{ clip?: Clip; parts?: Clip[]; sponsors?: number }> {
+    const asked = { ...(job.clip ? { clip: job.clip } : {}), ...(job.parts ? { parts: job.parts } : {}) };
+    const id = item.ytId ?? job.ytId;
+    if (!settings.skipSponsors || !id || !item.duration || job.at !== undefined || job.sheet !== undefined || isImageFormat(job.format)) return asked;
+    const sponsors = await sponsorParts(id);
+    const ranges = job.parts ?? [job.clip ?? { start: 0, end: item.duration }];
+    const kept = withoutSponsors(ranges, sponsors);
+    const hit = sponsors.filter((s) => ranges.some((r) => s.start < r.end && s.end > r.start)).length;
+    if (!hit || !kept.length) return asked;
+    const parts = joinedParts(kept, item.duration);
+    if (parts) return { parts, sponsors: hit };
+    const clip = validClip(kept[0], item.duration);
+    return clip ? { clip, sponsors: hit } : asked;
   }
 
   /**
@@ -717,12 +788,21 @@ export class JobManager {
   }
 
   private filename(job: Job, ext: string, s: Settings): string {
+    const site = hostOf(job.pageUrl).replace(/^www\./, '');
+    const kind = isImageFormat(ext) ? 'image' : job.mode === 'audio' ? 'audio' : 'video';
     return buildFilename(
       s.template,
       // A part says which one: "Title (1m05-2m40)"; parts joined, all of them; a still, its moment.
-      { title: titleOf(job), site: hostOf(job.pageUrl).replace(/^www\./, ''), date: new Date(), ...(job.quality ? { quality: job.quality } : {}) },
+      {
+        title: titleOf(job),
+        site,
+        date: new Date(),
+        format: ext.toUpperCase(),
+        ...(job.quality ? { quality: job.quality } : {}),
+        ...(job.author ? { channel: job.author } : {}),
+      },
       ext,
-      s.subfolder ? 'Grabby' : undefined,
+      folderFor(s.folder, { site, kind }, folderNames()),
     );
   }
 
@@ -1102,6 +1182,8 @@ export class JobManager {
         downloadId: d.id,
         ...(thumbnail ? { thumbnail } : {}),
         ...(job.mode === 'video' && job.quality ? { quality: job.quality } : {}),
+        mode: job.mode,
+        ...(job.format ? { format: job.format } : {}),
       });
       void notifyFinished(this.jobs.get(job.id) ?? job);
       await this.cleanup(job.id);
@@ -1164,4 +1246,31 @@ export class JobManager {
       }
     }, 500);
   }
+}
+
+/** The folders of each kind of file, in the browser's language ("Vidéos", "Musique", "Images"). */
+export function folderNames(): Record<'video' | 'audio' | 'image', string> {
+  const say = (k: string, fallback: string) => chrome.i18n.getMessage(k) || fallback;
+  return { video: say('folder_video', 'Videos'), audio: say('folder_audio', 'Music'), image: say('folder_image', 'Pictures') };
+}
+
+/** Where a download is in the queue: where the user put it, or when it was asked for. */
+export const queueRank = (j: Pick<Job, 'order' | 'startedAt'>): number => j.order ?? j.startedAt;
+
+/**
+ * The waiting downloads' places once one is moved before another (or last): the same places,
+ * handed out in the new order (made distinct, so the order holds).
+ */
+export function reorderedPlaces(waiting: { id: string; rank: number }[], id: string, before?: string): Map<string, number> {
+  const ranks = waiting.map((w) => w.rank).sort((a, b) => a - b);
+  for (let i = 1; i < ranks.length; i++) if (ranks[i]! <= ranks[i - 1]!) ranks[i] = ranks[i - 1]! + 0.001;
+  const ids = waiting.map((w) => w.id).filter((x) => x !== id);
+  const at = before ? ids.indexOf(before) : -1;
+  ids.splice(at < 0 ? ids.length : at, 0, id);
+  return new Map(ids.map((x, i) => [x, ranks[i]!]));
+}
+
+/** The smallest quality offered (by its lines, else its bitrate). */
+function smallest<T extends { height?: number; bandwidth?: number }>(variants: T[]): T {
+  return variants.reduce((a, b) => ((b.height ?? Infinity) < (a.height ?? Infinity) || (b.height === a.height && (b.bandwidth ?? 0) < (a.bandwidth ?? 0)) ? b : a));
 }

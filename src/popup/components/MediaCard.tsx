@@ -3,15 +3,18 @@ import { audioChoices } from '../../shared/audio';
 import { canClip } from '../../shared/clip';
 import { formatDuration } from '../../shared/format';
 import { SUB_CODEC } from '../../shared/subtitles';
+import { languageName as baseLanguageName, subtitleChoices, subWordsFrom } from '../../shared/sublabels';
 import { AUDIO_FORMATS, CHAPTER_FORMATS, FORMAT_NAMES, IMAGE_FORMATS, isAudioFormat, isImageFormat, videoFormatsFor } from '../../shared/formats';
 import type { DownloadExtra, PopupToBg } from '../../shared/messages';
 import type { AudioFormat, Clip, OutputFormat, VideoFormat } from '../../shared/plan';
 import { canShrink, scaleChoices, SHRUNK_FORMATS } from '../../shared/scale';
+import { SHEET_EVERY, sheetCount } from '../../shared/sheet';
 import type { Job, MediaItem, Variant } from '../../shared/types';
 import { size, t, uiLang } from '../i18n';
 import { useUnfold } from '../unfold';
 import { Icon } from './Icon';
 import { canPause, isActive, JobBar } from './JobBar';
+import { Segmented } from './Segmented';
 import { Select, type SelectOption } from './Select';
 import { Moment, Trim } from './Trim';
 
@@ -47,15 +50,7 @@ function variantSize(v: Variant, format: OutputFormat, duration?: number): numbe
 const SHRUNK_BPS: Record<number, number> = { 144: 150e3, 240: 300e3, 360: 600e3, 480: 1e6, 720: 2.2e6, 1080: 4.5e6, 1440: 8e6 };
 const SCALE_PREFIX = 'scale:';
 
-/** "fr" → "French" (in the browser's language), for tracks the site names by their code only. */
-function languageName(code: string): string {
-  try {
-    const name = new Intl.DisplayNames([uiLang()], { type: 'language' }).of(code);
-    return name ? name[0]!.toLocaleUpperCase() + name.slice(1) : code;
-  } catch {
-    return code;
-  }
-}
+const languageName = (code: string) => baseLanguageName(code, uiLang());
 
 function Thumb({ item }: { item: MediaItem }) {
   const [broken, setBroken] = useState(false);
@@ -102,6 +97,10 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
   const [chapters, setChapters] = useState(true);
   // A still picture: where in the video.
   const [at, setAt] = useState(0);
+  // A JPEG: one picture of the video, a contact sheet of all of it, or its own thumbnail.
+  const [still, setStill] = useState<'frame' | 'sheet' | 'thumb'>('frame');
+  const [sheetEvery, setSheetEvery] = useState<number>(0);
+  const [thumbSaved, setThumbSaved] = useState(false);
   const image = isImageFormat(format);
   const whole = (c: Clip) => !!item.duration && c.start <= 0 && c.end >= Math.floor(item.duration);
   const chosen = trimming && parts ? parts.filter((c) => !whole(c) || parts.length > 1) : [];
@@ -154,12 +153,8 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
   // MPEG-TS and AVI hold no subtitles: they can only go next to the video.
   const subsMustApart = !SUB_CODEC[scale && format === 'webm' ? 'mp4' : format];
   const subs = subsOffered && subsIds.length ? { ids: subsIds, separate: subsApart || subsMustApart } : null;
-  const subsOptions: SelectOption<string>[] = (item.subtitles ?? []).map((s) => {
-    const name = s.label === s.lang ? languageName(s.lang) : s.label;
-    // Translated by YouTube: the language it becomes, from the one it comes from.
-    const label = s.tlang ? t('subsTranslated', [languageName(s.tlang), name]) : s.forced ? `${name} (${t('subsForced')})` : name;
-    return { value: s.id, label, ...(s.tlang ? { detail: s.tlang } : s.lang && s.lang !== name ? { detail: s.lang } : {}) };
-  });
+  // By language, in the browser's language: the video's own, automatic ones, YouTube's translations.
+  const subsOptions: SelectOption<string>[] = subtitleChoices(item.subtitles ?? [], subWordsFrom(t), uiLang());
   const subsSummary = !subsIds.length
     ? t('subsNone')
     : subsIds.length === 1
@@ -180,6 +175,18 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
   // One stays: the sound of the video can't be taken away here.
   const toggleAudio = (id: string) => setAudioIds(audioSel.includes(id) ? (audioSel.length > 1 ? audioSel.filter((x) => x !== id) : audioSel) : [...audioSel, id]);
   const chaptersOffered = !!item.chapters?.length && !image && CHAPTER_FORMATS.has(format);
+  // What a JPEG can be: a sheet needs the length, a thumbnail a picture of the video.
+  const stills: ['frame' | 'sheet' | 'thumb', string][] = [
+    ['frame', t('stillFrame')],
+    ...(item.duration ? [['sheet', t('stillSheet')] as ['sheet', string]] : []),
+    ...(item.ytId || item.thumbnail ? [['thumb', t('stillThumb')] as ['thumb', string]] : []),
+  ];
+  const stillKind = format === 'jpg' && stills.some(([k]) => k === still) ? still : 'frame';
+  const sheetOptions: SelectOption<string>[] = SHEET_EVERY.map((s) => ({
+    value: String(s),
+    label: s === 0 ? t('sheetAuto') : s < 60 ? t('sheetSeconds', String(s)) : t('sheetMinutes', String(s / 60)),
+    detail: t('sheetPictures', String(sheetCount(item.duration ?? 1, s))),
+  }));
 
   const start = () => {
     const base = {
@@ -195,6 +202,11 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
       ...(audiosOffered && audioIds ? { audios: audio ? audioSel.slice(0, 1) : audioSel } : {}),
       ...(chaptersOffered && !chapters ? { noChapters: true } : {}),
     };
+    if (format === 'jpg' && stillKind === 'thumb') {
+      setThumbSaved(true);
+      return send({ type: 'save-thumb', mediaId: item.id });
+    }
+    if (format === 'jpg' && stillKind === 'sheet') return send({ ...base, sheet: sheetEvery });
     if (format === 'jpg') return send({ ...base, at });
     if (image) return send({ ...base, clip: parts?.[0] ?? { start: 0, end: Math.min(item.duration ?? 5, 5) } });
     // Several parts: one file with all of them, or one file each.
@@ -206,7 +218,11 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
   };
   const buttonLabel =
     format === 'jpg'
-      ? t('saveStill')
+      ? stillKind === 'sheet'
+        ? t('saveSheet')
+        : stillKind === 'thumb'
+          ? t(thumbSaved ? 'thumbSaved' : 'saveThumb')
+          : t('saveStill')
       : image
         ? t('saveAnimation')
         : chosen.length > 1
@@ -325,7 +341,7 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
             <>
               {!showJob && (
                 <div class="pickers">
-                  {qualityOptions.length > 1 && (
+                  {qualityOptions.length > 1 && !(format === 'jpg' && stillKind !== 'frame') && (
                     <Select label={t('qualityLabel')} value={quality ?? ''} options={qualityOptions} onChange={setQuality} disabled={audio} />
                   )}
                   <Select label={t('formatLabel')} value={format} options={formatOptions} onChange={setFormat} />
@@ -362,7 +378,23 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
                   <input class="switch" type="checkbox" role="switch" checked={chapters} onChange={(e) => setChapters(e.currentTarget.checked)} />
                 </label>
               )}
-              {!showJob && format === 'jpg' && <Moment duration={item.duration ?? 1} at={at} onChange={setAt} />}
+              {!showJob && format === 'jpg' && stills.length > 1 && (
+                <div class="still-kind">
+                  <Segmented
+                    label={t('stillKind')}
+                    value={stillKind}
+                    options={stills}
+                    onChange={(k) => {
+                      setStill(k);
+                      setThumbSaved(false);
+                    }}
+                  />
+                </div>
+              )}
+              {!showJob && format === 'jpg' && stillKind === 'frame' && <Moment duration={item.duration ?? 1} at={at} onChange={setAt} />}
+              {!showJob && format === 'jpg' && stillKind === 'sheet' && (
+                <Select label={t('sheetEvery')} value={String(sheetEvery)} options={sheetOptions} onChange={(v) => setSheetEvery(Number(v))} />
+              )}
               {!showJob && image && format !== 'jpg' && clippable && (
                 <Trim key="animation" duration={item.duration!} parts={parts} onChange={setParts} single={{ max: MAX_ANIMATION }} />
               )}
@@ -393,7 +425,9 @@ export function MediaCard({ item, job, open: wantOpen, onToggle: toggleOpen, ind
               {item.kind === 'capture' && !showJob && <p class="hint">{t(hidden ? 'hiddenHint' : 'captureHint')}</p>}
               {scale && !audio && !image && !showJob && <p class="hint">{t('shrinkHint')}</p>}
               {chosen.length > 0 && !audio && !image && !showJob && <p class="hint">{t('trimHint')}</p>}
-              {image && !showJob && <p class="hint">{t(format === 'jpg' ? 'stillHint' : 'animationHint')}</p>}
+              {image && !showJob && (
+                <p class="hint">{t(format !== 'jpg' ? 'animationHint' : stillKind === 'sheet' ? 'sheetHint' : stillKind === 'thumb' ? 'thumbHint' : 'stillHint')}</p>
+              )}
             </>
           )}
         </div>

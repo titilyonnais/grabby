@@ -2,7 +2,6 @@ import { useState } from 'preact/hooks';
 import { AUDIO_FORMATS, FORMAT_NAMES, isAudioFormat } from '../../shared/formats';
 import type { PopupToBg } from '../../shared/messages';
 import type { OutputFormat } from '../../shared/plan';
-import type { Release } from '../../shared/release';
 import { LIST_QUALITIES, type YtList } from '../../shared/ytlist';
 import { t } from '../i18n';
 import { Icon } from './Icon';
@@ -14,7 +13,19 @@ const LIST_VIDEO = ['mp4', 'webm', 'mkv'] as const;
  * A YouTube playlist or channel: every video it shows, in one quality and one format, each
  * one recorded like a single video (two at a time), numbered in the list's order.
  */
-export function Playlist({ list, preferred, send }: { list: YtList; preferred: { video: OutputFormat; audio: OutputFormat }; send: (m: PopupToBg) => void }) {
+export function Playlist({
+  list,
+  preferred,
+  send,
+  compact,
+}: {
+  list: YtList;
+  preferred: { video: OutputFormat; audio: OutputFormat };
+  send: (m: PopupToBg) => void;
+  /** Under the video being watched: one line, opened on demand. */
+  compact?: boolean;
+}) {
+  const [open, setOpen] = useState(!compact);
   const [quality, setQuality] = useState<string>(LIST_QUALITIES[0].id);
   const [format, setFormat] = useState<OutputFormat>((LIST_VIDEO as readonly string[]).includes(preferred.video) ? preferred.video : 'mp4');
   const [sent, setSent] = useState(false);
@@ -24,19 +35,34 @@ export function Playlist({ list, preferred, send }: { list: YtList; preferred: {
     send({ type: 'download-list', quality, mode: audio ? 'audio' : 'video', format });
     setSent(true);
   };
+  const head = (
+    <div class="ylist__head">
+      <span class="ylist__icon">
+        <Icon name="list" size={18} />
+      </span>
+      <span class="ylist__text">
+        <span id="ylist-title" class="ylist__title" title={list.title}>
+          {list.title}
+        </span>
+        <span class="ylist__meta">{t(list.kind === 'channel' ? 'listChannel' : 'listPlaylist', String(count))}</span>
+      </span>
+      {compact && (
+        <button class="btn btn--soft btn--small" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? t('listLess') : t('listMore')}
+        </button>
+      )}
+    </div>
+  );
+  if (!open) {
+    return (
+      <section class="ylist ylist--compact" aria-labelledby="ylist-title">
+        {head}
+      </section>
+    );
+  }
   return (
-    <section class="ylist" aria-labelledby="ylist-title">
-      <div class="ylist__head">
-        <span class="ylist__icon">
-          <Icon name="list" size={18} />
-        </span>
-        <span class="ylist__text">
-          <span id="ylist-title" class="ylist__title" title={list.title}>
-            {list.title}
-          </span>
-          <span class="ylist__meta">{t(list.kind === 'channel' ? 'listChannel' : 'listPlaylist', String(count))}</span>
-        </span>
-      </div>
+    <section class={`ylist${compact ? ' ylist--compact' : ''}`} aria-labelledby="ylist-title">
+      {head}
       <div class="bulk__row">
         <Select
           label={t('formatLabel')}
@@ -68,29 +94,5 @@ export function Playlist({ list, preferred, send }: { list: YtList; preferred: {
       </button>
       <p class="hint">{t('listHint')}</p>
     </section>
-  );
-}
-
-/** "Grabby x.y is out", with a link to its page; closed until the next version. */
-export function UpdateNotice({ release, send }: { release: Release; send: (m: PopupToBg) => void }) {
-  return (
-    <div class="help update" role="status">
-      <span class="help__icon">
-        <Icon name="gift" size={16} />
-      </span>
-      <div class="help__text">
-        <p class="help__title">{t('updateTitle', release.version)}</p>
-        <p class="help__body">{t('updateBody')}</p>
-        <span class="update__actions">
-          <a class="btn btn--soft btn--small" href={release.url} target="_blank" rel="noreferrer noopener">
-            {t('updateOpen')}
-            <Icon name="external" size={14} />
-          </a>
-          <button class="link-btn" onClick={() => send({ type: 'update-seen', version: release.version })}>
-            {t('dismiss')}
-          </button>
-        </span>
-      </div>
-    </div>
   );
 }

@@ -127,9 +127,14 @@ export function describeFormats(r: PlayerResponse): YtInfo | null {
       return [];
     }
   });
-  const translations = (r.captions?.playerCaptionsTracklistRenderer?.translationLanguages ?? []).flatMap((t) =>
-    t.languageCode ? [t.languageCode] : [],
-  );
+  const offered = r.captions?.playerCaptionsTracklistRenderer?.translationLanguages ?? [];
+  const translations = offered.flatMap((t) => (t.languageCode ? [t.languageCode] : []));
+  // YouTube's own names, for the languages the browser can't name.
+  const translationNames: Record<string, string> = {};
+  for (const t of offered) {
+    const name = t.languageName?.simpleText ?? t.languageName?.runs?.map((x) => x.text ?? '').join('');
+    if (t.languageCode && name) translationNames[t.languageCode] = name.slice(0, 60);
+  }
   const duration = Number(d.lengthSeconds) || 0;
   const chapters: Chapter[] = descriptionChapters(d.shortDescription, duration || undefined);
   return {
@@ -139,7 +144,7 @@ export function describeFormats(r: PlayerResponse): YtInfo | null {
     ...(d.author ? { author: d.author } : {}),
     ...(chapters.length ? { chapters } : {}),
     ...(captions.length ? { captions } : {}),
-    ...(captions.length && translations.length ? { translations } : {}),
+    ...(captions.length && translations.length ? { translations, translationNames } : {}),
     embeddable: r.playabilityStatus?.playableInEmbed !== false && r.playabilityStatus?.status === 'OK',
     qualities,
   };

@@ -35,11 +35,15 @@ export interface FilenameContext {
   title: string;
   site: string;
   quality?: string;
+  /** The channel or author, when the site tells it. */
+  channel?: string;
+  /** The file's format, as it is shown ("MP4"). */
+  format?: string;
   date: Date;
 }
 
-/** What a file name can be made of, in this order: "Title - 1080p - site.com - 2026-10-04". */
-export const NAME_PARTS = ['title', 'quality', 'site', 'date'] as const;
+/** What a file name can be made of, in this order: "Title - Channel - 1080p - MP4 - site.com - 2026-10-04". */
+export const NAME_PARTS = ['title', 'channel', 'quality', 'format', 'site', 'date'] as const;
 export type NamePart = (typeof NAME_PARTS)[number];
 
 /** The parts a name template uses; a template naming none of them counts as the title alone. */
@@ -64,6 +68,8 @@ export function buildFilename(
     title: ctx.title,
     site: ctx.site,
     quality: ctx.quality ?? '',
+    channel: ctx.channel ?? '',
+    format: ctx.format ?? '',
     // The user's own calendar day (toISOString is UTC: in Paris just after midnight it
     // would still be yesterday).
     date: `${ctx.date.getFullYear()}-${String(ctx.date.getMonth() + 1).padStart(2, '0')}-${String(ctx.date.getDate()).padStart(2, '0')}`,
@@ -76,5 +82,19 @@ export function buildFilename(
     .replace(/^\s*-\s+|\s+-\s*$/g, '');
   const stem = sanitizeFilename(raw, sanitizeFilename(ctx.title), MAX_TOTAL - ext.length - 1);
   const file = `${stem}.${ext}`;
-  return subfolder ? `${sanitizeFilename(subfolder, 'Grabby')}/${file}` : file;
+  // Each folder of the path made safe on its own ("Grabby/youtube.com").
+  const folders = (subfolder ?? '').split('/').map((f) => sanitizeFilename(f, '', 60)).filter(Boolean);
+  return folders.length ? `${folders.join('/')}/${file}` : file;
+}
+
+/** Where files go in the downloads folder: there, in "Grabby", in "Grabby/<site>", in "Grabby/<kind>". */
+export const FOLDER_MODES = ['none', 'grabby', 'site', 'type'] as const;
+export type FolderMode = (typeof FOLDER_MODES)[number];
+
+/** A file's folder for a way of sorting (`names`: the folders of each kind, in the user's language). */
+export function folderFor(mode: FolderMode, ctx: { site: string; kind: 'video' | 'audio' | 'image' }, names: Record<'video' | 'audio' | 'image', string>): string | undefined {
+  if (mode === 'grabby') return 'Grabby';
+  if (mode === 'site') return `Grabby/${ctx.site || 'web'}`;
+  if (mode === 'type') return `Grabby/${names[ctx.kind]}`;
+  return undefined;
 }

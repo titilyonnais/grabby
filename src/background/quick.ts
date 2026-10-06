@@ -34,7 +34,8 @@ export async function quickDownload(registry: Registry, jobs: JobManager, tabId:
     return;
   }
   const settings = await getSettings();
-  const audio = !!item.audioOnly;
+  // Sound only when the setting says so (or when there is nothing but sound).
+  const audio = !!item.audioOnly || settings.quickMode === 'audio';
   const job = await jobs.start(tabId, item.id, item.variants[0]?.id, audio ? 'audio' : 'video', audio ? settings.audioFormat : settings.videoFormat);
   if (job) await say(true, chrome.i18n.getMessage('quickStarted'), item.title);
 }

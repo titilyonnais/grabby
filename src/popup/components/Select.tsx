@@ -224,7 +224,7 @@ export function Select<T extends string>({ label, value, options, onChange, disa
                 onClick={() => choose(i)}
               >
                 <span class={`menu__check${multi ? ' menu__check--box' : ''}${multi && isOn(o.value) ? ' menu__check--on' : ''}`}>{isOn(o.value) && <Icon name="check" size={15} />}</span>
-                <span class="menu__label">{o.label}</span>
+                <span class="menu__label" title={o.label}>{o.label}</span>
                 {o.detail && <span class="menu__detail">{o.detail}</span>}
               </li>
             </Fragment>

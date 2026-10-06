@@ -65,6 +65,30 @@ export function clipChapters(chapters: Chapter[], clip: { start: number; duratio
   return out;
 }
 
+/**
+ * The video's chapters on a file made of pieces of it (`from`, `length`: on the video's clock).
+ * A chapter starting in a piece left out starts where the file goes on; of two at the same
+ * place, the later one stays.
+ */
+export function spanChapters(chapters: Chapter[], spans: { from: number; length: number }[]): Chapter[] {
+  const out: Chapter[] = [];
+  let total = 0;
+  const starts = spans.map((s) => {
+    const at = total;
+    total += s.length;
+    return at;
+  });
+  for (const c of chapters) {
+    const i = spans.findIndex((s) => c.start < s.from + s.length);
+    if (i < 0) continue;
+    const s = spans[i]!;
+    const at = Math.round((starts[i]! + Math.max(0, c.start - s.from)) * 1000) / 1000;
+    if (out.length && out[out.length - 1]!.start >= at) out.pop();
+    out.push({ start: at, title: c.title });
+  }
+  return out;
+}
+
 /** The chapters of parts joined end to end: one per part, named after its times. */
 export function partChapters(parts: { clip: Clip; length: number }[], name: (c: Clip) => string): Chapter[] {
   let at = 0;

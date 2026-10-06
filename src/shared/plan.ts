@@ -1,3 +1,4 @@
+import type { SheetLayout } from './sheet';
 /** A byte range is inclusive: [start, end]. */
 export interface SegRef {
   url: string;
@@ -96,10 +97,17 @@ export interface Plan {
   chapters?: Chapter[];
   /** What the file says it is: its title, who made it, a picture for a sound file's cover. */
   meta?: { title?: string; artist?: string; cover?: string };
+  /** A sound file: its loudness evened out (encoded, never copied). */
+  normalize?: boolean;
+  /** YouTube: how many sponsored parts were left out (the parts kept are `parts` or `clip`). */
+  sponsors?: number;
   /** Several parts joined in one file, on the video's clock (`clip` then covers them all). */
   parts?: Clip[];
-  /** A picture: a still at `at` seconds (JPEG), or an animation of the part (GIF, WebP). */
-  image?: { at?: number };
+  /**
+   * A picture: a still at `at` seconds (JPEG), an animation of the part (GIF, WebP), or a
+   * contact sheet of the whole video (JPEG).
+   */
+  image?: { at?: number; sheet?: SheetLayout };
 }
 
 /** The subtitle tracks of a plan (one object in plans saved before several were possible). */

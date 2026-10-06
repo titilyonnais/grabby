@@ -38,18 +38,35 @@ async function system(job: Job, ok: boolean, title: string, detail: string): Pro
       title,
       message: detail,
       silent: true,
+      // A file saved: open it, or show it in its folder.
+      ...(ok && job.downloadId !== undefined ? { buttons: [{ title: chrome.i18n.getMessage('notifyOpen') }, { title: chrome.i18n.getMessage('notifyShow') }] } : {}),
     });
   } catch (e) {
     console.warn('[grabby] notification', e);
   }
 }
 
-/** Clicking a "finished" notification shows the file in its folder. */
+/** The download a "finished" notification is about (undefined for a failure). */
+function downloadOf(id: string): number | undefined {
+  if (!id.startsWith(PREFIX)) return undefined;
+  const last = id.split(':').pop();
+  const n = Number(last);
+  return last !== '' && Number.isInteger(n) ? n : undefined;
+}
+
+/** Clicking a "finished" notification opens the file; its buttons open it or show it in its folder. */
 export function listenNotificationClicks(): void {
   chrome.notifications?.onClicked.addListener((id) => {
     if (!id.startsWith(PREFIX)) return;
-    const downloadId = Number(id.split(':').pop());
-    if (Number.isInteger(downloadId) && id.split(':').pop() !== '') chrome.downloads.show(downloadId);
+    const d = downloadOf(id);
+    if (d !== undefined) chrome.downloads.open(d);
+    chrome.notifications.clear(id);
+  });
+  chrome.notifications?.onButtonClicked.addListener((id, button) => {
+    const d = downloadOf(id);
+    if (d === undefined) return;
+    if (button === 0) chrome.downloads.open(d);
+    else chrome.downloads.show(d);
     chrome.notifications.clear(id);
   });
 }

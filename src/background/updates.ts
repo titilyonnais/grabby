@@ -1,5 +1,6 @@
 import { getSettings } from '../shared/settings';
 import { newerVersion, releaseOf, type Release } from '../shared/release';
+import type { InstallState } from '../shared/messages';
 
 /**
  * "Prévenir des nouvelles versions" (off unless the user turns it on): once a day, one
@@ -56,3 +57,52 @@ export async function updateNotice(current = chrome.runtime.getManifest().versio
 export async function seenUpdate(version: string): Promise<void> {
   await write({ ...(await read()), seen: version });
 }
+
+/**
+ * "Update": the update helper (installed once by the user, see updater/install.ps1) puts the
+ * latest release from GitHub in Grabby's folder, then Grabby restarts on it. Not while a
+ * download runs: the restart would stop it.
+ */
+export const UPDATER_HOST = 'com.grabby.updater';
+
+let install: InstallState | undefined;
+
+export const installState = (): InstallState | undefined => install;
+
+interface HelperAnswer {
+  ok?: boolean;
+  upToDate?: boolean;
+  version?: string;
+  error?: string;
+}
+
+export async function installUpdate(busy: boolean, changed: () => void): Promise<void> {
+  if (install?.step === 'working') return;
+  if (busy) {
+    install = { step: 'busy' };
+    return changed();
+  }
+  const send = chrome.runtime.sendNativeMessage as ((host: string, msg: object) => Promise<HelperAnswer>) | undefined;
+  if (!send) {
+    install = { step: 'failed', error: 'permission' };
+    return changed();
+  }
+  install = { step: 'working' };
+  changed();
+  try {
+    const r = await send(UPDATER_HOST, { action: 'update' });
+    if (r?.ok && r.upToDate) install = { step: 'uptodate', ...(r.version ? { version: r.version } : {}) };
+    else if (r?.ok) {
+      install = { step: 'done', ...(r.version ? { version: r.version } : {}) };
+      changed();
+      // A moment to show it, then Grabby starts again on its new files.
+      setTimeout(() => chrome.runtime.reload(), 1500);
+      return;
+    } else install = { step: 'failed', error: String(r?.error ?? 'failed').slice(0, 40) };
+  } catch (e) {
+    const text = String((e as Error)?.message ?? e);
+    install = /not found|not registered|Access to the specified native messaging host is forbidden/i.test(text) ? { step: 'helper_missing' } : { step: 'failed', error: 'helper' };
+  }
+  changed();
+}
+

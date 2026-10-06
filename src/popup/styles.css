@@ -115,6 +115,10 @@ body {
   color: var(--text);
 }
 
+html {
+  /* A popup drawn narrower than its page (zoomed in) never scrolls sideways. */
+  overflow-x: hidden;
+}
 body {
   width: 380px;
   height: 600px;
@@ -1193,6 +1197,7 @@ p {
   margin: 0;
   padding: 4px;
   list-style: none;
+  overflow-x: hidden;
   overflow-y: auto;
   border-radius: 23px;
   background: var(--menu);
@@ -1230,6 +1235,7 @@ p {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   height: 38px;
   padding: 0 14px 0 8px;
   border-radius: var(--r-pill);
@@ -1276,10 +1282,16 @@ p {
 }
 
 .menu__label {
+  /* A long name ends in "…": the list never scrolls sideways (its scrollbar takes room). */
+  min-width: 0;
+  overflow: hidden;
   font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .menu__detail {
+  flex: none;
   margin-left: auto;
   padding-left: 12px;
   font-size: 12.5px;
@@ -1674,11 +1686,65 @@ p {
   animation: rise var(--t-gentle) var(--spring-gentle);
 }
 
+.others__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 4px 0 12px;
+}
+
 .others__title {
-  margin: 0 0 2px;
-  padding: 0 12px;
+  margin: 0;
   font-size: 12.5px;
   font-weight: 650;
+}
+
+/* The queue: a waiting download is moved by its handle (dragged, or with the arrow keys). */
+.jrow__grip {
+  border: 0;
+  background: var(--bg);
+  color: var(--muted);
+  cursor: grab;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.jrow__grip:hover,
+.jrow__grip:focus-visible {
+  color: var(--text);
+}
+
+.jrow__grip:active {
+  cursor: grabbing;
+}
+
+.jrow[draggable='true'] {
+  position: relative;
+}
+
+.jrow--dragging {
+  opacity: 0.45;
+}
+
+/* Where it will land: a line between two rows. */
+.jrow--land-before::before,
+.jrow--land-after::after {
+  content: '';
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.jrow--land-before::before {
+  top: -5px;
+}
+
+.jrow--land-after::after {
+  bottom: -5px;
 }
 
 .jrow {
@@ -1962,10 +2028,43 @@ p {
 }
 
 .hcard__tools {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, 30px);
+  align-content: center;
   gap: 2px;
   padding-right: 8px;
+}
+
+/* Searching the history. */
+.search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  margin: 8px 0 4px;
+  padding: 0 14px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.search:focus-within {
+  box-shadow: inset 0 0 0 2px var(--text);
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
+.history__none {
+  padding: 12px;
+  text-align: center;
 }
 
 .hcard__btn {
@@ -2163,10 +2262,10 @@ label.row-setting:hover {
 }
 
 /* --------------------------------------------------- file name: the tiles */
-/* Four keys on one line, each a quarter of the width, the label centered. */
+/* Six keys on two lines, each a third of the width, the label centered. */
 .tiles {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -2753,6 +2852,16 @@ label.row-setting:hover {
   padding-bottom: 2px;
 }
 
+/* Under the video being watched: one line until opened. */
+.ylist--compact {
+  margin-top: 4px;
+  padding: 8px;
+}
+
+.ylist--compact .ylist__head {
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+}
+
 /* -------------------------------------------------------- new version */
 .update {
   margin-bottom: 12px;
@@ -2761,9 +2870,38 @@ label.row-setting:hover {
 
 .update__actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: 4px 8px;
   margin-top: 6px;
+}
+
+/* Where installing a new version got to. */
+.install {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  flex-basis: 100%;
+  margin: 2px 0 0;
+  padding: 0 4px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.install .icon {
+  flex: none;
+  margin-top: 1px;
+}
+
+.install--bad {
+  color: var(--text);
+}
+
+.install__row {
+  display: flex;
+  gap: 8px;
+  padding: 0 4px;
 }
 
 .update__actions .btn {
@@ -2800,4 +2938,34 @@ label.row-setting:hover {
   width: 64px;
   background: var(--surface);
   text-align: center;
+}
+
+/* ----------------------------------------------------- keyboard shortcut */
+.keys {
+  flex: none;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    0 2px 0 var(--line-strong);
+  font: 600 12px/1.2 inherit;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------- a JPEG: picture, sheet or thumbnail */
+.still-kind {
+  display: flex;
+}
+
+.still-kind .seg {
+  flex: 1;
+}
+
+.keys-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 4px;
 }

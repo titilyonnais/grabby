@@ -13,6 +13,106 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 ## [Non publié]
 
+## [1.9.0] — 2026-10-06
+
+Mise à jour en un clic, file d'attente réordonnable, sous-titres enfin lisibles, sponsors
+retirés, volume égalisé, planche de captures et miniature HD. Et la vidéo YouTube de
+nouveau visible quand on regarde une playlist.
+
+### Ajouté
+- **Mettre à jour en un clic** (Windows) : le bandeau « Grabby 1.9.1 est sorti » et les
+  réglages ont un bouton **Mettre à jour**. Grabby demande à un petit assistant installé à
+  côté de lui de télécharger la dernière version publiée sur GitHub, d'en vérifier
+  l'empreinte SHA-256 (celle que GitHub publie), de remplacer ses fichiers, puis il
+  redémarre tout seul. Tes réglages et ton historique sont gardés.
+  - L'assistant s'installe une fois : double-clic sur `installer-mises-a-jour.cmd` dans le
+    dossier de Grabby (aucun droit administrateur). `desinstaller-mises-a-jour.cmd` le
+    retire.
+  - Il refuse tout ce qui n'est pas une version de Grabby publiée sur son dépôt : autre
+    adresse, empreinte absente ou fausse, archive qui ne contient pas Grabby, version qui ne
+    correspond pas, version plus ancienne. Les fichiers que tu as ajoutés au dossier ne sont
+    pas touchés.
+  - Le bouton n'agit que si tu cliques : le navigateur te demande une fois l'autorisation de
+    parler à l'assistant (`nativeMessaging`, facultative).
+- **File d'attente** : dès que deux téléchargements sont en cours, la popup les liste tous,
+  dans leur ordre.
+  - Ceux qui attendent leur tour se **déplacent** : glisser-déposer par leur poignée, ou
+    flèches haut et bas au clavier.
+  - **Tout mettre en pause** et **Tout reprendre** d'un clic.
+- **Retirer les passages sponsorisés** (YouTube, désactivé par défaut, réglage
+  « YouTube ») : les passages que la communauté **SponsorBlock** a marqués comme
+  sponsorisés ou comme autopromotion sont coupés du fichier. Les chapitres de la vidéo sont
+  recalés, la barre indique « 2 passages sponsorisés retirés ». Grabby demande à
+  SponsorBlock sans dire quelle vidéo : seulement les 4 premiers caractères d'une empreinte
+  de son identifiant, que partagent des milliers d'autres vidéos ; la réponse est triée sur
+  ton appareil. Sans réponse (hors ligne, serveur lent), la vidéo est enregistrée entière.
+- **Égaliser le volume des fichiers son** (réglage « À la fin d'un téléchargement ») :
+  MP3, M4A, Opus, OGG, FLAC et WAV au même niveau sonore (−14 LUFS, crêtes sous −1,5 dB,
+  norme EBU R128). Le son est alors réencodé.
+- **JPEG : une image, une planche ou la miniature.** Quand le format JPEG est choisi :
+  - **Une image** : comme avant, au moment choisi ;
+  - **Planche** : des captures de toute la vidéo côte à côte dans un seul JPEG, une toutes
+    les 10 s, 30 s, 1 min, 5 min ou automatiquement (environ 24), 100 au plus. Grabby prend
+    la plus petite qualité de la vidéo, qui suffit pour des vignettes ;
+  - **Miniature** : l'image de la vidéo dans sa plus grande taille (jusqu'à 1280 × 720 sur
+    YouTube), sans rien télécharger d'autre.
+- **Noms et dossiers** :
+  - deux nouvelles cases dans le nom du fichier : **Chaîne** (l'auteur de la vidéo) et
+    **Format** (MP4, MP3…) ;
+  - **Ranger les fichiers** : tels quels, dans un dossier Grabby, **par site**
+    (`Grabby/youtube.com`) ou **par type** (`Grabby/Vidéos`, `Grabby/Musique`,
+    `Grabby/Images`).
+- **Historique** :
+  - **500** téléchargements gardés au lieu de 50 ;
+  - une **recherche** (titre, nom du fichier ou site, sans tenir compte des accents ni des
+    majuscules) ;
+  - **Ouvrir le fichier** directement ;
+  - **Retélécharger** : la page se rouvre derrière et le téléchargement repart tout seul,
+    dans la même qualité et le même format.
+- **Raccourci clavier** dans les réglages : la touche actuelle (Alt+Maj+D par défaut), un
+  bouton **Changer** qui ouvre la page des raccourcis du navigateur, et le choix de ce
+  qu'elle télécharge (avec le clic droit) : **la vidéo** ou **le son seul**.
+- **Notification de fin cliquable** : un clic ouvre le fichier ; ses boutons **Ouvrir** et
+  **Afficher dans le dossier**.
+
+### Modifié
+- **Sous-titres en français et bien rangés** : chaque piste est nommée dans la langue du
+  navigateur (« Anglais », « Anglais (automatique) », « Allemand (traduit) ») au lieu de
+  l'étiquette anglaise de YouTube (« English (auto-generated) »). La liste est groupée :
+  sous-titres de la vidéo, sous-titres automatiques, puis traductions, ta langue d'abord
+  puis dans l'ordre alphabétique ; chaque traduction dit de quelle langue elle part.
+- **Toutes les traductions YouTube** sont proposées (plus seulement vers la langue du
+  navigateur), comme dans le lecteur de YouTube. Les pistes enregistrées portent ces mêmes
+  noms.
+- Le **nom du fichier** se compose sur deux lignes de trois cases, l'aperçu montre le
+  dossier choisi.
+- L'extension a maintenant un **identifiant fixe** (le même sur tous les ordinateurs), dont
+  l'assistant de mise à jour a besoin.
+
+### Corrigé
+- **YouTube ne montrait plus la vidéo** quand on la regardait dans une playlist
+  (`watch?v=…&list=…`) : la carte de la playlist prenait toute la place et la vidéo
+  passait dessous, comme si rien n'était trouvé. La vidéo regardée est de nouveau en tête ;
+  la playlist vient après, repliée (« Voir » la déplie). Une page de playlist mal lue
+  n'empêche plus non plus de trouver les vidéos.
+- **Défilement horizontal** à l'ouverture de la liste des formats : les noms longs
+  débordaient du menu. Le menu tient dans sa largeur (nom coupé, complet au survol) et la
+  popup ne défile plus jamais de côté.
+
+### Limites connues
+- **Passage à la 1.9.0 : une seule fois, à la main.** L'identifiant fixe fait de la 1.9.0
+  une nouvelle extension pour le navigateur : installe-la comme la première fois (retire
+  l'ancienne, charge le nouveau dossier). Tes réglages et ton historique repartent de zéro
+  cette fois-ci. Ensuite, le bouton **Mettre à jour** s'occupe de tout.
+- L'assistant de mise à jour n'existe que pour **Windows** (Chrome, Brave, Edge, Chromium,
+  Vivaldi). Ailleurs, la mise à jour reste manuelle.
+- Le navigateur ne relance une extension chargée « non empaquetée » que si le **mode
+  développeur** est activé, ce qui est le cas quand on installe Grabby.
+- **Sponsors** : seules les vidéos que la communauté SponsorBlock a déjà annotées sont
+  concernées ; les passages coupés le sont sur l'image clé la plus proche.
+- Une **planche** d'une vidéo YouTube demande de l'enregistrer en entier (en petite
+  qualité) : compte le temps d'un enregistrement.
+
 ## [1.8.0] — 2026-10-06
 
 Plusieurs langues audio et de sous-titres, chapitres, plusieurs extraits, images et
@@ -655,7 +755,8 @@ Première version.
 - Capture YouTube expérimentale.
 - Interface en français et en anglais, thème clair et sombre.
 
-[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.8.0...HEAD
+[Non publié]: https://github.com/titilyonnais/grabby/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/titilyonnais/grabby/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/titilyonnais/grabby/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/titilyonnais/grabby/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/titilyonnais/grabby/compare/v1.5.3...v1.6.0

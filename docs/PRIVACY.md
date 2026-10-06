@@ -1,6 +1,6 @@
 # Grabby — Privacy policy / Politique de confidentialité
 
-_Last updated: 2026-10-06 (1.8.0)_
+_Last updated: 2026-10-06 (1.9.0)_
 
 ## English
 
@@ -9,13 +9,14 @@ Grabby does **not** collect, store on a server, sell or share any personal data.
 - **No account, no analytics, no tracking, no remote server.** The extension contains no
   telemetry and makes no network request of its own except to the media files, playlists
   and manifests of the page you are viewing, and only to detect or download them at your
-  request (and, only if you turn it on, the daily new version check described below).
+  request (and, only if you turn them on or ask for them, the new version check, the
+  update and the SponsorBlock question described below).
 - **What stays on your device:**
   - your settings (theme, video and audio formats, file name parts, save options) in the
     browser's extension storage, and the theme again in the popup's own storage so it opens
     without a flash;
-  - the list of your last 50 downloads (file name, page address, size, date, quality and a
-    small thumbnail), which you can clear at any time from the History tab;
+  - the list of your last 500 downloads (file name, page address, size, date, quality,
+    format and a small thumbnail), which you can clear at any time from the History tab;
   - the downloads in progress or paused, and the parts of them already received, so they can
     resume after a lost connection or a browser restart; deleted as soon as the file is saved
     or the download canceled;
@@ -42,6 +43,20 @@ Grabby does **not** collect, store on a server, sell or share any personal data.
   (`api.github.com/repos/titilyonnais/grabby/releases/latest`), without cookies or any
   identifier, to learn the latest version number. GitHub sees the request like any visit
   to its site (your IP address). Nothing is downloaded or installed.
+- **Update (only when you click "Update").** On Windows, once you installed the update
+  helper (`installer-mises-a-jour.cmd`), clicking "Update" asks the helper, a script
+  installed on your computer, to fetch the latest release from GitHub
+  (`api.github.com/repos/titilyonnais/grabby/releases/latest`, then the release's zip on
+  `github.com/titilyonnais/grabby/releases/download/…`), without cookies or any
+  identifier. It checks the zip's SHA-256 against the one GitHub publishes and replaces
+  Grabby's files. Nothing else is sent.
+- **Sponsored parts (off by default).** Only if you turn on "Remove sponsored parts", when
+  you download a YouTube video Grabby asks SponsorBlock (`sponsor.ajay.app`) for the
+  sponsored parts, the private way: it sends only the first 4 characters of the SHA-256 of
+  the video's id, shared by thousands of videos, and picks the right one on your device.
+  No cookie, no identifier. SponsorBlock sees the request like any visit (your IP address).
+- **Thumbnail.** When you save a video's thumbnail, Grabby fetches it at its biggest size
+  (on YouTube, from `i.ytimg.com`, where the page already loads it).
 - **Notifications.** When a download finishes, a small bubble appears in the page you are
   looking at, and a system notification is shown; both can be turned off in the settings.
 - **Downloads** are saved through the browser's own download manager to the location you
@@ -58,14 +73,15 @@ et ne la partage pas.
   contient aucune télémétrie. Elle n'effectue aucune requête réseau à son initiative, hormis
   vers les fichiers vidéo, playlists et manifestes de la page consultée, pour les détecter
   ou les télécharger à ta demande (et, seulement si tu l'actives, la vérification
-  quotidienne des nouvelles versions décrite plus bas).
+  quotidienne des nouvelles versions, la mise à jour et la question à SponsorBlock
+  décrites plus bas, seulement si tu les actives ou les demandes).
 - **Ce qui reste sur ton appareil :**
   - tes réglages (thème, formats vidéo et audio, composition du nom de fichier, options
     d'enregistrement), et le thème une seconde fois dans la mémoire de la popup pour qu'elle
     s'ouvre sans clignoter ;
-  - la liste de tes 50 derniers téléchargements (nom du fichier, adresse de la page, taille,
-    date, qualité et une petite miniature), effaçable à tout moment depuis l'onglet
-    Historique ;
+  - la liste de tes 500 derniers téléchargements (nom du fichier, adresse de la page,
+    taille, date, qualité, format et une petite miniature), effaçable à tout moment depuis
+    l'onglet Historique ;
   - les téléchargements en cours ou en pause, et les morceaux déjà reçus, pour reprendre
     après une coupure de connexion ou un redémarrage du navigateur ; supprimés dès que le
     fichier est enregistré ou le téléchargement annulé ;
@@ -101,6 +117,21 @@ et ne la partage pas.
   (`api.github.com/repos/titilyonnais/grabby/releases/latest`), sans cookie ni identifiant,
   pour connaître le numéro de la dernière version. GitHub voit la requête comme toute
   visite de son site (ton adresse IP). Rien n'est téléchargé ni installé.
+- **Mise à jour (seulement quand tu cliques sur « Mettre à jour »).** Sous Windows, une
+  fois l'assistant installé (`installer-mises-a-jour.cmd`), le bouton demande à cet
+  assistant, un script installé sur ton ordinateur, de récupérer la dernière version
+  publiée sur GitHub (`api.github.com/repos/titilyonnais/grabby/releases/latest`, puis le
+  zip de la version sur `github.com/titilyonnais/grabby/releases/download/…`), sans cookie
+  ni identifiant. Il vérifie l'empreinte SHA-256 du zip avec celle que publie GitHub, puis
+  remplace les fichiers de Grabby. Rien d'autre n'est envoyé.
+- **Passages sponsorisés (désactivé par défaut).** Seulement si tu actives « Retirer les
+  passages sponsorisés », quand tu télécharges une vidéo YouTube, Grabby demande ses
+  passages sponsorisés à SponsorBlock (`sponsor.ajay.app`) de façon anonyme : il n'envoie
+  que les 4 premiers caractères de l'empreinte SHA-256 de l'identifiant de la vidéo,
+  partagés par des milliers de vidéos, et retrouve la bonne sur ton appareil. Ni cookie,
+  ni identifiant. SponsorBlock voit la requête comme toute visite (ton adresse IP).
+- **Miniature.** Quand tu enregistres la miniature d'une vidéo, Grabby la récupère dans sa
+  plus grande taille (sur YouTube, sur `i.ytimg.com`, où la page la charge déjà).
 - **Notifications.** À la fin d'un téléchargement, une petite bulle apparaît dans la page
   que tu regardes et une notification système s'affiche ; tu peux les désactiver dans les
   réglages.

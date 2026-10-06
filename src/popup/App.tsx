@@ -5,7 +5,8 @@ import { Icon } from './components/Icon';
 import { isActive } from './components/JobBar';
 import { MediaCard } from './components/MediaCard';
 import { OtherJobs } from './components/OtherJobs';
-import { Playlist, UpdateNotice } from './components/Playlist';
+import { Playlist } from './components/Playlist';
+import { startInstall, UpdateNotice } from './components/Update';
 import { BulkBar, bulkable, BulkStart } from './components/Bulk';
 import type { OutputFormat } from '../shared/plan';
 import { FirstRun, HistoryList, StateCard } from './components/Panels';
@@ -98,6 +99,9 @@ export function App() {
   // Jobs of this tab go on their cards; the others (another tab, before a restart) get a list.
   const here = (state?.jobs ?? []).filter((j) => j.tabId === state?.tabId);
   const elsewhere = (state?.jobs ?? []).filter((j) => isActive(j) && !(j.tabId === state?.tabId && items.some((i) => i.id === j.mediaId)));
+  // Two or more under way: the whole queue, in its order (it can be changed there).
+  const active = (state?.jobs ?? []).filter(isActive);
+  const queue = active.length >= 2;
   const prefs = { video: settings?.videoFormat ?? 'mp4', audio: settings?.audioFormat ?? 'm4a' } as const;
   const openCard = openId ?? items[0]?.id;
   const many = items.filter(bulkable);
@@ -203,9 +207,10 @@ export function App() {
               ) : (
                 <>
                   {!settings!.firstRunAck && <FirstRun onOk={() => send({ type: 'settings', patch: { firstRunAck: true } })} />}
-                  {state.update && <UpdateNotice release={state.update} send={send} />}
-                  <OtherJobs jobs={elsewhere} send={send} />
-                  {state.ytList && !state.blocked && <Playlist key={state.ytList.title} list={state.ytList} preferred={prefs} send={send} />}
+                  {state.update && <UpdateNotice release={state.update} install={state.install} send={send} />}
+                  <OtherJobs jobs={queue ? active : elsewhere} queue={queue} send={send} />
+                  {/* A playlist or a channel page: its videos first. Under a video being watched, the list it belongs to comes after it, folded. */}
+                  {state.ytList && !state.blocked && !items.length && <Playlist key={state.ytList.title} list={state.ytList} preferred={prefs} send={send} />}
                   {state.blocked === 'restricted' ? (
                     <StateCard icon="lock" title={t('restrictedTitle')} body={t('restrictedBody')} />
                   ) : !items.length ? (
@@ -248,6 +253,9 @@ export function App() {
                       )}
                     </section>
                   )}
+                  {state.ytList && !state.blocked && items.length > 0 && !picked && (
+                    <Playlist key={state.ytList.title} list={state.ytList} preferred={prefs} send={send} compact />
+                  )}
                 </>
               )}
             </div>
@@ -262,6 +270,9 @@ export function App() {
           browserAsks={!!state.browserAsks}
           onChange={(patch) => send({ type: 'settings', patch })}
           onOpenBrowserSettings={() => send({ type: 'open-browser-downloads' })}
+          install={state.install}
+          onInstall={() => startInstall(send)}
+          onOpenShortcuts={() => send({ type: 'open-shortcuts' })}
           onClose={closeSettings}
         />
       )}

@@ -1,15 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { clipChapters, cueChapters, descriptionChapters, ffmetadata, partChapters } from '../../src/shared/chapters';
+import { clipChapters, cueChapters, descriptionChapters, ffmetadata, partChapters, spanChapters } from '../../src/shared/chapters';
+import { sponsorParts, sponsorsIn, sponsorUrl, withoutSponsors } from '../../src/shared/sponsors';
 import { audioChoices, hlsRendition } from '../../src/shared/audio';
-import { imageClip, joinedParts, languageName, MAX_ANIMATION, validClip } from '../../src/background/plan';
+import { buildPlan, imageClip, joinedParts, languageName, MAX_ANIMATION, validClip } from '../../src/background/plan';
+import { DEFAULT_SETTINGS } from '../../src/shared/settings';
 import { imageAttempts, muxAttempts } from '../../src/offscreen/args';
 import { youtubeSubs } from '../../src/background/pageinfo';
 import { hhmm, holdOf, inWindow, nextOpening, parseHhmm, playbackCap, RateLimiter } from '../../src/shared/schedule';
 import { newerVersion, releaseOf, versionOf } from '../../src/shared/release';
 import { listItem, listKind, listOf, numbered, parseDuration, watchId } from '../../src/shared/ytlist';
 import { hiddenPlayerUrl } from '../../src/features/youtube';
-import type { MediaItem } from '../../src/shared/types';
+import type { MediaItem, SubtitleTrack } from '../../src/shared/types';
 import { cutBefore } from '../../src/shared/mediatime';
+import { subtitleChoices, trackName, trackTitle } from '../../src/shared/sublabels';
+import { matching } from '../../src/popup/components/Panels';
+import { queueRank, reorderedPlaces, titleOf } from '../../src/background/jobs';
+import { sheetCount, sheetLayout } from '../../src/shared/sheet';
+import { thumbCandidates, thumbExt } from '../../src/background/thumbnail';
 
 describe('chapters', () => {
   it('reads a description by YouTube’s rule', () => {
@@ -241,16 +248,25 @@ describe('translated YouTube subtitles', () => {
     { url: 'https://www.youtube.com/api/timedtext?lang=en&kind=asr', lang: 'en', name: 'English (auto)', auto: true },
   ];
 
-  it('one more track, translated into the browser’s language, when none is written in it', () => {
-    const subs = youtubeSubs(own, ['fr', 'de'], 'fr-FR');
-    expect(subs).toHaveLength(3);
-    expect(subs[2]).toMatchObject({ lang: 'en', tlang: 'fr', label: 'English' });
-    expect(new Set(subs.map((s) => s.id)).size).toBe(3);
+  it('a translation into every language YouTube offers, from the video’s written track', () => {
+    const subs = youtubeSubs(own, ['fr', 'de', 'ja']);
+    expect(subs).toHaveLength(5);
+    expect(subs.slice(2).map((s) => s.tlang)).toEqual(['fr', 'de', 'ja']);
+    expect(subs[2]).toMatchObject({ lang: 'en', tlang: 'fr' });
+    expect(subs[2]!.auto).toBeUndefined();
+    expect(new Set(subs.map((s) => s.id)).size).toBe(5);
   });
 
-  it('none when YouTube can’t translate into it, or a written track is in it already', () => {
-    expect(youtubeSubs(own, ['de'], 'fr')).toHaveLength(2);
-    expect(youtubeSubs([...own, { url: 'https://www.youtube.com/api/timedtext?lang=fr', lang: 'fr', name: 'Français', auto: false }], ['fr'], 'fr')).toHaveLength(3);
+  it('not into the source’s language, nor one with its own written track, nor twice', () => {
+    expect(youtubeSubs(own, ['en', 'en-GB', 'de', 'de'])).toHaveLength(3);
+    const withFr = [...own, { url: 'https://www.youtube.com/api/timedtext?lang=fr', lang: 'fr', name: 'Français', auto: false }];
+    expect(youtubeSubs(withFr, ['fr', 'es']).map((s) => s.tlang ?? s.lang)).toEqual(['en', 'en', 'fr', 'es']);
+  });
+
+  it('from the automatic track when the video has no written one; tracks without a language are left out', () => {
+    const subs = youtubeSubs([own[1]!, { url: 'https://www.youtube.com/api/timedtext?x', lang: undefined as unknown as string, name: '?', auto: false }], ['fr']);
+    expect(subs).toHaveLength(2);
+    expect(subs[1]).toMatchObject({ lang: 'en', auto: true, tlang: 'fr' });
   });
 
   it('a translated track is named after the language it becomes', () => {
@@ -259,8 +275,28 @@ describe('translated YouTube subtitles', () => {
     expect(languageName('not a code', 'en')).toBe('not a code');
   });
 
+  it('from the language spoken in the video, not the first written track', () => {
+    const many = [
+      { url: 'https://www.youtube.com/api/timedtext?lang=de-DE', lang: 'de-DE', name: 'German (Germany)', auto: false },
+      { url: 'https://www.youtube.com/api/timedtext?lang=en', lang: 'en', name: 'English', auto: false },
+      { url: 'https://www.youtube.com/api/timedtext?lang=en&kind=asr', lang: 'en', name: 'English (auto-generated)', auto: true },
+    ];
+    expect(youtubeSubs(many, ['fr']).at(-1)).toMatchObject({ lang: 'en', tlang: 'fr', url: 'https://www.youtube.com/api/timedtext?lang=en' });
+    // No automatic track: English when written, else the first.
+    expect(youtubeSubs([many[0]!, many[1]!], ['fr']).at(-1)).toMatchObject({ lang: 'en' });
+    expect(youtubeSubs([many[0]!], ['fr']).at(-1)).toMatchObject({ lang: 'de-DE' });
+  });
+
+  it('a language the browser can’t name keeps YouTube’s name', () => {
+    const subs = youtubeSubs(own, ['fr', 'qaa'], { fr: 'French', qaa: 'Afar' });
+    const t = subs.find((x) => x.tlang === 'qaa')!;
+    expect(t.label).toBe('Afar');
+    expect(trackName(t, 'fr')).toBe('Afar');
+    expect(trackName(subs.find((x) => x.tlang === 'fr')!, 'fr')).toBe('Français');
+  });
+
   it('only YouTube’s own addresses', () => {
-    expect(youtubeSubs([{ url: 'https://evil.example/x', lang: 'en', name: 'x', auto: false }], [], 'en')).toEqual([]);
+    expect(youtubeSubs([{ url: 'https://evil.example/x', lang: 'en', name: 'x', auto: false }], [])).toEqual([]);
   });
 });
 
@@ -438,5 +474,317 @@ describe('joining recording sessions', () => {
   it('gives nothing without a frame at or after the joint, or without a time base', () => {
     expect(cutBefore(crc, 30)).toBeUndefined();
     expect(cutBefore('0, 1, 1, 1, 1, 0x1', 0)).toBeUndefined();
+  });
+});
+
+describe('subtitle names and order', () => {
+  const words = { own: 'Own', auto: 'Auto', translated: 'Translated', forced: 'forced', autoShort: 'automatic', translatedShort: 'translated', from: (l: string) => `from ${l}` };
+  const tr = (id: string, over: Partial<SubtitleTrack>): SubtitleTrack => ({ id, url: 'u', label: id, ...over });
+
+  it('named by language in the browser’s language, whatever the site called them', () => {
+    const list = subtitleChoices([tr('a', { lang: 'en', label: 'English (auto-generated)', auto: true })], words, 'fr');
+    expect(list).toEqual([{ value: 'a', label: 'Anglais' }]);
+    expect(trackName(tr('b', { lang: 'en-GB' }), 'fr')).toBe('Anglais britannique');
+    // No language: the site's name.
+    expect(trackName(tr('c', { label: 'Director commentary' }), 'fr')).toBe('Director commentary');
+  });
+
+  it('own, then automatic, then translated; the browser’s language first, then by name', () => {
+    const list = subtitleChoices(
+      [
+        tr('t-de', { lang: 'en', tlang: 'de' }),
+        tr('t-fr', { lang: 'en', tlang: 'fr' }),
+        tr('a-en', { lang: 'en', auto: true }),
+        tr('o-es', { lang: 'es' }),
+        tr('o-fr', { lang: 'fr' }),
+        tr('t-ar', { lang: 'en', tlang: 'ar' }),
+      ],
+      words,
+      'fr',
+    );
+    expect(list.map((c) => c.value)).toEqual(['o-fr', 'o-es', 'a-en', 't-fr', 't-de', 't-ar']);
+    expect(list.map((c) => c.group)).toEqual(['Own', 'Own', 'Auto', 'Translated', 'Translated', 'Translated']);
+    expect(list[3]).toMatchObject({ label: 'Français', detail: 'from anglais' });
+  });
+
+  it('one kind only: no group titles; same name twice: the site’s name tells them apart', () => {
+    const list = subtitleChoices([tr('x', { lang: 'en', label: 'English - CC' }), tr('y', { lang: 'en', label: 'English' })], words, 'en');
+    expect(list.every((c) => c.group === undefined)).toBe(true);
+    expect(list.map((c) => c.detail)).toEqual(['English - CC', undefined]);
+  });
+
+  it('the title inside a file says automatic or translated', () => {
+    expect(trackTitle(tr('a', { lang: 'en', auto: true }), words, 'fr')).toBe('Anglais (automatic)');
+    expect(trackTitle(tr('b', { lang: 'en', tlang: 'de' }), words, 'fr')).toBe('Allemand (translated)');
+    expect(trackTitle(tr('c', { lang: 'fr', forced: true }), words, 'fr')).toBe('Français (forced)');
+  });
+});
+
+describe('searching the history', () => {
+  const entry = (id: string, title: string, pageUrl: string, filename = `${title}.mp4`) => ({ id, title, pageUrl, filename, size: 1, date: 0 });
+  const list = [entry('a', 'Été à Paris', 'https://www.youtube.com/watch?v=1'), entry('b', 'Spring', 'https://vimeo.com/2'), entry('c', 'Paris la nuit', 'https://example.fr/x', 'nuit.mkv')];
+
+  it('every word, accents and case aside, in the title, the file or the site', () => {
+    expect(matching(list, '').map((e) => e.id)).toEqual(['a', 'b', 'c']);
+    expect(matching(list, 'paris').map((e) => e.id)).toEqual(['a', 'c']);
+    expect(matching(list, 'ETE paris').map((e) => e.id)).toEqual(['a']);
+    expect(matching(list, 'vimeo').map((e) => e.id)).toEqual(['b']);
+    expect(matching(list, 'mkv').map((e) => e.id)).toEqual(['c']);
+    expect(matching(list, 'nothing')).toEqual([]);
+  });
+});
+
+describe('volume evened out', () => {
+  const song = (over: Partial<MediaItem> = {}): MediaItem => ({
+    id: 's',
+    tabId: 1,
+    frameUrl: 'https://site.com/',
+    pageUrl: 'https://site.com/song',
+    kind: 'file',
+    url: 'https://cdn.com/song.mp3',
+    title: 'Chanson',
+    variants: [],
+    audioTracks: [],
+    protection: 'none',
+    live: false,
+    detectedAt: 0,
+    audioOnly: true,
+    size: 5_000_000,
+    ...over,
+  });
+  const none = async () => '';
+
+  it('encodes the sound with loudnorm, never a plain copy', () => {
+    const plain = muxAttempts({ audio: '/j/a.mp4' }, 'm4a', true, '/j/out');
+    expect(plain[0]!.args).toContain('copy');
+    const even = muxAttempts({ audio: '/j/a.mp4', normalize: true }, 'm4a', true, '/j/out');
+    expect(even).toHaveLength(1);
+    expect(even[0]!.args).not.toContain('copy');
+    expect(even[0]!.args.join(' ')).toContain('-af loudnorm=I=-14:TP=-1.5:LRA=11 -c:a aac');
+    // With a cover: still a try without it, both evened out.
+    const covered = muxAttempts({ audio: '/j/a.mp4', cover: '/j/c.jpg', normalize: true }, 'mp3', true, '/j/out');
+    expect(covered).toHaveLength(2);
+    for (const a of covered) expect(a.args).toContain('-af');
+  });
+
+  it('leaves a video alone', () => {
+    const v = muxAttempts({ video: '/j/v.mp4', normalize: true }, 'mp4', false, '/j/out');
+    for (const a of v) expect(a.args).not.toContain('-af');
+  });
+
+  it('a sound file saved as is goes through ffmpeg when evened out', async () => {
+    const off = await buildPlan(song(), { mode: 'audio', format: 'mp3', settings: DEFAULT_SETTINGS, fetchText: none });
+    expect(off.normalize).toBeUndefined();
+    const on = await buildPlan(song(), { mode: 'audio', format: 'mp3', settings: { ...DEFAULT_SETTINGS, normalize: true }, fetchText: none });
+    expect(on.normalize).toBe(true);
+    expect(on.raw).toBe(false);
+    expect(on.direct).toBeUndefined();
+    // A video is never evened out.
+    const video = await buildPlan(song({ audioOnly: false, url: 'https://cdn.com/v.mp4' }), { mode: 'video', settings: { ...DEFAULT_SETTINGS, normalize: true }, fetchText: none });
+    expect(video.normalize).toBeUndefined();
+  });
+});
+
+describe('sponsored parts (SponsorBlock)', () => {
+  const id = 'dQw4w9WgXcQ';
+
+  it('asks with a 4-character hash prefix, never the video id', async () => {
+    const url = await sponsorUrl(id);
+    expect(url).toMatch(/^https:\/\/sponsor\.ajay\.app\/api\/skipSegments\/[0-9a-f]{4}\?categories=/);
+    expect(url).not.toContain(id);
+    expect(decodeURIComponent(url.split('categories=')[1]!)).toBe('["sponsor","selfpromo"]');
+  });
+
+  it('keeps only this video’s parts to skip, in order', () => {
+    const answer = [
+      { videoID: 'other000000', segments: [{ segment: [1, 50], category: 'sponsor', actionType: 'skip' }] },
+      {
+        videoID: id,
+        segments: [
+          { segment: [300, 330.5], category: 'selfpromo', actionType: 'skip' },
+          { segment: [20, 80], category: 'sponsor', actionType: 'skip' },
+          { segment: [100, 120], category: 'sponsor', actionType: 'mute' },
+          { segment: [140, 140.4], category: 'sponsor', actionType: 'skip' },
+          { segment: ['a', 2], category: 'sponsor' },
+          { segment: [0, 0], category: 'full', actionType: 'full' },
+        ],
+      },
+    ];
+    expect(sponsorsIn(answer, id)).toEqual([
+      { start: 20, end: 80 },
+      { start: 300, end: 330.5 },
+    ]);
+    expect(sponsorsIn({ nope: 1 }, id)).toEqual([]);
+    expect(sponsorsIn([], id)).toEqual([]);
+  });
+
+  it('nothing found, offline or a bad id: nothing left out', async () => {
+    const notFound = (async () => new Response('Not Found', { status: 404 })) as typeof fetch;
+    const offline = (async () => {
+      throw new TypeError('Failed to fetch');
+    }) as typeof fetch;
+    let asked = 0;
+    const never = (async () => {
+      asked++;
+      return new Response('[]');
+    }) as typeof fetch;
+    expect(await sponsorParts(id, notFound)).toEqual([]);
+    expect(await sponsorParts(id, offline)).toEqual([]);
+    expect(await sponsorParts('../../etc', never)).toEqual([]);
+    expect(asked).toBe(0);
+    const found = (async (url: string, init?: RequestInit) => {
+      expect(init?.credentials).toBe('omit');
+      expect(url).not.toContain(id);
+      return new Response(JSON.stringify([{ videoID: id, segments: [{ segment: [10, 40], category: 'sponsor', actionType: 'skip' }] }]));
+    }) as unknown as typeof fetch;
+    expect(await sponsorParts(id, found)).toEqual([{ start: 10, end: 40 }]);
+  });
+
+  it('cuts the sponsored parts out of what was asked', () => {
+    const s = [
+      { start: 20, end: 80 },
+      { start: 300, end: 330 },
+    ];
+    expect(withoutSponsors([{ start: 0, end: 600 }], s)).toEqual([
+      { start: 0, end: 20 },
+      { start: 80, end: 300 },
+      { start: 330, end: 600 },
+    ]);
+    // A part chosen by the user: only what overlaps it.
+    expect(withoutSponsors([{ start: 60, end: 200 }], s)).toEqual([{ start: 80, end: 200 }]);
+    // At the very start, and less than a second left between two.
+    expect(withoutSponsors([{ start: 0, end: 100 }], [{ start: 0, end: 30 }, { start: 30.5, end: 50 }])).toEqual([{ start: 50, end: 100 }]);
+    // Overlapping sponsored parts.
+    expect(withoutSponsors([{ start: 0, end: 100 }], [{ start: 10, end: 40 }, { start: 30, end: 60 }])).toEqual([
+      { start: 0, end: 10 },
+      { start: 60, end: 100 },
+    ]);
+    expect(withoutSponsors([{ start: 0, end: 100 }], [])).toEqual([{ start: 0, end: 100 }]);
+  });
+
+  it('puts the video’s chapters where they fall in the file', () => {
+    const chapters = [
+      { start: 0, title: 'Intro' },
+      { start: 20, title: 'Sponsor' },
+      { start: 80, title: 'Sujet' },
+      { start: 300, title: 'Promo' },
+      { start: 330, title: 'Fin' },
+    ];
+    const spans = [
+      { from: 0, length: 20 },
+      { from: 80, length: 220 },
+      { from: 330, length: 270 },
+    ];
+    expect(spanChapters(chapters, spans)).toEqual([
+      { start: 0, title: 'Intro' },
+      { start: 20, title: 'Sujet' },
+      { start: 240, title: 'Fin' },
+    ]);
+    // A piece starting a little earlier (its keyframe): the chapter waits for its time.
+    expect(spanChapters([{ start: 0, title: 'A' }, { start: 50, title: 'B' }], [{ from: 0, length: 10 }, { from: 48, length: 20 }])).toEqual([
+      { start: 0, title: 'A' },
+      { start: 12, title: 'B' },
+    ]);
+  });
+});
+
+describe('queue order', () => {
+  const w = [
+    { id: 'a', rank: 10 },
+    { id: 'b', rank: 20 },
+    { id: 'c', rank: 30 },
+    { id: 'd', rank: 40 },
+  ];
+  const order = (m: Map<string, number>) => [...m].sort((x, y) => x[1] - y[1]).map(([id]) => id).join('');
+
+  it('moves one before another, or last, with the same places', () => {
+    expect(order(reorderedPlaces(w, 'd', 'a'))).toBe('dabc');
+    expect(order(reorderedPlaces(w, 'a'))).toBe('bcda');
+    expect(order(reorderedPlaces(w, 'b', 'd'))).toBe('acbd');
+    expect([...reorderedPlaces(w, 'd', 'a').values()].sort((x, y) => x - y)).toEqual([10, 20, 30, 40]);
+    // Unknown target: last.
+    expect(order(reorderedPlaces(w, 'a', 'zz'))).toBe('bcda');
+  });
+
+  it('asked at the same moment: places made distinct', () => {
+    const same = [
+      { id: 'a', rank: 5 },
+      { id: 'b', rank: 5 },
+      { id: 'c', rank: 5 },
+    ];
+    const m = reorderedPlaces(same, 'c', 'a');
+    expect(order(m)).toBe('cab');
+    expect(new Set(m.values()).size).toBe(3);
+  });
+
+  it('a moved download keeps its place', () => {
+    expect(queueRank({ startedAt: 30 })).toBe(30);
+    expect(queueRank({ startedAt: 30, order: 5 })).toBe(5);
+  });
+});
+
+describe('contact sheet and thumbnail', () => {
+  it('lays the pictures out in a grid that holds them all', () => {
+    expect(sheetLayout(95)).toEqual({ every: 4, cols: 6, rows: 4 });
+    expect(sheetLayout(95, 10)).toEqual({ every: 10, cols: 4, rows: 3 });
+    // Two hours every 10 s would be 720 pictures: at most 100, further apart.
+    const long = sheetLayout(7200, 10);
+    expect(long.every).toBe(72);
+    expect(long.cols * long.rows).toBeGreaterThanOrEqual(100);
+    expect(long.cols).toBe(10);
+    // Very short: one line.
+    expect(sheetLayout(2, 10)).toEqual({ every: 10, cols: 1, rows: 1 });
+    expect(sheetCount(95, 10)).toBe(10);
+    expect(sheetCount(95)).toBe(24);
+  });
+
+  it('makes the sheet with ffmpeg: a picture every few seconds, tiled', () => {
+    const [first, plain] = imageAttempts('/j/v.mp4', 'jpg', '/j/out', 0, 1, { every: 10, cols: 4, rows: 3 });
+    const vf = first!.args[first!.args.indexOf('-vf') + 1];
+    expect(vf).toBe('fps=1/10,scale=320:-2,tile=4x3:padding=6:margin=6:color=white');
+    expect(first!.args).toEqual(expect.arrayContaining(['-frames:v', '1', '-huffman', '0']));
+    expect(first!.args).not.toContain('-ss');
+    expect(plain!.args[plain!.args.indexOf('-vf') + 1]).toBe('fps=1/10,scale=320:-2,tile=4x3');
+  });
+
+  it('plans a sheet of the whole video, without its sound', async () => {
+    const item: MediaItem = {
+      id: 'v',
+      tabId: 1,
+      frameUrl: 'https://site.com/',
+      pageUrl: 'https://site.com/watch',
+      kind: 'hls',
+      url: 'https://cdn.com/master.m3u8',
+      title: 'Vidéo',
+      variants: [{ id: 'lo', label: '360p', height: 360, bandwidth: 500_000, url: 'https://cdn.com/lo.m3u8' }],
+      audioTracks: [],
+      protection: 'none',
+      live: false,
+      detectedAt: 0,
+      duration: 95,
+    };
+    const media = '#EXTM3U\n#EXTINF:50,\nv0.ts\n#EXTINF:45,\nv1.ts\n#EXT-X-ENDLIST\n';
+    const p = await buildPlan(item, { mode: 'video', format: 'jpg', sheet: 10, variantId: 'lo', settings: DEFAULT_SETTINGS, fetchText: async () => media });
+    expect(p.output).toBe('jpg');
+    expect(p.image).toEqual({ sheet: { every: 10, cols: 4, rows: 3 } });
+    expect(p.clip).toBeUndefined();
+    expect(p.video!.segments).toHaveLength(2);
+  });
+
+  it('names the sheet after the video', () => {
+    expect(titleOf({ title: 'Vidéo', sheet: 0 })).toBe('Vidéo (contact sheet)');
+  });
+
+  it('looks for the biggest thumbnail first', () => {
+    expect(thumbCandidates({ ytId: 'dQw4w9WgXcQ', thumbnail: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg' })).toEqual([
+      'https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg',
+      'https://i.ytimg.com/vi/dQw4w9WgXcQ/sddefault.jpg',
+      'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+    ]);
+    expect(thumbCandidates({ thumbnail: 'https://cdn.site.com/poster.webp?x=1' })).toEqual(['https://cdn.site.com/poster.webp?x=1']);
+    expect(thumbCandidates({ ytId: '../evil', thumbnail: 'javascript:alert(1)' })).toEqual([]);
+    expect(thumbExt('https://cdn.site.com/poster.webp?x=1')).toBe('webp');
+    expect(thumbExt('data:image/png;base64,AAAA')).toBe('png');
+    expect(thumbExt('https://cdn.site.com/poster')).toBe('jpg');
   });
 });

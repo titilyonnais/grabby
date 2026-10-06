@@ -17,8 +17,33 @@
 
 ---
 
-<!-- release:1.8.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
-## Nouveautés de la version 1.8.0
+<!-- release:1.9.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
+## Nouveautés de la version 1.9.0
+
+- **Mettre à jour en un clic** (Windows) : un bouton dans Grabby télécharge la nouvelle
+  version, vérifie son empreinte et l'installe. Une fois l'assistant installé
+  ([voir plus bas](#mettre-à-jour-en-un-clic-windows)).
+- **File d'attente** : les téléchargements qui attendent se déplacent (glisser ou flèches),
+  **Tout mettre en pause** / **Tout reprendre**.
+- **Sous-titres en français**, groupés (de la vidéo, automatiques, traduits), et toutes
+  les traductions de YouTube.
+- **Retirer les passages sponsorisés** de YouTube (SponsorBlock, anonyme, à activer).
+- **Égaliser le volume** des fichiers son.
+- **JPEG** : une image, une **planche** de captures de toute la vidéo, ou la **miniature
+  HD**.
+- **Noms et dossiers** : cases Chaîne et Format, rangement par site ou par type.
+- **Historique** de 500 téléchargements, avec recherche, Ouvrir le fichier et
+  Retélécharger.
+- **Raccourci clavier** réglable depuis Grabby (vidéo ou son seul), **notification** qui
+  ouvre le fichier.
+- **Corrigé** : vidéo YouTube introuvable dans une playlist, défilement de côté dans la
+  liste des formats.
+
+> **Passage à la 1.9.0** : installe-la une fois à la main comme la première fois (retire
+> l'ancienne Grabby, charge le nouveau dossier). Réglages et historique repartent de zéro
+> cette fois-ci ; les versions suivantes s'installent avec le bouton.
+
+**Rappel de la 1.8.0** :
 
 - **Plusieurs langues** : sous-titres et pistes audio se cochent à plusieurs ; sous-titres
   **traduits par YouTube** dans la langue du navigateur.
@@ -162,21 +187,29 @@ Le détail de chaque version est dans le [journal des modifications](CHANGELOG.m
 - **Plusieurs langues audio** d'un flux HLS ou DASH, chacune une piste de la vidéo.
 - **Chapitres** (description YouTube, `<track kind="chapters">`) écrits dans le fichier.
 - **Images** tirées de la vidéo : JPEG au moment choisi, GIF ou WebP animés d'un passage.
-- **Fichiers audio étiquetés** : titre, chaîne et pochette.
+- **Fichiers audio étiquetés** : titre, chaîne et pochette ; **volume égalisé** si tu le
+  souhaites.
+- **Planche de captures** de toute la vidéo et **miniature HD**, en JPEG.
+- **Passages sponsorisés retirés** des vidéos YouTube (SponsorBlock), si tu l'actives.
 - **Tout télécharger** : toutes les vidéos de la page en une fois, un format pour toutes ;
   sur YouTube, toute une **playlist** ou les vidéos d'une **chaîne**, numérotées.
 - **Quand télécharger** : plage horaire, Wi-Fi seulement (là où le navigateur le sait),
   vitesse maximale ; « Lancer maintenant » pour ne pas attendre.
-- **Prévenir des nouvelles versions**, si tu l'actives : une question par jour à GitHub.
+- **Prévenir des nouvelles versions**, si tu l'actives : une question par jour à GitHub ;
+  **Mettre à jour** les installe en un clic (Windows, avec l'assistant).
 - **Clic droit et raccourcis** : « Télécharger cette vidéo avec Grabby » sur une vidéo,
-  Alt+Maj+G pour ouvrir Grabby, Alt+Maj+D pour télécharger la vidéo de la page.
+  Alt+Maj+G pour ouvrir Grabby, Alt+Maj+D pour télécharger la vidéo de la page (ou son son
+  seul, au choix).
 - **Vrais titres et miniatures** : métadonnées de la page, sinon une image de la vidéo.
 - **Rapide et reprenable** : morceaux téléchargés en parallèle (connexions ajustées au
   débit), gros fichiers en plusieurs plages ; **pause et reprise**, reprise automatique après
   une coupure de connexion, la veille ou un redémarrage du navigateur.
-- **Suivi** : progression dans la popup et sur l'icône, bulle et notification à la fin,
-  annulation, nouvel essai, bouton retélécharger, historique des 50 derniers
-  téléchargements (par jour, avec miniature).
+- **Suivi** : progression dans la popup et sur l'icône, **file d'attente** réordonnable
+  (Tout mettre en pause / Tout reprendre), bulle et notification à la fin (un clic ouvre le
+  fichier), annulation, nouvel essai, historique des 500 derniers téléchargements (par jour,
+  avec miniature, recherche, Ouvrir le fichier et Retélécharger).
+- **Noms de fichiers** à composer (titre, chaîne, qualité, format, site, date) et
+  rangement dans Téléchargements, un dossier Grabby, par site ou par type.
 - Assemblage par **ffmpeg.wasm embarqué** : aucun code distant, rien n'est envoyé ailleurs.
 - Interface **français / anglais**, thème **clair / sombre / auto**.
 
@@ -199,7 +232,9 @@ sous-titres (traduits compris) et ses chapitres si tu en choisis, ou une image J
 WebP. Une playlist ou les vidéos d'une chaîne se téléchargent en une fois.
 L'enregistrement se fait dans un lecteur caché : la vidéo que tu regardes n'est pas touchée
 et tu peux quitter la page. Il se met en pause, reprend après une coupure ou un redémarrage,
-et peut se limiter à un ou plusieurs extraits. La vitesse dépend de ce lecteur. Fonction fragile, et contraire aux conditions de YouTube : à tes
+et peut se limiter à un ou plusieurs extraits. Si tu l'actives, les passages
+sponsorisés repérés par SponsorBlock sont retirés du fichier. La vitesse dépend de ce
+lecteur. Fonction fragile, et contraire aux conditions de YouTube : à tes
 risques.
 
 ## Installation et mise à jour
@@ -213,7 +248,27 @@ risques.
 3. Active le **mode développeur**.
 4. Clique **Charger l'extension non empaquetée** et choisis le dossier décompressé.
 
-**Mettre à jour**
+### Mettre à jour en un clic (Windows)
+
+Une seule fois, après avoir installé Grabby : ouvre son dossier et double-clique sur
+**`installer-mises-a-jour.cmd`**. Il installe un petit assistant pour ton compte (aucun
+droit administrateur) et l'annonce à Chrome, Brave, Edge, Chromium et Vivaldi.
+
+Ensuite, quand une version sort, clique sur **Mettre à jour** dans le bandeau de Grabby
+(ou dans Réglages → Mises à jour). Le navigateur demande la première fois l'autorisation de
+parler à l'assistant ; celui-ci télécharge la version publiée sur GitHub, vérifie son
+empreinte SHA-256, remplace les fichiers du dossier et Grabby redémarre. Tes réglages et
+ton historique sont gardés, les fichiers que tu as ajoutés au dossier aussi.
+
+Si tu déplaces le dossier de Grabby, relance `installer-mises-a-jour.cmd` depuis le nouveau
+dossier. `desinstaller-mises-a-jour.cmd` retire l'assistant.
+
+> **Venant d'une version avant la 1.9.0** : installe la 1.9.0 une fois à la main (retire
+> l'ancienne Grabby de `brave://extensions`, puis charge le nouveau dossier). Elle a un
+> identifiant fixe, nécessaire à l'assistant : pour le navigateur c'est une nouvelle
+> extension, donc réglages et historique repartent de zéro cette fois-ci.
+
+### Mettre à jour à la main (tous les systèmes)
 
 1. Télécharge le zip de la nouvelle version.
 2. Remplace le contenu de ton dossier Grabby par celui du zip, au même emplacement.
@@ -264,8 +319,10 @@ npm run zip        # → release/grabby-vX.Y.Z.zip
   **Ajouter un extrait** en crée un autre (8 au plus) ; chaque pastille sous le curseur
   sélectionne ou retire le sien. Les extraits sont **réunis dans un seul fichier** (un
   chapitre chacun) ou, si tu décoches l'option, enregistrés **un fichier chacun**.
-- **Image** (dans la liste des formats) : **JPEG** enregistre une image au moment choisi ;
-  **GIF** et **WebP** une animation d'un passage de 30 secondes au plus.
+- **Image** (dans la liste des formats) : **JPEG** enregistre, au choix, **une image** au
+  moment choisi, une **planche** (des captures de toute la vidéo côte à côte, une toutes les
+  10 s, 30 s, 1 min, 5 min ou automatiquement) ou la **miniature** de la vidéo dans sa plus
+  grande taille ; **GIF** et **WebP** une animation d'un passage de 30 secondes au plus.
 
 Quand la page a plusieurs vidéos, **Tout télécharger** (au-dessus de la liste) les coche
 toutes : décoche celles que tu ne veux pas, choisis un format, puis **Télécharger (N)**. Elles
@@ -275,6 +332,17 @@ Sur une **playlist YouTube** (ou une vidéo lue dans une playlist) et sur l'ongl
 d'une chaîne, une carte propose de tout télécharger dans une qualité et un format. Les
 fichiers sont numérotés dans l'ordre de la liste. Seules les vidéos déjà affichées sont
 prises : fais défiler la page pour en charger d'autres.
+
+Dès que **deux téléchargements** sont en cours, une liste les montre tous en haut de la
+popup, dans l'ordre où ils seront faits. Ceux qui attendent se **déplacent** par leur
+poignée (glisser-déposer, ou flèches haut et bas au clavier) ; **Tout mettre en pause** et
+**Tout reprendre** agissent sur tous à la fois.
+
+L'onglet **Historique** garde les 500 derniers téléchargements. Au-delà de trois, une
+**recherche** apparaît (titre, nom du fichier ou site). Chaque ligne permet d'**ouvrir le
+fichier**, de le **montrer dans son dossier**, de **retélécharger** (la page se rouvre
+derrière et le téléchargement repart tout seul, dans la même qualité et le même format) ou
+d'ouvrir la page.
 
 Sans ouvrir Grabby : **clic droit** sur une vidéo → « Télécharger cette vidéo avec
 Grabby », ou **Alt+Maj+D** pour la vidéo principale de la page (raccourcis modifiables dans
@@ -286,14 +354,18 @@ Grabby », ou **Alt+Maj+D** pour la vidéo principale de la page (raccourcis mod
 |---|---|
 | Thème | Auto, clair ou sombre |
 | Format vidéo / Format audio | Format proposé par défaut dans les listes |
-| Me prévenir à la fin | Bulle dans la page et notification système |
+| Me prévenir à la fin | Bulle dans la page et notification système (un clic ouvre le fichier) |
+| Égaliser le volume des fichiers son | Chaque fichier son au même niveau (−14 LUFS) ; le son est réencodé |
 | Demander où enregistrer | Ouvre la fenêtre d'enregistrement à chaque fichier |
-| Ranger dans un dossier Grabby | Sous-dossier `Grabby` dans Téléchargements |
-| Nom du fichier | Cases à cocher : Titre (toujours), Qualité, Site, Date, avec aperçu |
+| Ranger les fichiers | Tels quels dans Téléchargements, dans un dossier `Grabby`, par site (`Grabby/youtube.com`) ou par type (`Grabby/Vidéos`) |
+| Nom du fichier | Cases à cocher : Titre (toujours), Chaîne, Qualité, Format, Site, Date, avec aperçu |
 | Seulement à certaines heures | Les nouveaux téléchargements attendent la plage choisie (« Lancer maintenant » pour ne pas attendre) |
 | Seulement en Wi-Fi | Attend le Wi-Fi ; proposé seulement là où le navigateur connaît la connexion (ChromeOS, Android) |
 | Vitesse maximale | Limite le débit de tous les téléchargements (YouTube : le lecteur caché lit moins vite) |
+| Raccourci clavier | La touche qui télécharge sans ouvrir Grabby (Changer ouvre la page des raccourcis) et ce qu'elle prend : la vidéo ou le son seul |
+| Retirer les passages sponsorisés | YouTube : coupe les sponsors et l'autopromotion repérés par SponsorBlock (désactivé par défaut) |
 | Prévenir des nouvelles versions | Une fois par jour, demande à GitHub la dernière version (désactivé par défaut) |
+| Installer la dernière version | Bouton Mettre à jour : télécharge, vérifie et installe la dernière version (Windows, avec l'assistant) |
 
 ## Formats d'enregistrement
 
@@ -364,9 +436,11 @@ la page.
 
 ## Vie privée
 
-Aucun compte, aucune statistique, aucun serveur : rien ne quitte ton appareil. La seule
-requête que Grabby peut faire de lui-même, la vérification quotidienne des nouvelles
-versions auprès de GitHub, est désactivée tant que tu ne l'actives pas. Détails dans
+Aucun compte, aucune statistique, aucun serveur : rien ne quitte ton appareil. Grabby ne
+fait de requête de lui-même que si tu l'actives ou le demandes : la vérification
+quotidienne des nouvelles versions auprès de GitHub, la mise à jour quand tu cliques sur
+Mettre à jour, et la question à SponsorBlock (sans dire quelle vidéo) si tu retires les
+passages sponsorisés. Détails dans
 la [politique de confidentialité](docs/PRIVACY.md) et
 [à quoi sert chaque autorisation](docs/PERMISSIONS.md).
 

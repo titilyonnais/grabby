@@ -68,7 +68,8 @@ export function listKind(href: string): YtList['kind'] | null {
   }
   if (!/(^|\.)youtube\.com$/.test(u.hostname)) return null;
   if (u.pathname === '/playlist' && u.searchParams.get('list')) return 'playlist';
-  if (u.pathname === '/watch' && u.searchParams.get('list')) return 'playlist';
+  // A mix ("RD…") is made up by YouTube as it plays, endlessly: not a list to download.
+  if (u.pathname === '/watch' && u.searchParams.get('list') && !/^RD/.test(u.searchParams.get('list')!)) return 'playlist';
   if (/^\/(@[^/]+|channel\/[^/]+|c\/[^/]+|user\/[^/]+)\/(videos|streams)\/?$/.test(u.pathname)) return 'channel';
   return null;
 }

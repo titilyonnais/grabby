@@ -1,12 +1,15 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { buildFilename, NAME_PARTS, namePartsOf, templateOf, type NamePart } from '../../shared/filename';
+import { buildFilename, folderFor, FOLDER_MODES, NAME_PARTS, namePartsOf, templateOf, type FolderMode, type NamePart } from '../../shared/filename';
 import { AUDIO_FORMATS, FORMAT_NAMES, VIDEO_FORMATS } from '../../shared/formats';
 import type { Settings as S } from '../../shared/settings';
 import { hhmm, parseHhmm, RATE_LIMITS } from '../../shared/schedule';
 import { size, t } from '../i18n';
 import { Icon, type IconName } from './Icon';
+import { Segmented } from './Segmented';
 import { Select } from './Select';
+import { InstallStatus } from './Update';
+import type { InstallState } from '../../shared/messages';
 
 interface Props {
   /** Enter/leave animation class, set by the parent. */
@@ -16,45 +19,11 @@ interface Props {
   browserAsks: boolean;
   onChange: (patch: Partial<S>) => void;
   onOpenBrowserSettings: () => void;
+  /** Installing the latest version ("Update"): where it got to, and the button's action. */
+  install?: InstallState;
+  onInstall: () => void;
+  onOpenShortcuts: () => void;
   onClose: () => void;
-}
-
-function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: [T, string][]; onChange: (v: T) => void; label: string }) {
-  const at = Math.max(0, options.findIndex(([v]) => v === value));
-  // Which way the pill last moved: it squashes against the side it lands on.
-  const prev = useRef(at);
-  const dir = useRef('');
-  if (prev.current !== at) {
-    dir.current = at > prev.current ? 'next' : 'prev';
-    prev.current = at;
-  }
-  return (
-    <div class="seg seg--small" role="radiogroup" aria-label={label} style={{ '--n': String(options.length), '--at': String(at) }}>
-      <span class="seg__thumb" aria-hidden="true">
-        <span key={at} class={`seg__jelly${dir.current ? ` seg__jelly--${dir.current}` : ''}`} />
-      </span>
-      {options.map(([v, text]) => (
-        <button
-          key={v}
-          role="radio"
-          aria-checked={v === value}
-          tabIndex={v === value ? 0 : -1}
-          class={v === value ? 'on' : ''}
-          onClick={() => onChange(v)}
-          onKeyDown={(e) => {
-            const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
-            if (!step) return;
-            e.preventDefault();
-            const i = (options.findIndex(([o]) => o === v) + step + options.length) % options.length;
-            onChange(options[i]![0]);
-            ((e.currentTarget as HTMLElement).parentElement?.children[i + 1] as HTMLElement | undefined)?.focus();
-          }}
-        >
-          {text}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint: string }) {
@@ -117,9 +86,12 @@ function HourField({ label, value, onCommit }: { label: string; value: number; o
 const knowsConnection = () => typeof (navigator as Navigator & { connection?: { type?: string } }).connection?.type === 'string';
 
 /** Example the file name preview is built on. */
-const SAMPLE = { site: 'exemple.fr', quality: '1080p' };
+const SAMPLE = { site: 'exemple.fr', quality: '1080p', channel: 'Blender' };
 
-/** Four tiles on one line: what the file name is made of. At least one stays ticked. */
+/** The folders of each kind of file, in the user's language. */
+const folderNames = () => ({ video: t('folder_video'), audio: t('folder_audio'), image: t('folder_image') });
+
+/** Six tiles on two lines: what the file name is made of. At least one stays ticked. */
 function NameTiles({ template, onChange }: { template: string; onChange: (template: string) => void }) {
   const parts = namePartsOf(template);
   // The tile the user tried to untick while it was the last one: it shakes "no".
@@ -195,13 +167,22 @@ function Help({ warn, onOpen }: { warn: boolean; onOpen: () => void }) {
   );
 }
 
-export function Settings({ class: className, settings, browserAsks, onChange, onOpenBrowserSettings, onClose }: Props) {
+export function Settings({ class: className, settings, browserAsks, onChange, onOpenBrowserSettings, install, onInstall, onOpenShortcuts, onClose }: Props) {
+  // The keys the browser gives the "download" shortcut (the user may have changed them, or removed them).
+  const [keys, setKeys] = useState<string | null>(null);
+  useEffect(() => {
+    void chrome.commands
+      ?.getAll()
+      .then((all) => setKeys(all.find((c) => c.name === 'download-best')?.shortcut ?? ''))
+      .catch(() => setKeys(''));
+  }, []);
   const pageRef = useRef<HTMLElement>(null);
   const title = t('set_name_sample') === 'set_name_sample' ? 'Ma vidéo' : t('set_name_sample');
-  const path = buildFilename(settings.template, { title, ...SAMPLE, date: new Date() }, settings.videoFormat, settings.subfolder ? 'Grabby' : undefined);
+  const sub = folderFor(settings.folder, { site: SAMPLE.site, kind: 'video' }, folderNames());
+  const path = buildFilename(settings.template, { title, ...SAMPLE, format: settings.videoFormat.toUpperCase(), date: new Date() }, settings.videoFormat, sub);
   const name = path.split('/').pop() ?? path;
   const downloads = t('set_folder_downloads') === 'set_folder_downloads' ? 'Téléchargements' : t('set_folder_downloads');
-  const folder = settings.subfolder ? `${downloads}/Grabby` : downloads;
+  const folder = [downloads, ...path.split('/').slice(0, -1)].join('/');
 
   // Read through a ref: a new onClose never re-runs the effects below.
   const close = useRef(onClose);
@@ -226,7 +207,7 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
       </header>
 
       {/* --n: how many groups, so closing can send them away last-first. */}
-      <div class="page__body" style={{ '--n': '6' }}>
+      <div class="page__body" style={{ '--n': '8' }}>
         <Group title={t('set_group_look')} icon="sun" index={0}>
           <div class="row-setting">
             <span class="setting__label">{t('set_theme')}</span>
@@ -279,13 +260,28 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
             <NameTiles template={settings.template} onChange={(template) => onChange({ template })} />
             <FilePreview name={name} ext={settings.videoFormat} folder={folder} />
           </div>
-          <Toggle label={t('set_subfolder')} hint={t('set_subfolder_hint')} checked={settings.subfolder} onChange={(subfolder) => onChange({ subfolder })} />
+          <div class="row-setting">
+            <span class="row-setting__text">
+              <span class="setting__label">{t('set_folder')}</span>
+              <span class="setting__hint">{t('set_folder_hint')}</span>
+            </span>
+            <span class="setting__control">
+              <Select
+                label={t('set_folder')}
+                hideLabel
+                value={settings.folder}
+                options={FOLDER_MODES.map((m) => ({ value: m as FolderMode, label: t(`set_folder_${m}`), detail: t(`set_folder_${m}_detail`) }))}
+                onChange={(folder) => onChange({ folder })}
+              />
+            </span>
+          </div>
           <Toggle label={t('set_saveAs')} hint={t('set_saveAs_hint')} checked={settings.saveAs} onChange={(saveAs) => onChange({ saveAs })} />
           {!settings.saveAs && <Help warn={browserAsks} onOpen={onOpenBrowserSettings} />}
         </Group>
 
         <Group title={t('set_group_end')} icon="check" index={3}>
           <Toggle label={t('set_notify')} hint={t('set_notify_hint')} checked={settings.notify} onChange={(notify) => onChange({ notify })} />
+          <Toggle label={t('set_normalize')} hint={t('set_normalize_hint')} checked={settings.normalize} onChange={(normalize) => onChange({ normalize })} />
         </Group>
 
         <Group title={t('set_group_when')} icon="clock" index={4}>
@@ -314,8 +310,53 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
           </div>
         </Group>
 
-        <Group title={t('set_group_updates')} icon="gift" index={5}>
+        <Group title={t('set_group_keys')} icon="keyboard" index={5}>
+          <div class="row-setting row-setting--stack">
+            <span class="row-setting__text">
+              <span class="setting__label">{t('set_keys')}</span>
+              <span class="setting__hint">{keys === null ? '' : keys ? t('set_keys_hint', keys) : t('set_keys_none')}</span>
+            </span>
+            <span class="keys-row">
+              {keys ? <kbd class="keys">{keys}</kbd> : null}
+              <button class="btn btn--soft btn--small" onClick={onOpenShortcuts}>
+                {t('set_keys_change')}
+                <Icon name="external" size={14} />
+              </button>
+            </span>
+          </div>
+          <div class="row-setting">
+            <span class="setting__label">{t('set_quick')}</span>
+            <Segmented
+              label={t('set_quick')}
+              value={settings.quickMode}
+              options={[
+                ['video', t('set_quick_video')],
+                ['audio', t('set_quick_audio')],
+              ]}
+              onChange={(quickMode) => onChange({ quickMode })}
+            />
+          </div>
+        </Group>
+
+        <Group title={t('set_group_youtube')} icon="skip" index={6}>
+          <Toggle label={t('set_sponsors')} hint={t('set_sponsors_hint')} checked={settings.skipSponsors} onChange={(skipSponsors) => onChange({ skipSponsors })} />
+        </Group>
+
+        <Group title={t('set_group_updates')} icon="gift" index={7}>
           <Toggle label={t('set_updates')} hint={t('set_updates_hint')} checked={settings.updateCheck} onChange={(updateCheck) => onChange({ updateCheck })} />
+          <div class="row-setting row-setting--stack">
+            <span class="row-setting__text">
+              <span class="setting__label">{t('set_install')}</span>
+              <span class="setting__hint">{t('set_install_hint')}</span>
+            </span>
+            <span class="install__row">
+              <button class="btn btn--soft btn--small" disabled={install?.step === 'working' || install?.step === 'done'} onClick={onInstall}>
+                <Icon name="download" size={15} />
+                {t('updateNow')}
+              </button>
+            </span>
+            <InstallStatus install={install} />
+          </div>
         </Group>
 
         <p class="page__foot">
