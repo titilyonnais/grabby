@@ -34,6 +34,31 @@ export function alive(): boolean {
   return slot.__grabby === own && own();
 }
 
+/**
+ * A call to Chrome, made only while this copy runs the page; `fallback` otherwise, and when
+ * Chrome throws anyway (the extension being reloaded at that very moment).
+ */
+export function safely<T>(call: () => T, fallback: T): T {
+  if (!alive()) return fallback;
+  try {
+    return call();
+  } catch {
+    return fallback;
+  }
+}
+
+/** A message to the service worker that never throws (resolves to `fallback` when it can't go). */
+export function message<T = unknown>(msg: unknown, fallback?: T): Promise<T | undefined> {
+  return safely(
+    () =>
+      (chrome.runtime.sendMessage(msg) as Promise<T>).then(
+        (r) => r ?? fallback,
+        () => fallback,
+      ),
+    Promise.resolve(fallback),
+  );
+}
+
 const farewells: (() => void)[] = [];
 let watchdog: ReturnType<typeof setInterval> | undefined;
 

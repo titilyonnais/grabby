@@ -71,7 +71,16 @@ async function openPopup(context: BrowserContext, extId: string, tabId: number):
 }
 
 /** Opens a drop-down list of the card ("Quality", "Format") and picks an option. */
+/** Unfolds the first card's « More options », where subtitles, sound tracks, clips and retouches wait. */
+async function more(popup: Page) {
+  const toggle = popup.locator('.more-toggle').first();
+  await toggle.waitFor();
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+}
+
 async function pick(popup: Page, list: string, option: string) {
+  if (/^(Subtitles|Audio)/.test(list)) await more(popup);
   await popup.getByRole('button', { name: new RegExp(`^${list}`) }).first().click();
   await popup.getByRole('option', { name: new RegExp(`^${option}`) }).click();
   await expect(popup.getByRole('button', { name: new RegExp(`^${list}\\s*${option}`) }).first()).toBeVisible();
@@ -722,6 +731,7 @@ test('download all: every video of the page ticked, one format, all saved', asyn
 
 /** Opens "Cut a clip" and types the two times of the part. */
 async function cutClip(popup: Page, start: string, end: string) {
+  await more(popup);
   await popup.getByRole('button', { name: 'Clip' }).click();
   for (const [name, value] of [['End', end], ['Start', start]] as const) {
     const field = popup.getByRole('textbox', { name });
@@ -1020,6 +1030,7 @@ function probeFull(file: string): { streams: { type: string; lang?: string }[]; 
 
 /** Ticks options of a list that takes several (it stays open), then closes it. */
 async function tick(popup: Page, list: string, options: string[]) {
+  await more(popup);
   await popup.getByRole('button', { name: new RegExp(`^${list}`) }).first().click();
   for (const o of options) await popup.getByRole('option', { name: new RegExp(`^${o}`) }).click();
   await popup.keyboard.press('Escape');
@@ -1041,6 +1052,9 @@ test('several sound languages: each one a track of the video, with its language'
   const { tabId } = await openFixture(context, sw, 'hls-multi.html');
   await expect.poll(() => badge(sw, tabId)).toBe('1');
   const popup = await openPopup(context, extId, tabId);
+  // Folded, « More options » says nothing is on; unfolded, the default track.
+  await expect(popup.locator('.more-toggle__on')).toHaveCount(0);
+  await more(popup);
   await expect(popup.getByRole('button', { name: /^Audio language\s*English/ })).toBeVisible();
   await tick(popup, 'Audio language', ['Français']);
   await expect(popup.getByRole('button', { name: /^Audio language\s*2 audio tracks/ })).toBeVisible();
@@ -1103,6 +1117,7 @@ test('a <video> with chapters: they are written in the file', async ({ context, 
   const { tabId } = await openFixture(context, sw, 'chapters.html');
   await expect.poll(() => badge(sw, tabId)).toBe('1');
   const popup = await openPopup(context, extId, tabId);
+  await more(popup);
   await expect(popup.getByRole('switch', { name: /Keep the chapters/ })).toBeChecked();
   await expect(popup.getByText('3 chapters')).toBeVisible();
   await popup.getByRole('button', { name: 'Download', exact: true }).click();
@@ -1373,6 +1388,7 @@ test('sound evened out: the file is encoded with the loudness filter, and plays'
 
 /** Opens the card's "Retouch" panel. */
 async function openRetouch(popup: Page) {
+  await more(popup);
   await popup.getByRole('button', { name: /^Retouch/ }).click();
   await expect(popup.getByRole('heading', { name: 'Speed and size' })).toBeVisible();
 }
@@ -1497,58 +1513,33 @@ test('a live stream is recorded until "Stop and save", then made into one file',
   }
 });
 
-test('the button on videos downloads the one under the pointer; it can be turned off', async ({ context, sw }) => {
+test('nothing is ever drawn over a video or a thumbnail', async ({ context, sw }) => {
   const { page, tabId } = await openFixture(context, sw, 'direct.html');
   await expect.poll(() => badge(sw, tabId)).toBe('1');
   const box = (await page.locator('video').boundingBox())!;
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await expect.poll(() => page.evaluate(() => !!document.querySelector('grabby-overlay'))).toBe(true);
-  const before = await completed(sw);
-  // The bubble is in a closed shadow root, at the video's top left corner: only the logo,
-  // which a click unrolls into "Download" (the video), "Sound only"…
-  await page.mouse.move(box.x + 32, box.y + 32);
+  for (const [x, y] of [[0.5, 0.5], [0.1, 0.1], [0.3, 0.2]]) {
+    await page.mouse.move(box.x + box.width * x!, box.y + box.height * y!);
+    await page.waitForTimeout(400);
+  }
+  // Only the page's own elements: Grabby adds nothing to it.
+  expect(await page.evaluate(() => Array.from(document.querySelectorAll('*')).filter((e) => e.tagName.toLowerCase().startsWith('grabby')).length)).toBe(0);
   await page.mouse.click(box.x + 32, box.y + 32);
-  await page.waitForTimeout(500);
-  // The video itself didn't get the click.
-  expect(await page.evaluate(() => document.querySelector('video')!.paused)).toBe(true);
-  await page.mouse.move(box.x + 90, box.y + 31);
-  await page.mouse.click(box.x + 90, box.y + 31);
-  const { bytes } = await nextDownload(sw, before);
-  expect(isMp4(bytes)).toBe(true);
-  // The video itself didn't get the click.
-  expect(await page.evaluate(() => document.querySelector('video')!.paused)).toBe(true);
-
-  await setSettings(sw, { overlayButton: false });
-  const again = await context.newPage();
-  await again.goto(`${origin}/pages/direct.html`);
-  const b2 = (await again.locator('video').boundingBox())!;
-  await again.mouse.move(b2.x + b2.width / 2, b2.y + b2.height / 2);
-  await again.waitForTimeout(800);
-  await again.mouse.move(b2.x + b2.width / 3, b2.y + b2.height / 3);
-  await again.waitForTimeout(300);
-  expect(await again.evaluate(() => !!document.querySelector('grabby-overlay'))).toBe(false);
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => Array.from(document.querySelectorAll('*')).filter((e) => e.tagName.toLowerCase().startsWith('grabby')).length)).toBe(0);
 });
 
 test('one click on « Download again » (or « Hide ») is enough, even with an older download of the same video', async ({ context, sw, extId }) => {
-  const { page, tabId } = await openFixture(context, sw, 'direct.html');
+  const { tabId } = await openFixture(context, sw, 'direct.html');
   await expect.poll(() => badge(sw, tabId)).toBe('1');
   const popup = await openPopup(context, extId, tabId);
   let before = await completed(sw);
   await popup.getByRole('button', { name: 'Download', exact: true }).click();
   await nextDownload(sw, before);
-  // A second download of the same video, from the button on the video.
+  // A second download of the same video.
+  await popup.getByRole('button', { name: 'Download again' }).click();
   before = await completed(sw);
-  const box = (await page.locator('video').boundingBox())!;
-  await page.bringToFront();
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await expect.poll(() => page.evaluate(() => !!document.querySelector('grabby-overlay'))).toBe(true);
-  await page.mouse.move(box.x + 32, box.y + 32);
-  await page.mouse.click(box.x + 32, box.y + 32);
-  await page.waitForTimeout(500);
-  await page.mouse.move(box.x + 90, box.y + 31);
-  await page.mouse.click(box.x + 90, box.y + 31);
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
   await nextDownload(sw, before);
-  await popup.bringToFront();
   await expect(popup.locator('.job__msg')).toBeVisible();
   // One click: the card is back to its choices (not to the older « Saved »).
   await popup.getByRole('button', { name: 'Download again' }).click();
@@ -1746,6 +1737,7 @@ test('2.0: a saved video says so; kept for later, it is listed in the full page;
   await expect(again.getByText(/Already downloaded/).first()).toBeVisible();
   await expect(again.getByRole('button', { name: 'Show in folder' }).first()).toBeVisible();
   // Kept for later, then found in the full page.
+  await more(again);
   await again.getByRole('button', { name: 'Later', exact: true }).first().click();
   await expect(again.getByRole('button', { name: 'Added', exact: true }).first()).toBeVisible();
   await expect.poll(() => sw.evaluate(async () => ((await chrome.storage.local.get('later')) as { later?: unknown[] }).later?.length ?? 0)).toBe(1);
@@ -1856,4 +1848,47 @@ test('2.0: on YouTube, Grabby sits right after the thumbs, as YouTube buttons; n
   // Turned off in the settings: gone.
   await setSettings(sw, { overlayButton: false });
   await expect(page.locator('grabby-yt')).toHaveCount(0);
+});
+
+test('no error anywhere: every screen of the popup, the settings, the full page and the side panel', async ({ context, sw, extId }) => {
+  const errors: string[] = [];
+  const watch = (p: Page) => {
+    p.on('pageerror', (e) => errors.push(`${p.url()}: ${e.message}`));
+    // Grabby's own messages: its pages, and its script in the site's page (the test site's
+    // missing favicon is not one).
+    p.on('console', (m) => m.type() === 'error' && (p.url().startsWith('chrome-extension:') || m.location().url.startsWith('chrome-extension:')) && errors.push(`${p.url()}: ${m.text()}`));
+  };
+  context.on('page', watch);
+  const { page, tabId } = await openFixture(context, sw, 'direct.html');
+  watch(page);
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const popup = await openPopup(context, extId, tabId);
+  // The card, its options, a download.
+  await more(popup);
+  await popup.getByRole('button', { name: /^Retouch/ }).click();
+  await popup.getByRole('button', { name: /^Retouch|^Close/ }).first().click();
+  const before = await completed(sw);
+  await popup.getByRole('button', { name: 'Download', exact: true }).click();
+  await nextDownload(sw, before);
+  await popup.getByRole('tab').nth(1).click();
+  await popup.getByRole('tab').nth(0).click();
+  // Every settings section, the local AI one included.
+  await popup.getByRole('button', { name: 'Settings' }).click();
+  const sections = await popup.locator('.smenu__item').count();
+  for (let i = 0; i < sections; i++) {
+    await popup.locator('.smenu__item').nth(i).click();
+    await popup.waitForTimeout(400);
+    await popup.keyboard.press('Escape');
+    await popup.waitForTimeout(200);
+  }
+  // The full page, every section, and the side panel.
+  const app = await context.newPage();
+  for (const s of ['library', 'stats', 'batch', 'later', 'channels', `images?tab=${tabId}`, 'workshop', 'join', 'rules', 'backup']) {
+    await app.goto(`chrome-extension://${extId}/app.html#${s}`);
+    await app.waitForTimeout(700);
+  }
+  const side = await context.newPage();
+  await side.goto(`chrome-extension://${extId}/sidepanel.html?tab=${tabId}`);
+  await side.waitForTimeout(1000);
+  expect(errors).toEqual([]);
 });

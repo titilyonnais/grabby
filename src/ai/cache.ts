@@ -58,7 +58,16 @@ export async function builtinAi(): Promise<{ translator: string; summarizer: str
     Translator?: { availability(o: object): Promise<string> };
     Summarizer?: { availability(): Promise<string> };
   };
-  const translator = g.Translator ? await g.Translator.availability({ sourceLanguage: 'en', targetLanguage: 'fr' }).catch(() => 'unavailable') : 'unavailable';
-  const summarizer = g.Summarizer ? await g.Summarizer.availability().catch(() => 'unavailable') : 'unavailable';
+  // Chrome can refuse outright (« The feature flag gating model execution was disabled »),
+  // sometimes by throwing at once rather than rejecting: either way, not there.
+  const ask = async (call: () => Promise<string>) => {
+    try {
+      return await call();
+    } catch {
+      return 'unavailable';
+    }
+  };
+  const translator = g.Translator ? await ask(() => g.Translator!.availability({ sourceLanguage: 'en', targetLanguage: 'fr' })) : 'unavailable';
+  const summarizer = g.Summarizer ? await ask(() => g.Summarizer!.availability()) : 'unavailable';
   return { translator, summarizer };
 }

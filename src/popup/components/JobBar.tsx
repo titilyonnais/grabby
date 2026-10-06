@@ -129,6 +129,10 @@ export function jobStats(job: Job): string[] {
 /** "2 sponsored parts left out" (SponsorBlock). */
 export const sponsorsLeftOut = (n: number): string => (n === 1 ? t('jobSponsorsOne') : t('jobSponsors', String(n)));
 
+/** A recording (or a live) that can be stopped and kept as it is: « Arrêter et enregistrer ». */
+export const canFinish = (job: Job): boolean =>
+  job.status === 'capturing' || (!!job.live && job.status === 'downloading') || (job.status === 'paused' && job.kind === 'capture' && job.bytes > 0);
+
 /** A little burst of confetti around the check when a file is saved. */
 function Burst() {
   return (
@@ -144,7 +148,7 @@ function Burst() {
  * The download button turned into its own progress bar: the coral fill grows inside the
  * button the user just pressed, so the result appears where the action happened.
  */
-export function JobBar({ job, send, canFinish = true }: { job: Job; send: (m: PopupToBg) => void; canFinish?: boolean }) {
+export function JobBar({ job, send }: { job: Job; send: (m: PopupToBg) => void }) {
   const paused = job.status === 'paused';
   // A countdown to the next try for the network; the time of a live recording. Before any
   // return: a hook skipped once the job ends would leave its timer running.
@@ -242,17 +246,18 @@ export function JobBar({ job, send, canFinish = true }: { job: Job; send: (m: Po
           </button>
         ) : (
           canPause(job) && (
-            <button class="btn btn--soft btn--icon" title={t('pause')} aria-label={t('pause')} onClick={() => send({ type: 'pause', jobId: job.id })}>
+            <button class="btn btn--primary btn--icon" title={t('pause')} aria-label={t('pause')} onClick={() => send({ type: 'pause', jobId: job.id })}>
               <Icon name="pause" />
             </button>
           )
         )}
-        {(job.status === 'capturing' || (job.live && job.status === 'downloading') || (paused && job.kind === 'capture' && job.bytes > 0)) && canFinish && (
+        {canFinish(job) && (
           <button class="btn btn--primary btn--icon btn--stop" title={t('finishCapture')} aria-label={t('finishCapture')} onClick={() => send({ type: 'finish-capture', jobId: job.id })}>
             <Icon name="stop" size={20} />
           </button>
         )}
-        <button class="btn btn--soft btn--icon" title={t('cancel')} aria-label={t('cancel')} onClick={() => send({ type: 'cancel', jobId: job.id })}>
+        {/* Pause, stop and cancel: the same buttons, in the colours of « Télécharger ». */}
+        <button class="btn btn--primary btn--icon" title={t('cancel')} aria-label={t('cancel')} onClick={() => send({ type: 'cancel', jobId: job.id })}>
           <Icon name="close" />
         </button>
       </div>

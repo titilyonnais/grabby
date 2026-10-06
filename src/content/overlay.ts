@@ -1,145 +1,15 @@
 /**
- * "Bouton sur les vidéos": a small Grabby button over the video the pointer is on (and under
- * YouTube's player), downloading it straight away like the keyboard shortcut. It lives in a
- * closed shadow root, so the page's styles can't reach it, and can be turned off in the settings.
+ * Grabby under YouTube's player: a pill like YouTube's own buttons, right after the thumbs,
+ * with a menu like YouTube's. It lives in closed shadow roots, so the page's styles can't reach
+ * it, and can be turned off in the settings. (No button floats over videos any more: the pill
+ * and the popup do that job.) Also takes « Capture instantanée » (the keyboard shortcut).
  */
 import type { ContentToBg, PageMedia } from '../shared/messages';
 import { size } from '../popup/i18n';
-import { alive, onDead } from './alive';
+import { alive, message, onDead, safely } from './alive';
 
-const MIN_W = 200;
-const MIN_H = 120;
-const HIDE_MS = 1200;
-
-const say = (key: string) => (alive() && chrome.i18n.getMessage(key)) || key;
-
-const ICONS = {
-  down: 'M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14',
-  audio: 'M9 18V6l10-2v12M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm10-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z',
-  check: 'M5 12.5l4.5 4.5L19 7.5',
-  logo: 'M12 3.5v10m0 0-4-4m4 4 4-4M5.5 17.5h13',
-  photo: 'M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.5-2h6l1.5 2h2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5v-9ZM12 16a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
-  later: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0-13v4.5l3 2',
-  close: 'M6.5 6.5l11 11M17.5 6.5l-11 11',
-};
-/** An icon, built as nodes (pages with Trusted Types refuse markup strings). */
-function svg(d: string, px = 16): SVGSVGElement {
-  const NS = 'http://www.w3.org/2000/svg';
-  const el = document.createElementNS(NS, 'svg');
-  for (const [k, v] of Object.entries({ width: String(px), height: String(px), viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2.2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' })) el.setAttribute(k, v);
-  const path = document.createElementNS(NS, 'path');
-  path.setAttribute('d', d);
-  el.append(path);
-  return el;
-}
-
-function fill(btn: HTMLButtonElement, icon: string, text: string) {
-  const label = document.createElement('span');
-  label.textContent = text;
-  btn.replaceChildren(svg(icon), ...(text ? [label] : []));
-}
-
-/** Grabby's color, chosen in the settings: the round button takes it too. */
-const ACCENT: Record<string, string> = { coral: '#ff5b4f', blue: '#5b9dff', violet: '#a98bff', green: '#3dd68c', amber: '#ffb020', pink: '#ff6fae' };
-let accent = ACCENT.coral!;
-const accentStyles = new Set<HTMLStyleElement>();
-const accentCss = () => `:host { --g: ${accent}; }`;
-
-function styled(root: ShadowRoot) {
-  const style = document.createElement('style');
-  style.textContent = CSS;
-  const color = document.createElement('style');
-  color.textContent = accentCss();
-  accentStyles.add(color);
-  root.append(style, color);
-}
-
-function setAccent(name: string | undefined) {
-  const next = ACCENT[name ?? ''] ?? ACCENT.coral!;
-  if (next === accent) return;
-  accent = next;
-  for (const el of accentStyles) {
-    if (el.isConnected) el.textContent = accentCss();
-    else accentStyles.delete(el);
-  }
-}
-
-const CSS = `
-:host { all: initial; }
-.bar { position: fixed; z-index: 2147483647; display: flex; align-items: center; padding: 4px; border-radius: 999px;
-  background: rgba(14,14,16,0);
-  font: 600 13px/1 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; letter-spacing: .1px;
-  opacity: 0; transform: scale(.6); transform-origin: 22px 22px;
-  transition: opacity .18s ease, transform .34s cubic-bezier(.34,1.56,.64,1), background-color .25s ease, box-shadow .25s ease; pointer-events: none; }
-.bar.on { opacity: 1; transform: none; pointer-events: auto; }
-.bar.open { background: rgba(14,14,16,.88); box-shadow: 0 8px 28px rgba(0,0,0,.42), inset 0 0 0 1px rgba(255,255,255,.08); backdrop-filter: blur(12px) saturate(1.4); }
-.logo { all: unset; box-sizing: border-box; display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 999px; cursor: pointer;
-  background: var(--g); color: #160806; box-shadow: 0 4px 16px color-mix(in srgb, var(--g) 45%, transparent), 0 0 0 3px rgba(255,255,255,.2);
-  transition: transform .3s cubic-bezier(.34,1.56,.64,1), box-shadow .2s ease; }
-.logo:hover { transform: scale(1.08); box-shadow: 0 6px 20px color-mix(in srgb, var(--g) 55%, transparent), 0 0 0 4px rgba(255,255,255,.26); }
-.logo:active { transform: scale(.92); }
-.logo:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-.logo svg { transition: transform .35s cubic-bezier(.34,1.56,.64,1); }
-.open .logo { box-shadow: none; }
-.open .logo svg { animation: turn .3s cubic-bezier(.34,1.56,.64,1); }
-@keyframes turn { from { transform: rotate(-90deg) scale(.6); opacity: 0; } }
-.more { display: flex; align-items: center; gap: 4px; max-width: 0; overflow: hidden; opacity: 0;
-  transition: max-width .42s cubic-bezier(.22,1,.36,1), opacity .2s ease, padding .3s ease; }
-.open .more { max-width: 560px; opacity: 1; padding: 0 2px 0 6px; }
-.more > * { transform: translateX(-10px); opacity: 0; transition: transform .38s cubic-bezier(.34,1.56,.64,1), opacity .22s ease, background-color .15s ease; }
-.open .more > * { transform: none; opacity: 1; }
-.open .more > :nth-child(2) { transition-delay: .04s; }
-.open .more > :nth-child(3) { transition-delay: .08s; }
-.open .more > :nth-child(4) { transition-delay: .12s; }
-button { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px 0 11px; border-radius: 999px;
-  color: #fff; cursor: pointer; white-space: nowrap; transition: background-color .15s ease, transform .15s ease, color .15s ease; }
-button.icon { width: 34px; padding: 0; justify-content: center; }
-button:hover { background: rgba(255,255,255,.14); }
-button:active { transform: scale(.94); }
-button:focus-visible { outline: 2px solid color-mix(in srgb, var(--g) 80%, #fff); outline-offset: 2px; }
-button.main { background: #fff; color: #111; }
-button.main:hover { background: color-mix(in srgb, var(--g) 18%, #fff); }
-button.done { background: #2fbf71 !important; color: #fff !important; }
-button.done svg { animation: tick .36s cubic-bezier(.34,1.56,.64,1); }
-@keyframes tick { from { transform: scale(.3) rotate(-30deg); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .bar, button, .more, .more > *, .logo, .logo svg { transition: none; } button.done svg, .open .logo svg { animation: none; } }
-`;
-
-const send = (msg: ContentToBg) => (alive() ? chrome.runtime.sendMessage(msg).catch(() => {}) : Promise.resolve());
-/** A question to the service worker; `fallback` once Grabby is gone (updated while the page stays open). */
-const ask = async <T>(msg: ContentToBg, fallback: T): Promise<T> => (alive() ? ((await chrome.runtime.sendMessage(msg).catch(() => fallback)) ?? fallback) : fallback);
-
-function grab(src: string | undefined, mode: 'video' | 'audio') {
-  void send({ type: 'grab', ...(src ? { src } : {}), mode });
-}
-
-/** A moment of "started" on the button pressed, in green. */
-function confirm(btn: HTMLButtonElement, icon: string, text: string, after?: () => void) {
-  btn.classList.add('done');
-  fill(btn, ICONS.check, btn.classList.contains('icon') ? '' : say('overlayStarted'));
-  setTimeout(() => {
-    btn.classList.remove('done');
-    fill(btn, icon, text);
-    after?.();
-  }, 1500);
-}
-
-function makeButton(cls: string, icon: string, text: string, title: string, onClick: () => unknown, after?: () => void): HTMLButtonElement {
-  const b = document.createElement('button');
-  b.className = cls;
-  b.title = title;
-  b.setAttribute('aria-label', title);
-  fill(b, icon, text);
-  b.addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (b.classList.contains('done')) return;
-    void Promise.resolve(onClick()).then(() => confirm(b, icon, text, after));
-  });
-  // The page's player must not take these clicks (play/pause).
-  for (const ev of ['pointerdown', 'mousedown', 'mouseup', 'dblclick']) b.addEventListener(ev, (e) => e.stopPropagation());
-  return b;
-}
+const say = (key: string, subs?: string[]) => safely(() => chrome.i18n.getMessage(key, subs), '') || key;
+const send = (msg: ContentToBg) => message(msg);
 
 /** The picture the video shows right now, at its own size (null: the site doesn't allow reading it). */
 export function stillOf(v: HTMLVideoElement): string | null {
@@ -156,8 +26,6 @@ export function stillOf(v: HTMLVideoElement): string | null {
   }
 }
 
-const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-
 /** YouTube's watch page (and its lives): Grabby's buttons sit under the player there. */
 const onYouTubeWatch = () => location.hostname === 'www.youtube.com' && /^\/(watch|live\/)/.test(location.pathname);
 
@@ -170,30 +38,42 @@ function biggestVideo(): HTMLVideoElement | null {
   return seen[0]?.v ?? null;
 }
 
-/** Set by the overlay: takes the photo of a video (the page's own picture, or the screen's). */
-let ytShoot: ((v: HTMLVideoElement) => Promise<unknown>) | null = null;
+/** « Photo »: the picture on screen, at the video's own size when the site allows it. */
+async function shoot(v: HTMLVideoElement): Promise<unknown> {
+  const still = stillOf(v);
+  if (still) return send({ type: 'snap', dataUrl: still, time: v.currentTime });
+  const r = v.getBoundingClientRect();
+  return send({ type: 'snap', rect: { x: r.left, y: r.top, w: r.width, h: r.height }, dpr: devicePixelRatio, time: v.currentTime });
+}
 
 /*
- * YouTube's buttons, copied from youtube.com (2026): 40 px pills, padding 0 16 px, Roboto 500
- * 14 px, 24 px icons 6 px before the words, the thumbs' divider (1 × 24 px). YouTube's colour
- * variables are hashed now, so its own like button is read for the text and pill colours.
+ * YouTube's buttons, copied from youtube.com (2026), layer by layer:
+ * - the button: 40 px, padding 0 16 px, corners of 20 px, Roboto 500 14 px, its 24 px icon 6 px
+ *   before the words; its fill turns from 10 % to 20 % white (dark) or 5 % to 10 % black (light)
+ *   under the pointer — it replaces the fill, it isn't laid over it;
+ * - over it, YouTube's « light shape »: a rim light, a gradient from white at the top (5 % dark,
+ *   20 % light) to nothing at 75 % — measured pixel by pixel against « Partager », still and
+ *   under the pointer, light and dark;
+ * - the two halves of a two-part pill each have their own fill, the first one a divider of
+ *   1 × 24 px on its right edge.
  */
 const YT_CSS = `
-:host { all: initial; display: inline-flex; align-items: center; margin: 0 8px; flex: none; vertical-align: top; }
-.seg { position: relative; display: inline-flex; align-items: center; height: 40px; border-radius: 20px; background: var(--bg); }
+:host { all: initial; display: inline-flex; align-items: center; flex: none; vertical-align: top; }
+.seg { position: relative; display: inline-flex; align-items: center; height: 40px; }
 .w { position: relative; display: inline-flex; }
 button { all: unset; box-sizing: border-box; position: relative; display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 16px;
-  border-radius: 20px 0 0 20px; color: var(--t); font: 500 14px/40px Roboto, Arial, sans-serif; white-space: nowrap; cursor: pointer; overflow: hidden;
+  border-radius: 20px 0 0 20px; color: var(--t); background: var(--bg); font: 500 14px/40px Roboto, Arial, sans-serif; white-space: nowrap; cursor: pointer;
   -webkit-tap-highlight-color: transparent; }
-.w:first-child button::after { content: ''; position: absolute; right: 0; top: 8px; width: 1px; height: 24px; background: var(--line); }
 .w + .w button { width: 48px; padding: 0 12px; border-radius: 0 20px 20px 0; }
-button:hover { background: var(--hover); }
-button:active, button[aria-expanded='true'] { background: var(--line); }
-button:focus-visible { box-shadow: inset 0 0 0 2px var(--t); }
-svg { display: block; width: 24px; height: 24px; flex: none; }
-.label { margin-left: 6px; font-variant-numeric: tabular-nums; }
-button > * { position: relative; }
-button > .fill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--line); pointer-events: none; transition: width .5s cubic-bezier(.2,.7,.2,1); }
+button:hover, button[aria-expanded='true'] { background: var(--hover); }
+button:focus-visible { outline: 2px solid var(--t); outline-offset: -2px; }
+.light, .light::before { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
+.light { overflow: hidden; }
+.light::before { content: ''; background: linear-gradient(var(--rim), rgba(0,0,0,0) 75%); }
+.w:first-child button::after { content: ''; position: absolute; right: 0; top: 8px; width: 1px; height: 24px; background: var(--line); }
+svg { position: relative; display: block; width: 24px; height: 24px; flex: none; }
+.label { position: relative; margin-left: 6px; font-variant-numeric: tabular-nums; }
+.fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: inherit; background: var(--line); pointer-events: none; transition: width .5s cubic-bezier(.2,.7,.2,1); }
 .busy svg { animation: pulse 1.4s ease-in-out infinite; }
 .done svg, .failed svg { animation: pop .38s cubic-bezier(.34,1.56,.64,1); }
 .compact .label { display: none; }
@@ -227,6 +107,18 @@ const YT_MENU_CSS = `
 @media (prefers-reduced-motion: reduce) { .m { animation: none; } }
 `;
 
+/** YouTube's colours (2026), dark and light, as read on its own « Partager » button and menus. */
+const DARK = '--t: #f1f1f1; --bg: rgba(255,255,255,.1); --hover: rgba(255,255,255,.2); --rim: rgba(255,255,255,.05); --line: rgba(255,255,255,.2); --t2: #aaaaaa; --menu: #282828; --menu-hover: rgba(255,255,255,.1); --sep: rgba(255,255,255,.2); --shadow: none;';
+const LIGHT = '--t: #0f0f0f; --bg: rgba(0,0,0,.05); --hover: rgba(0,0,0,.1); --rim: rgba(255,255,255,.2); --line: rgba(0,0,0,.1); --t2: #606060; --menu: #ffffff; --menu-hover: rgba(0,0,0,.1); --sep: rgba(0,0,0,.1); --shadow: 0 4px 32px rgba(0,0,0,.1);';
+
+/** Light or dark, as YouTube shows it: the colour of its own like button's words. */
+function ytColors(row: Element): string {
+  const like = row.querySelector('segmented-like-dislike-button-view-model button, like-button-view-model button, button');
+  const rgb = ((like ? getComputedStyle(like).color : '').match(/\d+(\.\d+)?/g) ?? []).map(Number);
+  const dark = rgb.length >= 3 ? (0.2126 * rgb[0]! + 0.7152 * rgb[1]! + 0.0722 * rgb[2]!) / 255 > 0.5 : document.documentElement.hasAttribute('dark');
+  return dark ? DARK : LIGHT;
+}
+
 /**
  * YouTube's own icons (2026, filled outlines on a 24 grid) where it has one, and drawings
  * in the same 2 px line elsewhere.
@@ -256,26 +148,15 @@ function ytSvg(icon: YtIcon): SVGSVGElement {
   return el;
 }
 
-/** YouTube's colours, read from its own like button (light or dark, whatever YouTube shows). */
-function ytColors(row: Element): string {
-  const like = row.querySelector('segmented-like-dislike-button-view-model button, like-button-view-model button, button');
-  const s = like ? getComputedStyle(like) : null;
-  const rgb = (s?.color.match(/\d+(\.\d+)?/g) ?? []).map(Number);
-  const dark = rgb.length >= 3 ? (0.2126 * rgb[0]! + 0.7152 * rgb[1]! + 0.0722 * rgb[2]!) / 255 > 0.5 : document.documentElement.hasAttribute('dark');
-  const bg = s && s.backgroundColor !== 'rgba(0, 0, 0, 0)' ? s.backgroundColor : dark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)';
-  const t = s?.color ?? (dark ? '#f1f1f1' : '#0f0f0f');
-  return dark
-    ? `--t: ${t}; --bg: ${bg}; --hover: rgba(255,255,255,.2); --line: rgba(255,255,255,.2); --t2: #aaaaaa; --menu: #282828; --menu-hover: rgba(255,255,255,.1); --sep: rgba(255,255,255,.2); --shadow: none;`
-    : `--t: ${t}; --bg: ${bg}; --hover: rgba(0,0,0,.1); --line: rgba(0,0,0,.1); --t2: #606060; --menu: #ffffff; --menu-hover: rgba(0,0,0,.1); --sep: rgba(0,0,0,.1); --shadow: 0 4px 32px rgba(0,0,0,.1);`;
-}
-
 interface YtRow {
   el: HTMLElement;
   close: () => void;
+  stop: () => void;
 }
 type PageJob = { mode: 'video' | 'audio'; status: string; progress: number };
 const ACTIVE = ['queued', 'downloading', 'capturing', 'processing', 'saving', 'paused'];
-const stop = (el: Element) => {
+const quiet = (el: Element) => {
+  // The page's player must not take these clicks (play/pause).
   for (const ev of ['pointerdown', 'mousedown', 'mouseup', 'dblclick']) el.addEventListener(ev, (e) => e.stopPropagation());
 };
 
@@ -303,8 +184,13 @@ function ytRowIn(row: Element, video: () => HTMLVideoElement | null): YtRow {
     t.setAttribute('role', 'tooltip');
     t.textContent = tip;
     w.append(b, t);
-    stop(b);
+    quiet(b);
     return { w, b };
+  };
+  const light = () => {
+    const l = document.createElement('span');
+    l.className = 'light';
+    return l;
   };
   const main = mk(say('overlayVideoTitle'));
   const fillBar = document.createElement('span');
@@ -314,7 +200,7 @@ function ytRowIn(row: Element, video: () => HTMLVideoElement | null): YtRow {
   const more = mk(say('ytMore'));
   more.b.setAttribute('aria-haspopup', 'menu');
   more.b.setAttribute('aria-expanded', 'false');
-  more.b.append(ytSvg(YT_ICONS.chevron));
+  more.b.append(light(), ytSvg(YT_ICONS.chevron));
   seg.append(main.w, more.w);
   root.append(style, colors, seg);
 
@@ -326,7 +212,7 @@ function ytRowIn(row: Element, video: () => HTMLVideoElement | null): YtRow {
     main.b.className = state;
     label.textContent = words;
     fillBar.style.width = state === 'busy' ? `${Math.round(progress * 100)}%` : '0';
-    main.b.replaceChildren(fillBar, ytSvg(icon), label);
+    main.b.replaceChildren(light(), fillBar, ytSvg(icon), label);
   };
   const idle = () => set('', YT_ICONS.down, say('overlayVideo'));
   idle();
@@ -337,8 +223,8 @@ function ytRowIn(row: Element, video: () => HTMLVideoElement | null): YtRow {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const poll = async () => {
     clearTimeout(timer);
-    if (!el.isConnected) return;
-    const list = await ask<PageJob[]>({ type: 'page-jobs' }, []);
+    if (!el.isConnected || !alive()) return;
+    const list = (await message<PageJob[]>({ type: 'page-jobs' } satisfies ContentToBg, [])) ?? [];
     const now = Date.now();
     if (now < until) return;
     const job = list.find((j) => ACTIVE.includes(j.status)) ?? list.find((j) => j.status === 'done' || j.status === 'error');
@@ -353,7 +239,8 @@ function ytRowIn(row: Element, video: () => HTMLVideoElement | null): YtRow {
       until = now + 3000;
       const ok = job.status === 'done';
       set(ok ? 'done' : 'failed', ok ? YT_ICONS.check : YT_ICONS.failed, say(ok ? 'ytSaved' : 'ytFailed'));
-      setTimeout(() => (idle(), void poll()), 3000);
+      timer = setTimeout(() => (idle(), void poll()), 3000);
+      return;
     } else if (now - asked < 6000) again = true;
     else if (!seen) idle();
     if (again) timer = setTimeout(() => void poll(), 700);
@@ -386,7 +273,7 @@ function ytRowIn(row: Element, video: () => HTMLVideoElement | null): YtRow {
     const box = document.createElement('div');
     box.className = 'm';
     box.setAttribute('role', 'menu');
-    stop(box);
+    quiet(box);
     const item = (icon: YtIcon | null, text: string, side: string, act: () => void) => {
       const r = document.createElement('button');
       r.className = icon ? 'r' : 'r q';
@@ -415,20 +302,21 @@ function ytRowIn(row: Element, video: () => HTMLVideoElement | null): YtRow {
       d.className = 'sep';
       return d;
     };
-    const media = await ask<PageMedia | null>({ type: 'page-media' }, null);
+    const media = (await message<PageMedia | null>({ type: 'page-media' } satisfies ContentToBg, null)) ?? null;
+    if (!alive()) return;
     if (media?.qualities.length) {
       const h = document.createElement('div');
       h.className = 'h';
-      h.textContent = (alive() && chrome.i18n.getMessage('ytQualities', [media.format.toUpperCase()])) || media.format.toUpperCase();
+      h.textContent = say('ytQualities', [media.format.toUpperCase()]);
       box.append(h);
-      media.qualities.slice(0, 6).forEach((q) => box.append(item(null, q.label, q.bytes ? size(q.bytes) : '', () => start('video', q.id))));
+      for (const q of media.qualities.slice(0, 6)) box.append(item(null, q.label, q.bytes ? safely(() => size(q.bytes), '') : '', () => start('video', q.id)));
       box.append(divider());
     }
     box.append(
       item(YT_ICONS.audio, say('overlayAudio'), media ? media.audioFormat.toUpperCase() : '', () => start('audio')),
       item(YT_ICONS.photo, say('overlayPhoto'), '', () => {
         const v = video();
-        if (v && ytShoot) void ytShoot(v);
+        if (v) void shoot(v);
       }),
       item(YT_ICONS.later, say('overlayLater'), '', () => void send({ type: 'later' })),
       divider(),
@@ -454,35 +342,17 @@ function ytRowIn(row: Element, video: () => HTMLVideoElement | null): YtRow {
     else void open();
   });
   // A click elsewhere, Échap, a scroll or a new video close it, like YouTube's menus.
-  document.addEventListener('pointerdown', (e) => {
+  const onDown = (e: PointerEvent) => {
     if (menu && !e.composedPath().includes(menu) && !e.composedPath().includes(el)) close();
-  }, true);
-  document.addEventListener('keydown', (e) => {
+  };
+  const onKey = (e: KeyboardEvent) => {
     if (e.key === 'Escape' && menu) {
       close();
       more.b.focus();
     }
-  }, true);
-  addEventListener('scroll', () => menu && close(), { passive: true });
-  addEventListener('resize', () => menu && close());
-
-  // Where YouTube puts it: right after the thumbs.
-  const thumbs = row.querySelector(':scope > segmented-like-dislike-button-view-model, :scope > ytd-segmented-like-dislike-button-renderer, :scope > like-button-view-model');
-  // A Grabby from before an update may have left its own: one only.
-  for (const old of row.querySelectorAll('grabby-yt')) old.remove();
-  if (thumbs) thumbs.after(el);
-  else row.append(el);
-  paint();
-  // Too narrow for the word: the icon only, like YouTube does with its own buttons.
-  const fit = () => {
-    seg.classList.remove('compact');
-    if (row.scrollWidth > row.clientWidth + 1) seg.classList.add('compact');
   };
-  new ResizeObserver(fit).observe(row);
-  // YouTube's theme changed (light / dark): its colours again.
-  new MutationObserver(paint).observe(document.documentElement, { attributes: true, attributeFilter: ['dark'] });
-  // A new video (YouTube changes pages without loading): back to idle, then what runs for it.
-  document.addEventListener('yt-navigate-finish', () => {
+  const onMove = () => menu && close();
+  const onNavigate = () => {
     close();
     asked = 0;
     seen = false;
@@ -490,182 +360,129 @@ function ytRowIn(row: Element, video: () => HTMLVideoElement | null): YtRow {
     idle();
     paint();
     void poll();
-  });
+  };
+  document.addEventListener('pointerdown', onDown, true);
+  document.addEventListener('keydown', onKey, true);
+  addEventListener('scroll', onMove, { passive: true });
+  addEventListener('resize', onMove);
+  // A new video (YouTube changes pages without loading): back to idle, then what runs for it.
+  document.addEventListener('yt-navigate-finish', onNavigate);
+
+  // Where YouTube puts it: right after the thumbs. A Grabby from before an update may have
+  // left its own: one only.
+  for (const old of row.querySelectorAll('grabby-yt')) old.remove();
+  const thumbs = row.querySelector(':scope > segmented-like-dislike-button-view-model, :scope > ytd-segmented-like-dislike-button-renderer, :scope > like-button-view-model');
+  if (thumbs) thumbs.after(el);
+  else row.append(el);
+  paint();
+
+  /*
+   * Spaced like YouTube's own buttons, whatever this version of YouTube does it with (a margin
+   * on the next button, a gap on the row): the same space on both sides as between the thumbs
+   * and the button that follows them.
+   */
+  // Measured from where things are, minus the margins already given: nothing is written when
+  // nothing changes, so the row is never laid out again for nothing (YouTube watches it too).
+  const margin = (side: 'marginLeft' | 'marginRight', px: number) => {
+    const v = `${Math.max(0, Math.round(px))}px`;
+    if (el.style[side] !== v) el.style[side] = v;
+  };
+  const space = () => {
+    const next = el.nextElementSibling;
+    const left = thumbs?.getBoundingClientRect();
+    if (!next || !left) {
+      margin('marginLeft', 8);
+      margin('marginRight', 0);
+      return;
+    }
+    const want = 8;
+    const me = el.getBoundingClientRect();
+    const has = getComputedStyle(el);
+    const gapLeft = me.left - left.right - (parseFloat(has.marginLeft) || 0);
+    const gapRight = next.getBoundingClientRect().left - me.right - (parseFloat(has.marginRight) || 0);
+    margin('marginLeft', want - gapLeft);
+    margin('marginRight', want - gapRight);
+  };
+  // Too narrow for the word: the icon only, like YouTube does with its own buttons. The word's
+  // width is kept from when it was shown, so the choice is made without trying it again.
+  let wide = 0;
+  const fit = () => {
+    space();
+    const compact = seg.classList.contains('compact');
+    if (!compact) wide = seg.getBoundingClientRect().width;
+    const short = compact ? row.scrollWidth + (wide - seg.getBoundingClientRect().width) > row.clientWidth + 1 : row.scrollWidth > row.clientWidth + 1;
+    if (short !== compact) seg.classList.toggle('compact', short);
+  };
+  const sizes = new ResizeObserver(fit);
+  sizes.observe(row);
+  // YouTube's theme changed (light / dark): its colours again.
+  const theme = new MutationObserver(paint);
+  theme.observe(document.documentElement, { attributes: true, attributeFilter: ['dark'] });
   void poll();
-  return { el, close };
+
+  const stop = () => {
+    close();
+    clearTimeout(timer);
+    sizes.disconnect();
+    theme.disconnect();
+    document.removeEventListener('pointerdown', onDown, true);
+    document.removeEventListener('keydown', onKey, true);
+    removeEventListener('scroll', onMove);
+    removeEventListener('resize', onMove);
+    document.removeEventListener('yt-navigate-finish', onNavigate);
+    el.remove();
+  };
+  return { el, close, stop };
 }
 
 export function startOverlay() {
   if (!/^https?:$/.test(location.protocol)) return;
   let enabled = true;
-  let host: HTMLElement | null = null;
-  let bar: HTMLElement | null = null;
-  let target: HTMLVideoElement | null = null;
-  let hideTimer: ReturnType<typeof setTimeout> | undefined;
-  let last = 0;
 
-  const ensure = () => {
-    if (host?.isConnected) return;
-    host = document.createElement('grabby-overlay');
-    const root = host.attachShadow({ mode: 'closed' });
-    styled(root);
-    bar = document.createElement('div');
-    bar.className = 'bar';
-    // Folded: Grabby's round button only. A click unfolds what it can do with the video.
-    const logo = document.createElement('button');
-    logo.className = 'logo';
-    logo.title = say('overlayOpen');
-    logo.setAttribute('aria-label', say('overlayOpen'));
-    logo.setAttribute('aria-expanded', 'false');
-    logo.append(svg(ICONS.logo, 17));
-    logo.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setOpen(!bar!.classList.contains('open'));
-    });
-    for (const ev of ['pointerdown', 'mousedown', 'mouseup', 'dblclick']) logo.addEventListener(ev, (e) => e.stopPropagation());
-    const more = document.createElement('span');
-    more.className = 'more';
-    const fold = () => setOpen(false);
-    more.append(
-      makeButton('main', ICONS.down, say('overlayVideo'), say('overlayVideoTitle'), () => grab(srcOf(target), 'video'), fold),
-      makeButton('', ICONS.audio, say('overlayAudio'), say('overlayAudioTitle'), () => grab(srcOf(target), 'audio'), fold),
-      makeButton('icon', ICONS.photo, '', say('overlayPhoto'), () => snap(), fold),
-      makeButton('icon', ICONS.later, '', say('overlayLater'), () => send({ type: 'later', ...(srcOf(target) ? { src: srcOf(target)! } : {}) }), fold),
-    );
-    bar.append(logo, more);
-    bar.addEventListener('pointerenter', () => clearTimeout(hideTimer));
-    bar.addEventListener('pointerleave', () => scheduleHide());
-    root.append(bar);
-    (document.body ?? document.documentElement).append(host);
-  };
-
-  const setOpen = (open: boolean) => {
-    if (!bar || bar.classList.contains('open') === open) return;
-    bar.classList.toggle('open', open);
-    const logo = bar.querySelector('.logo');
-    logo?.setAttribute('aria-expanded', String(open));
-    // Open: a cross folds it back; folded: Grabby's arrow.
-    logo?.replaceChildren(svg(open ? ICONS.close : ICONS.logo, 17));
-  };
-
-  /** "Photo": the picture on screen, at the video's own size when the site allows it. */
-  const shoot = async (v: HTMLVideoElement) => {
-    const still = stillOf(v);
-    if (still) return send({ type: 'snap', dataUrl: still, time: v.currentTime });
-    // Read from the screen: the button steps aside for the shot.
-    const r = v.getBoundingClientRect();
-    if (bar) bar.style.visibility = 'hidden';
-    await frames();
-    await send({ type: 'snap', rect: { x: r.left, y: r.top, w: r.width, h: r.height }, dpr: devicePixelRatio, time: v.currentTime });
-    if (bar) bar.style.visibility = '';
-  };
-  const snap = async () => {
-    if (target && bar) await shoot(target);
-  };
-  ytShoot = shoot;
   // « Capture instantanée » from the keyboard: the biggest video on screen in this frame.
-  chrome.runtime.onMessage.addListener((msg: { type?: string }) => {
-    if (msg?.type !== 'photo') return;
-    const v = biggestVideo();
-    if (v) void shoot(v);
-  });
-
-  const srcOf = (v: HTMLVideoElement | null) => {
-    const s = v?.currentSrc || v?.src || '';
-    return /^https?:/i.test(s) ? s : undefined;
-  };
-
-  const place = () => {
-    if (!target || !bar) return;
-    const r = target.getBoundingClientRect();
-    bar.style.left = `${Math.max(4, r.left + 10)}px`;
-    bar.style.top = `${Math.max(4, r.top + 10)}px`;
-  };
-
-  const show = (v: HTMLVideoElement) => {
-    ensure();
-    clearTimeout(hideTimer);
-    target = v;
-    place();
-    bar!.classList.add('on');
-  };
-  const hide = () => {
-    bar?.classList.remove('on');
-    setOpen(false);
-    target = null;
-  };
-  const scheduleHide = () => {
-    clearTimeout(hideTimer);
-    hideTimer = setTimeout(hide, HIDE_MS);
-  };
-
-  /** The big enough video under the pointer (players cover their video with their own layers). */
-  const videoAt = (x: number, y: number): HTMLVideoElement | null => {
-    for (const v of document.querySelectorAll('video')) {
-      const r = v.getBoundingClientRect();
-      if (r.width < MIN_W || r.height < MIN_H) continue;
-      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
-        const style = getComputedStyle(v);
-        if (style.visibility !== 'hidden' && style.display !== 'none') return v;
-      }
-    }
-    return null;
-  };
-
-  document.addEventListener(
-    'pointermove',
-    (e) => {
-      // YouTube's watch page has Grabby's buttons under its player instead.
-      if (!enabled || document.fullscreenElement || e.pointerType === 'touch' || onYouTubeWatch()) return;
-      const now = performance.now();
-      if (now - last < 80) return;
-      last = now;
-      const v = videoAt(e.clientX, e.clientY);
-      if (v) show(v);
-      else if (target && !bar?.matches(':hover')) scheduleHide();
-    },
-    { passive: true, capture: true },
+  safely(
+    () =>
+      chrome.runtime.onMessage.addListener((msg: { type?: string }) => {
+        if (msg?.type !== 'photo' || !alive()) return;
+        const v = biggestVideo();
+        if (v) void shoot(v);
+      }),
+    undefined,
   );
-  addEventListener('scroll', () => target && place(), { passive: true, capture: true });
-  document.addEventListener('fullscreenchange', hide);
 
   // Under YouTube's player, right after the thumbs: YouTube's own buttons, to the pixel.
   let ytRow: YtRow | null = null;
+  const drop = () => {
+    ytRow?.stop();
+    ytRow = null;
+  };
   const ytCheck = () => {
-    if (!enabled || !onYouTubeWatch()) return;
+    if (!enabled || !alive() || !onYouTubeWatch()) return;
     const row = document.querySelector('ytd-watch-metadata #top-level-buttons-computed');
     if (!row) return;
     if (ytRow?.el.isConnected && row.contains(ytRow.el)) return;
-    ytRow?.close();
-    ytRow?.el.remove();
-    ytRow = ytRowIn(row, () => (target && document.contains(target) ? target : biggestVideo()));
+    drop();
+    ytRow = ytRowIn(row, biggestVideo);
   };
   const ytTimer = window === window.top ? setInterval(ytCheck, 1500) : undefined;
   // Grabby updated while the page stays open: this one leaves the page to the new one.
   onDead(() => {
     clearInterval(ytTimer);
-    hide();
-    host?.remove();
-    ytRow?.close();
-    ytRow?.el.remove();
-    ytRow = null;
+    drop();
     enabled = false;
   });
 
-  const apply = (s?: { overlayButton?: boolean; accent?: string }) => {
+  const apply = (s?: { overlayButton?: boolean }) => {
     enabled = s?.overlayButton !== false;
-    setAccent(s?.accent);
-    if (!enabled) {
-      hide();
-      ytRow?.close();
-      ytRow?.el.remove();
-      ytRow = null;
-    }
+    if (!enabled) drop();
   };
-  if (!alive()) return;
-  void chrome.storage.local.get('settings').then((r) => apply(r.settings as { overlayButton?: boolean; accent?: string } | undefined)).catch(() => {});
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.settings) apply(changes.settings.newValue as { overlayButton?: boolean; accent?: string } | undefined);
-  });
+  safely(() => {
+    void chrome.storage.local
+      .get('settings')
+      .then((r) => apply(r.settings as { overlayButton?: boolean } | undefined))
+      .catch(() => {});
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.settings && alive()) apply(changes.settings.newValue as { overlayButton?: boolean } | undefined);
+    });
+  }, undefined);
 }

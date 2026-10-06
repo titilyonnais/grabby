@@ -650,6 +650,20 @@ p {
   box-shadow: inset 0 0 0 1px var(--line-strong);
 }
 
+/* A folded card's pause, stop and cancel: the colours of the open card's (and of « Télécharger »). */
+.card__cancel {
+  background: var(--pill);
+  color: var(--pill-ink);
+  box-shadow: none;
+}
+
+.card__cancel:hover {
+  box-shadow: none;
+  opacity: 0.86;
+}
+
+
+
 .card__cancel:active {
   transform: scale(0.86);
   transition-duration: 140ms, 90ms;
@@ -2737,12 +2751,15 @@ label.row-setting:hover {
 .swatch--pink { --sw: #ff6fae; }
 
 /* The browser's own "ask where to save", folded to one line. */
+/* Under a group's rows, on their left edge (16 px), clear of the group's round corner. */
 .help-mini {
   display: inline-flex;
+  align-self: flex-start;
   align-items: center;
   gap: 6px;
-  margin: 2px 4px 4px;
+  margin: 2px 12px 8px 16px;
   padding: 4px 0;
+  text-align: left;
   border: 0;
   background: none;
   color: var(--muted);
@@ -3211,11 +3228,16 @@ label.row-setting:hover {
   line-height: 1.35;
 }
 
+/*
+ * « IA locale »: under its switch, inside the same group, on the same edges as the rows above
+ * (16 px on the left, 12 px on the right). Each thing it does: its name and its state on one
+ * line, who does it under them; ready is green.
+ */
 .ai {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-top: -4px;
+  gap: 12px;
+  padding: 4px 12px 12px 16px;
 }
 
 .ai__list {
@@ -3227,48 +3249,48 @@ label.row-setting:hover {
 }
 
 .ai__row {
-  display: grid;
-  grid-template-columns: 8px minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 4px 10px;
-  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 0;
 }
 
 .ai__row + .ai__row {
   box-shadow: inset 0 1px 0 var(--line);
 }
 
-.ai__dot {
-  width: 8px;
-  height: 8px;
-  margin-top: 6px;
-  border-radius: 50%;
-  box-shadow: inset 0 0 0 1.5px var(--muted);
-}
-
-.ai__dot--on {
-  box-shadow: none;
-  background: #2fbf71;
-}
-
-.ai__what {
+.ai__head {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.ai__chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
   min-width: 0;
 }
 
-.ai__state {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  max-width: 150px;
+.ai__chip {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
   color: var(--muted);
-  font-size: 12px;
-  line-height: 1.35;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ai__chip--on {
+  background: color-mix(in srgb, #22b07d 16%, transparent);
+  color: #22b07d;
 }
 
 .ai__actions {
@@ -3285,10 +3307,6 @@ label.row-setting:hover {
   color: var(--muted);
   font-size: 12.5px;
   line-height: 1.4;
-}
-
-.ai__result:empty {
-  display: none;
 }
 
 .ai__bar {
@@ -3819,4 +3837,67 @@ label.row-setting:hover {
 /* A button beside a 48 px menu (Qualité, Format, Tri): the same height, tops and bottoms aligned. */
 :where(div, section, header):has(> .select) > .btn:not(.btn--wide) {
   height: 48px;
+}
+
+/*
+ * « Plus d'options »: one quiet line under the pickers. What is on in it (sous-titres, extrait,
+ * retouches) is said after its name, so a folded choice is never forgotten.
+ */
+.more-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px 0 14px;
+  border-radius: var(--r-pill);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  transition:
+    color 140ms var(--ease),
+    background-color 140ms var(--ease);
+}
+
+.more-toggle:hover,
+.more-toggle--open {
+  color: var(--text);
+  background: var(--bg);
+}
+
+.more-toggle__text {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.more-toggle__title {
+  flex: none;
+}
+
+.more-toggle__on {
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.more-toggle > .icon:last-child {
+  flex: none;
+  transition: transform var(--t-gentle) var(--ease-out);
+}
+
+.more-toggle--open > .icon:last-child {
+  transform: rotate(180deg);
+}
+
+.more {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: drawer-in var(--t-gentle) var(--ease-out);
 }

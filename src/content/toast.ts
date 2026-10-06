@@ -3,7 +3,7 @@
  * closed shadow root so the page's styles can't reach it (and ours don't leak out).
  */
 import type { BgToContent, ContentToBg } from '../shared/messages';
-import { alive } from './alive';
+import { alive, message, safely } from './alive';
 
 type Toast = Extract<BgToContent, { type: 'toast' }>;
 
@@ -95,7 +95,7 @@ export function showToast(msg: Toast): void {
     a.textContent = msg.action;
     const id = msg.downloadId;
     a.addEventListener('click', () => {
-      if (alive()) void chrome.runtime.sendMessage({ type: 'show-download', downloadId: id } satisfies ContentToBg).catch(() => {});
+      void message({ type: 'show-download', downloadId: id } satisfies ContentToBg);
       hide();
     });
     box.append(a);
@@ -103,18 +103,22 @@ export function showToast(msg: Toast): void {
   const x = document.createElement('button');
   x.className = 'x';
   x.append(icon(CROSS, 20));
-  x.setAttribute('aria-label', chrome.i18n.getMessage('dismiss') || 'Close');
+  x.setAttribute('aria-label', safely(() => chrome.i18n.getMessage('dismiss'), '') || 'Close');
   x.addEventListener('click', () => hide());
   box.append(x);
 
   root.append(style, box);
-  void chrome.storage.local
-    .get('settings')
-    .then((r) => {
-      const name = (r.settings as { accent?: string } | undefined)?.accent ?? '';
-      if (ACCENT[name]) box.style.setProperty('--g', ACCENT[name]!);
-    })
-    .catch(() => {});
+  safely(
+    () =>
+      void chrome.storage.local
+        .get('settings')
+        .then((r) => {
+          const name = (r.settings as { accent?: string } | undefined)?.accent ?? '';
+          if (ACCENT[name]) box.style.setProperty('--g', ACCENT[name]!);
+        })
+        .catch(() => {}),
+    undefined,
+  );
   document.documentElement.append(host);
   current = host;
 

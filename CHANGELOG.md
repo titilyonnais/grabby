@@ -13,6 +13,70 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 ## [Non publié]
 
+## [2.3.0] — 2026-10-06
+
+Les boutons sous YouTube sont maintenant identiques à ceux de YouTube au pixel près, la bulle
+ronde sur les vidéos disparaît, les cartes reviennent à l'essentiel avec « Plus d'options »,
+et deux erreurs signalées sont corrigées — vérifié dans un vrai navigateur, écran par écran.
+
+### Modifié
+- **Boutons YouTube : dégradé et survol exacts.** Mesures pixel par pixel sur youtube.com,
+  à côté du bouton « Partager », bouton au repos et sous la souris, en clair et en sombre :
+  - YouTube ne pose pas de voile sur le fond de ses boutons, seulement un reflet en haut :
+    un dégradé de blanc (5 % en sombre, 20 % en clair) qui s'efface aux trois quarts. Grabby
+    ajoutait un voile en plus et un reflet trop fort (ou noir en clair) : son bouton était
+    plus clair, surtout au survol ;
+  - au repos comme au survol, les trois points mesurés (haut, milieu, bas) donnent
+    maintenant les mêmes couleurs que « Partager » (à 1/255 près sur une seule valeur).
+- **Boutons YouTube : espace à droite.** Le bouton « Partager » a déjà sa propre marge de
+  8 px ; Grabby en ajoutait 8 de plus. L'espace est maintenant mesuré des deux côtés : 8 px
+  à gauche comme à droite, comme entre les boutons de YouTube.
+- **Cartes allégées.** Une carte ouverte montre l'essentiel : qualité, format,
+  **Télécharger**. Une seule ligne **Plus d'options** range les sous-titres (et « Créer les
+  sous-titres » avec l'IA locale), les langues audio, les chapitres, **Extrait**, **Lire
+  l'extrait**, **Retouches** et **Plus tard**. Repliée, la ligne dit ce qui est activé
+  (« sous-titres, extrait, 2 retouches »). Pour un direct, ses retouches y sont aussi.
+- **« Suivre la chaîne » quitte les cartes de vidéo** : il reste sur les cartes de chaîne et
+  de playlist, et dans la page complète (rubrique Chaînes).
+- **Pause, Arrêter et Annuler** pendant un téléchargement ont tous la couleur du bouton
+  **Télécharger** (blanc et icône noire en sombre, l'inverse en clair). Carte repliée,
+  **Arrêter et enregistrer** apparaît aussi, à côté d'Annuler, pour un enregistrement ou un
+  direct.
+- **Réglages, IA locale redessinée** : chaque fonction (transcription, traduction, résumé)
+  sur une ligne, son état dans une étiquette à droite (verte quand c'est prêt) et ce qui la
+  fait en dessous ; les marges sont celles des autres réglages, aucun texte ne sort de la
+  carte. Le test et « Oublier les modèles » n'apparaissent qu'une fois l'IA autorisée.
+- **Réglages, Noms et dossiers** : la note « Une fenêtre « Enregistrer sous » s'ouvre quand
+  même ? » respecte les marges des lignes au-dessus.
+- Le réglage « Boutons sous les vidéos YouTube » décrit simplement ce qu'il fait.
+
+### Supprimé
+- **La bulle ronde sur les vidéos et les miniatures** (le rond Grabby au survol, son menu
+  déroulé et sa couleur) : supprimée partout, elle n'existe plus du tout. Les boutons sous
+  le lecteur YouTube, le clic droit, Alt+Maj+D, Alt+Maj+S et `gb` restent.
+
+### Corrigé
+- **« Uncaught Error: Extension context invalidated » (scanner.js:74) sur YouTube** : après
+  une mise à jour, un appel venu de la bulle partait encore vers l'ancienne extension. La
+  bulle n'existe plus, et tous les appels du script de page à Chrome (messages, réglages,
+  textes traduits, écouteurs) passent maintenant par une seule porte qui vérifie d'abord que
+  Grabby répond ; sinon le script s'arrête sans rien lever.
+- **« The feature flag gating model execution was disabled » dans la popup** : Chrome lève
+  cette erreur quand ses modèles intégrés (traducteur, résumeur) sont coupés par un réglage
+  du navigateur. Grabby l'attrape et considère simplement le modèle comme absent (le
+  traducteur Opus-MT et le résumé simple prennent le relais).
+- **Boutons YouTube recalculés sans fin** : le calcul de l'espacement réécrivait le style du
+  bouton à chaque image (près de 300 fois par seconde sur youtube.com). Il n'écrit plus que
+  ce qui change : zéro modification au repos.
+
+### Vérifié
+- Un nouveau test parcourt toute l'extension dans Chromium caché (popup, carte et ses
+  options, téléchargement, historique, les 7 rubriques de réglages, les 10 rubriques de la
+  page complète, panneau latéral) et échoue à la moindre erreur.
+- Sur le vrai youtube.com, en clair et en sombre : aucune erreur de Grabby (page d'une
+  vidéo, menu, page d'accueil avec les miniatures survolées), rien dessiné sur les
+  miniatures, 8 px de chaque côté de la pilule.
+
 ## [2.2.0] — 2026-10-06
 
 Les boutons sous le lecteur YouTube sont refaits d'après les vrais (mesurés sur youtube.com)
@@ -1284,7 +1348,8 @@ Première version.
 - Capture YouTube expérimentale.
 - Interface en français et en anglais, thème clair et sombre.
 
-[Non publié]: https://github.com/titilyonnais/grabby/compare/v2.2.0...HEAD
+[Non publié]: https://github.com/titilyonnais/grabby/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/titilyonnais/grabby/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/titilyonnais/grabby/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/titilyonnais/grabby/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/titilyonnais/grabby/compare/v1.11.0...v2.0.0

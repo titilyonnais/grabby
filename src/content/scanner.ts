@@ -5,7 +5,7 @@
  */
 import { showToast } from './toast';
 import { startOverlay } from './overlay';
-import { alive, onDead, superfluous } from './alive';
+import { alive, message, onDead, safely, superfluous } from './alive';
 import { forgetForcedQuality, hiddenJobFromUrl, hiddenSessionFromUrl, readYouTubeInfo } from '../features/youtube';
 import { SESSION_SPAN } from '../shared/idb';
 import { deepVideos } from '../shared/dom';
@@ -23,7 +23,7 @@ type HookUp =
   | { type: 'error'; error: 'capture_unavailable' | 'protected' | 'capture_failed' };
 
 // Grabby updated while the page stays open: nothing more is sent (it would throw).
-const send = (msg: ContentToBg) => (alive() ? chrome.runtime.sendMessage(msg).catch(() => {}) : Promise.resolve());
+const send = (msg: ContentToBg) => message(msg);
 
 /* Private channel to the MAIN-world hook (see hook.ts): offered before page scripts run. */
 const channel = new MessageChannel();
@@ -328,14 +328,18 @@ if (!hiddenJob && !superfluous) {
   else startObserving();
   // Once: the 144p an older hidden player made YouTube remember is forgotten.
   if (location.hostname === 'www.youtube.com' && window === window.top) {
-    void chrome.storage.local
-      .get('ytQualityRepaired')
-      .then(async (r) => {
-        if (r.ytQualityRepaired) return;
-        forgetForcedQuality(localStorage);
-        await chrome.storage.local.set({ ytQualityRepaired: true });
-      })
-      .catch(() => {});
+    safely(
+      () =>
+        void chrome.storage.local
+          .get('ytQualityRepaired')
+          .then(async (r) => {
+            if (r.ytQualityRepaired) return;
+            forgetForcedQuality(localStorage);
+            await chrome.storage.local.set({ ytQualityRepaired: true });
+          })
+          .catch(() => {}),
+      undefined,
+    );
   }
 }
 
@@ -445,11 +449,22 @@ function portSink(jobId: string): Sink {
   };
   return {
     put(track, seq, mime, init, data) {
-      pending++;
-      port.postMessage({ jobId, track, seq, mime, init, b64: toB64(data) });
+      // Grabby updated in the middle of a recording: the port is cut, nothing more goes.
+      try {
+        port.postMessage({ jobId, track, seq, mime, init, b64: toB64(data) });
+        pending++;
+      } catch {
+        /* the extension is gone */
+      }
     },
     flush: () => withTimeout(pending === 0 ? Promise.resolve() : new Promise<void>((r) => waiters.push(r))),
-    close: () => port.disconnect(),
+    close: () => {
+      try {
+        port.disconnect();
+      } catch {
+        /* already cut */
+      }
+    },
   };
 }
 
@@ -571,7 +586,8 @@ hook.onmessage = (e: MessageEvent) => {
 
 /* --------------------------------------------------- service worker ⇄ us */
 
-chrome.runtime.onMessage.addListener((msg: BgToContent, _sender, respond) => {
+safely(() => chrome.runtime.onMessage.addListener(onBackground), undefined);
+function onBackground(msg: BgToContent, _sender: chrome.runtime.MessageSender, respond: (r?: unknown) => void) {
   if (!alive()) return;
   switch (msg.type) {
     case 'scan':
@@ -595,4 +611,4 @@ chrome.runtime.onMessage.addListener((msg: BgToContent, _sender, respond) => {
       if (isTop) showToast(msg);
       break;
   }
-});
+}

@@ -14,13 +14,11 @@ import type { HistoryEntry, Job, MediaItem, Variant } from '../../shared/types';
 import { relativeTime, size, t, uiLang } from '../i18n';
 import { useUnfold } from '../unfold';
 import { Icon } from './Icon';
-import { canPause, isActive, JobBar } from './JobBar';
+import { canFinish, canPause, isActive, JobBar } from './JobBar';
 import { Segmented } from './Segmented';
 import { Select, type SelectOption } from './Select';
 import { Moment, Trim } from './Trim';
 import { FinishPanel, finishCount } from './Finish';
-import { Follow } from './Follow';
-import { listQualityFor } from '../../shared/ytlist';
 import type { Finish } from '../../shared/finish';
 import { PAIR_MB, TRANSLATE_TARGETS, WHISPER_MB } from '../../shared/translate';
 import { baseLang } from '../../shared/langs';
@@ -180,8 +178,6 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
   const [parts, setParts] = useState<Clip[] | null>(null);
   const [joined, setJoined] = useState(true);
   const clippable = canClip(item);
-  // A YouTube video: its channel can be followed from the card.
-  const followable = isYouTube(item.pageUrl) && /[?&]v=|\/(shorts|live)\//.test(item.pageUrl);
   // Subtitles: none, or some of the stream's tracks, put in the video or saved next to it.
   const [subsIds, setSubsIds] = useState<string[]>(ruled?.subtitles ?? []);
   const [subsApart, setSubsApart] = useState(false);
@@ -204,6 +200,8 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
   const [previewing, setPreviewing] = useState(false);
   // « Plus tard »: kept aside (the button says so).
   const [kept, setKept] = useState(false);
+  // « Plus d'options »: folded, the card shows only what most downloads need.
+  const [more, setMore] = useState(false);
   const image = isImageFormat(format);
   const whole = (c: Clip) => !!item.duration && c.start <= 0 && c.end >= Math.floor(item.duration);
   const chosen = trimming && parts ? parts.filter((c) => !whole(c) || parts.length > 1) : [];
@@ -300,6 +298,14 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
   // One stays: the sound of the video can't be taken away here.
   const toggleAudio = (id: string) => setAudioIds(audioSel.includes(id) ? (audioSel.length > 1 ? audioSel.filter((x) => x !== id) : audioSel) : [...audioSel, id]);
   const chaptersOffered = !!item.chapters?.length && !image && CHAPTER_FORMATS.has(format);
+  // What « Plus d'options » holds that is on, said on its line.
+  const hasMore = !image;
+  const extras = [
+    ...(audiosOffered && audioSel.length > 1 ? [t('moreAudio', String(audioSel.length))] : []),
+    ...(subsOffered && subsIds.length ? [t('moreSubs')] : []),
+    ...(chosen.length ? [t('moreCut')] : []),
+    ...(finishCount(finish) ? [t('moreFinish', String(finishCount(finish)))] : []),
+  ];
   // What a JPEG can be: a sheet needs the length, a thumbnail a picture of the video.
   const stills: ['frame' | 'sheet' | 'thumb', string][] = [
     ['frame', t('stillFrame')],
@@ -453,6 +459,20 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
               <Icon name={job!.status === 'paused' ? 'play' : 'pause'} size={16} />
             </button>
           )}
+          {/* Folded, the same controls as open: pause, stop (a recording), cancel. */}
+          {!select && running && !open && canFinish(job!) && (
+            <button
+              class="card__cancel btn--stop"
+              aria-label={t('finishCapture')}
+              title={t('finishCapture')}
+              onClick={(e) => {
+                e.stopPropagation();
+                send({ type: 'finish-capture', jobId: job!.id });
+              }}
+            >
+              <Icon name="stop" size={16} />
+            </button>
+          )}
           {!select && running && !open && (
             <button
               class="card__cancel"
@@ -508,16 +528,18 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
                   />
                 </div>
               )}
+              {/* A live: its only option, the retouches, behind « Plus d'options » too. */}
               {!showJob && (
-                <div class="card__actions">
-                  <button class="trim-toggle" aria-expanded={finishing} onClick={() => setFinishing((v) => !v)}>
-                    <Icon name={finishing ? 'close' : 'wand'} size={16} />
-                    {finishing ? t('finishClose') : finishCount(finish) ? t('finishOpenCount', String(finishCount(finish))) : t('finishOpen')}
-                  </button>
-                  {followable && <Follow url={item.pageUrl} mode="video" quality={listQualityFor(variant?.height)} label={t('followChannel')} />}
-                </div>
+                <button class={`more-toggle${more ? ' more-toggle--open' : ''}`} aria-expanded={more} onClick={() => setMore((v) => !v)}>
+                  <Icon name="settings" size={16} />
+                  <span class="more-toggle__text">
+                    <span class="more-toggle__title">{t('moreOptions')}</span>
+                    {extras.length > 0 && <span class="more-toggle__on">{extras.join(', ')}</span>}
+                  </span>
+                  <Icon name="chevron" size={16} />
+                </button>
               )}
-              {!showJob && finishing && (
+              {!showJob && more && (
                 <FinishPanel
                   value={finish}
                   onChange={setFinish}
@@ -551,58 +573,7 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
                   <Select label={t('formatLabel')} value={format} options={formatOptions} onChange={setFormat} />
                 </div>
               )}
-              {!showJob && audiosOffered && (
-                <Select label={t('audioLabel')} value="" values={audioSel} summary={audioSummary} options={audioOptions} onChange={toggleAudio} />
-              )}
-              {!showJob && subsOffered && (
-                <div class="subs">
-                  <Select label={t('subsLabel')} value="" values={allSubs} summary={subsSummary} options={[...subsOptions, ...aiSubOptions]} onChange={toggleSub} />
-                  {subsIds.length > 0 && (
-                    <label class="subs__apart">
-                      <span>{t('subsApart')}</span>
-                      <input
-                        class="switch"
-                        type="checkbox"
-                        role="switch"
-                        checked={subsApart || subsMustApart}
-                        disabled={subsMustApart}
-                        onChange={(e) => setSubsApart(e.currentTarget.checked)}
-                      />
-                    </label>
-                  )}
-                  {subsIds.length > 0 && subsMustApart && <p class="hint">{t('subsApartHint')}</p>}
-                </div>
-              )}
-              {/* No subtitles on the site: the local AI offers to make them. */}
-              {!showJob && !subsOffered && !audio && !image && (
-                <label class="option option--ai">
-                  <span class="option__text">
-                    <span class="option__title">
-                      {t('subsMake')}
-                      <span class="tag tag--ai">{t('aiTag')}</span>
-                    </span>
-                    <span class="option__sub">{ai?.allowed ? t('subsMakeDetail') : t('subsMakeDetailFirst', String(WHISPER_MB))}</span>
-                  </span>
-                  <input class="switch" type="checkbox" role="switch" checked={!!finish.transcribe} onChange={() => toggleAi(AI_TRANSCRIBE)} />
-                </label>
-              )}
-              {!showJob && aiNeedsConsent && !finishing && (
-                <div class="consent" role="note">
-                  <p>{t('aiConsent', [String(WHISPER_MB), String(PAIR_MB)])}</p>
-                  <button class="btn btn--primary btn--small" onClick={() => ai?.allow()}>
-                    {t('aiAllow')}
-                  </button>
-                </div>
-              )}
-              {!showJob && chaptersOffered && (
-                <label class="option">
-                  <span>
-                    {t('chaptersLabel')}
-                    <span class="option__detail">{t('chaptersCount', String(item.chapters!.length))}</span>
-                  </span>
-                  <input class="switch" type="checkbox" role="switch" checked={chapters} onChange={(e) => setChapters(e.currentTarget.checked)} />
-                </label>
-              )}
+              {/* A picture: what kind, which moment (the format asked for it). */}
               {!showJob && format === 'jpg' && stills.length > 1 && (
                 <div class="still-kind">
                   <Segmented
@@ -623,85 +594,153 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
               {!showJob && image && format !== 'jpg' && clippable && (
                 <Trim key="animation" duration={item.duration!} parts={parts} onChange={setParts} single={{ max: MAX_ANIMATION }} />
               )}
-              {!showJob && !image && (clippable || previewUrl || item.kind === 'capture' || item.videoIndex !== undefined) && (
-                <div class="card__actions">
-                  {clippable && (
-                    <button class="trim-toggle" aria-expanded={trimming} onClick={() => setTrimming((v) => !v)}>
-                      <Icon name={trimming ? 'close' : 'scissors'} size={16} />
-                      {trimming ? t('trimWhole') : t('trimOpen')}
-                    </button>
+              {/*
+               * Everything else waits behind « Plus d'options »: one line that says what is on
+               * (sous-titres, extrait, retouches…), so nothing chosen goes unnoticed.
+               */}
+              {!showJob && hasMore && (
+                <button class={`more-toggle${more ? ' more-toggle--open' : ''}`} aria-expanded={more} onClick={() => setMore((v) => !v)}>
+                  <Icon name="settings" size={16} />
+                  <span class="more-toggle__text">
+                    <span class="more-toggle__title">{t('moreOptions')}</span>
+                    {extras.length > 0 && <span class="more-toggle__on">{extras.join(', ')}</span>}
+                  </span>
+                  <Icon name="chevron" size={16} />
+                </button>
+              )}
+              {!showJob && more && (
+                <div class="more">
+                  {audiosOffered && <Select label={t('audioLabel')} value="" values={audioSel} summary={audioSummary} options={audioOptions} onChange={toggleAudio} />}
+                  {subsOffered && (
+                    <div class="subs">
+                      <Select label={t('subsLabel')} value="" values={allSubs} summary={subsSummary} options={[...subsOptions, ...aiSubOptions]} onChange={toggleSub} />
+                      {subsIds.length > 0 && (
+                        <label class="subs__apart">
+                          <span>{t('subsApart')}</span>
+                          <input
+                            class="switch"
+                            type="checkbox"
+                            role="switch"
+                            checked={subsApart || subsMustApart}
+                            disabled={subsMustApart}
+                            onChange={(e) => setSubsApart(e.currentTarget.checked)}
+                          />
+                        </label>
+                      )}
+                      {subsIds.length > 0 && subsMustApart && <p class="hint">{t('subsApartHint')}</p>}
+                    </div>
                   )}
-                  {!item.audioOnly && cut && (
-                    <button class="trim-toggle" aria-expanded={previewUrl ? previewing : undefined} onClick={preview} title={previewUrl ? t('previewHere') : t('previewInPage')}>
-                      <Icon name={previewing ? 'close' : 'play'} size={16} />
-                      {previewing ? t('previewStop') : t('preview')}
-                    </button>
+                  {/* No subtitles on the site: the local AI offers to make them. */}
+                  {!subsOffered && !audio && !image && (
+                    <label class="option option--ai">
+                      <span class="option__text">
+                        <span class="option__title">
+                          {t('subsMake')}
+                          <span class="tag tag--ai">{t('aiTag')}</span>
+                        </span>
+                        <span class="option__sub">{ai?.allowed ? t('subsMakeDetail') : t('subsMakeDetailFirst', String(WHISPER_MB))}</span>
+                      </span>
+                      <input class="switch" type="checkbox" role="switch" checked={!!finish.transcribe} onChange={() => toggleAi(AI_TRANSCRIBE)} />
+                    </label>
                   )}
-                  <button class="trim-toggle" aria-expanded={finishing} onClick={() => setFinishing((v) => !v)}>
-                    <Icon name={finishing ? 'close' : 'wand'} size={16} />
-                    {finishing ? t('finishClose') : finishCount(finish) ? t('finishOpenCount', String(finishCount(finish))) : t('finishOpen')}
-                  </button>
-                  {/^https?:/i.test(item.pageUrl) && (
-                    <button
-                      class={`trim-toggle${kept ? ' trim-toggle--done' : ''}`}
-                      disabled={kept}
-                      title={t('laterAddHint')}
-                      onClick={() => {
-                        send({
-                          type: 'later-add',
-                          mediaId: item.id,
-                          mode: audio ? 'audio' : 'auto',
-                        });
-                        setKept(true);
+                  {aiNeedsConsent && !finishing && (
+                    <div class="consent" role="note">
+                      <p>{t('aiConsent', [String(WHISPER_MB), String(PAIR_MB)])}</p>
+                      <button class="btn btn--primary btn--small" onClick={() => ai?.allow()}>
+                        {t('aiAllow')}
+                      </button>
+                    </div>
+                  )}
+                  {chaptersOffered && (
+                    <label class="option">
+                      <span>
+                        {t('chaptersLabel')}
+                        <span class="option__detail">{t('chaptersCount', String(item.chapters!.length))}</span>
+                      </span>
+                      <input class="switch" type="checkbox" role="switch" checked={chapters} onChange={(e) => setChapters(e.currentTarget.checked)} />
+                    </label>
+                  )}
+                  {!image && (
+                    <div class="card__actions">
+                      {clippable && (
+                        <button class="trim-toggle" aria-expanded={trimming} onClick={() => setTrimming((v) => !v)}>
+                          <Icon name={trimming ? 'close' : 'scissors'} size={16} />
+                          {trimming ? t('trimWhole') : t('trimOpen')}
+                        </button>
+                      )}
+                      {!item.audioOnly && cut && (
+                        <button class="trim-toggle" aria-expanded={previewUrl ? previewing : undefined} onClick={preview} title={previewUrl ? t('previewHere') : t('previewInPage')}>
+                          <Icon name={previewing ? 'close' : 'play'} size={16} />
+                          {previewing ? t('previewStop') : t('preview')}
+                        </button>
+                      )}
+                      <button class="trim-toggle" aria-expanded={finishing} onClick={() => setFinishing((v) => !v)}>
+                        <Icon name={finishing ? 'close' : 'wand'} size={16} />
+                        {finishing ? t('finishClose') : finishCount(finish) ? t('finishOpenCount', String(finishCount(finish))) : t('finishOpen')}
+                      </button>
+                      {/^https?:/i.test(item.pageUrl) && (
+                        <button
+                          class={`trim-toggle${kept ? ' trim-toggle--done' : ''}`}
+                          disabled={kept}
+                          title={t('laterAddHint')}
+                          onClick={() => {
+                            send({
+                              type: 'later-add',
+                              mediaId: item.id,
+                              mode: audio ? 'audio' : 'auto',
+                            });
+                            setKept(true);
+                          }}
+                        >
+                          <Icon name={kept ? 'check' : 'later'} size={16} />
+                          {kept ? t('laterKept') : t('laterAdd')}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {previewing && previewUrl && cut && (
+                    <video
+                      class="preview"
+                      key={`${previewUrl}#${previewSpan.start}-${previewSpan.end ?? ''}`}
+                      src={`${previewUrl}#t=${previewSpan.start}`}
+                      controls
+                      autoplay
+                      playsInline
+                      // The extract, in a loop.
+                      onTimeUpdate={(e) => {
+                        const v = e.currentTarget;
+                        if (previewSpan.end !== undefined && v.currentTime >= previewSpan.end) v.currentTime = previewSpan.start;
                       }}
-                    >
-                      <Icon name={kept ? 'check' : 'later'} size={16} />
-                      {kept ? t('laterKept') : t('laterAdd')}
-                    </button>
+                      onError={() => {
+                        // The site won't play it here: in its own page instead.
+                        setPreviewing(false);
+                        previewInPage(item, previewSpan.start, previewSpan.end);
+                      }}
+                    />
                   )}
-                  {followable && <Follow url={item.pageUrl} mode={audio ? 'audio' : 'video'} quality={listQualityFor(variant?.height)} {...(!image ? { format } : {})} label={t('followChannel')} />}
+                  {clippable && trimming && !image && <Trim key="parts" duration={item.duration!} parts={parts} onChange={setParts} />}
+                  {chosen.length > 1 && !image && (
+                    <label class="option">
+                      <span>{t('partsJoined')}</span>
+                      <input class="switch" type="checkbox" role="switch" checked={joined} onChange={(e) => setJoined(e.currentTarget.checked)} />
+                    </label>
+                  )}
+                  {finishing && !image && (
+                    <FinishPanel
+                      value={finish}
+                      onChange={setFinish}
+                      audio={audio}
+                      format={format}
+                      {...(item.thumbnail ? { picture: item.thumbnail } : {})}
+                      subsChosen={subsOffered && subsIds.length > 0}
+                      chapters={item.chapters?.length ?? 0}
+                      aiAllowed={!!ai?.allowed}
+                      onAllowAi={() => ai?.allow()}
+                    />
+                  )}
                 </div>
               )}
-              {!showJob && previewing && previewUrl && cut && (
-                <video
-                  class="preview"
-                  key={`${previewUrl}#${previewSpan.start}-${previewSpan.end ?? ''}`}
-                  src={`${previewUrl}#t=${previewSpan.start}`}
-                  controls
-                  autoplay
-                  playsInline
-                  // The extract, in a loop.
-                  onTimeUpdate={(e) => {
-                    const v = e.currentTarget;
-                    if (previewSpan.end !== undefined && v.currentTime >= previewSpan.end) v.currentTime = previewSpan.start;
-                  }}
-                  onError={() => {
-                    // The site won't play it here: in its own page instead.
-                    setPreviewing(false);
-                    previewInPage(item, previewSpan.start, previewSpan.end);
-                  }}
-                />
-              )}
-              {!showJob && clippable && trimming && !image && <Trim key="parts" duration={item.duration!} parts={parts} onChange={setParts} />}
-              {!showJob && chosen.length > 1 && !image && (
-                <label class="option">
-                  <span>{t('partsJoined')}</span>
-                  <input class="switch" type="checkbox" role="switch" checked={joined} onChange={(e) => setJoined(e.currentTarget.checked)} />
-                </label>
-              )}
-              {!showJob && finishing && !image && (
-                <FinishPanel
-                  value={finish}
-                  onChange={setFinish}
-                  audio={audio}
-                  format={format}
-                  {...(item.thumbnail ? { picture: item.thumbnail } : {})}
-                  subsChosen={subsOffered && subsIds.length > 0}
-                  chapters={item.chapters?.length ?? 0}
-                  aiAllowed={!!ai?.allowed}
-                  onAllowAi={() => ai?.allow()}
-                />
-              )}
+              {!showJob && item.kind === 'capture' && <p class="hint">{t(hidden ? 'hiddenHint' : 'captureHint')}</p>}
               {showJob ? (
                 <>
                   <JobStack job={job} others={others} send={send} listed={(j) => inQueue.includes(j.id)} />
@@ -713,7 +752,6 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
                   {buttonLabel}
                 </button>
               )}
-              {item.kind === 'capture' && !showJob && <p class="hint">{t(hidden ? 'hiddenHint' : 'captureHint')}</p>}
               {rule && !showJob && <p class="hint">{t('ruleApplied', rule.site || t('ruleEverySite'))}</p>}
               {scale && !audio && !image && !showJob && <p class="hint">{t('shrinkHint')}</p>}
               {chosen.length > 0 && !audio && !image && !showJob && <p class="hint">{t('trimHint')}</p>}
