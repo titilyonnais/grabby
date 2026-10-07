@@ -8,8 +8,6 @@ import { size, t } from '../i18n';
 import { Icon, type IconName } from './Icon';
 import { Segmented } from './Segmented';
 import { Select } from './Select';
-import { InstallStatus } from './Update';
-import type { InstallState } from '../../shared/messages';
 
 interface Props {
   /** Enter/leave animation class, set by the parent. */
@@ -19,9 +17,6 @@ interface Props {
   browserAsks: boolean;
   onChange: (patch: Partial<S>) => void;
   onOpenBrowserSettings: () => void;
-  /** Installing the latest version ("Update"): where it got to, and the button's action. */
-  install?: InstallState;
-  onInstall: () => void;
   onOpenShortcuts: () => void;
   onClose: () => void;
 }
@@ -44,13 +39,6 @@ function Group({ index, children }: { index: number; children: ComponentChildren
       <div class="group__body">{children}</div>
     </section>
   );
-}
-
-/** The side panel of this window: Grabby next to the page while browsing. */
-async function openSidePanel() {
-  const win = await chrome.windows.getCurrent();
-  if (win.id !== undefined) await chrome.sidePanel.open({ windowId: win.id }).catch(() => {});
-  window.close();
 }
 
 /** A time of day the user types ("22:00", "7h"); what doesn't read as one goes back as it was. */
@@ -232,7 +220,7 @@ function Swatches({ value, onChange }: { value: Accent; onChange: (a: Accent) =>
   );
 }
 
-export function Settings({ class: className, settings, browserAsks, onChange, onOpenBrowserSettings, install, onInstall, onOpenShortcuts, onClose }: Props) {
+export function Settings({ class: className, settings, browserAsks, onChange, onOpenBrowserSettings, onOpenShortcuts, onClose }: Props) {
   // The keys the browser gives the "download" shortcut (the user may have changed them, or removed them).
   const [keys, setKeys] = useState<string | null>(null);
   useEffect(() => {
@@ -454,19 +442,6 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
       <Group index={0}>
         <Toggle label={t('set_sync')} hint={t('set_sync_hint')} checked={settings.sync} onChange={(sync) => onChange({ sync })} />
         <Toggle label={t('set_updates')} hint={t('set_updates_hint')} checked={settings.updateCheck} onChange={(updateCheck) => onChange({ updateCheck })} />
-        <div class="row-setting row-setting--stack">
-          <span class="row-setting__text">
-            <span class="setting__label">{t('set_install')}</span>
-            <span class="setting__hint">{t('set_install_hint')}</span>
-          </span>
-          <span class="install__row">
-            <button class="btn btn--soft btn--small" disabled={install?.step === 'working' || install?.step === 'done'} onClick={onInstall}>
-              <Icon name="download" size={15} />
-              {t('updateNow')}
-            </button>
-          </span>
-          <InstallStatus install={install} />
-        </div>
       </Group>
     ),
   };
@@ -507,23 +482,6 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
                 </button>
               ))}
             </nav>
-            {/* Grabby elsewhere: next to the page; the tour again. */}
-            <div class="smenu__more">
-              {chrome.sidePanel && !document.documentElement.hasAttribute('data-side') && (
-                <button class="btn btn--soft btn--small" onClick={() => void openSidePanel()}>
-                  {t('set_side_open')}
-                </button>
-              )}
-              <button
-                class="btn btn--soft btn--small"
-                onClick={() => {
-                  onChange({ tourDone: false });
-                  onClose();
-                }}
-              >
-                {t('set_tour_again')}
-              </button>
-            </div>
             <footer class="page__foot">
               <p class="page__privacy">
                 <Icon name="shield" size={14} />

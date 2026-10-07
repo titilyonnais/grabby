@@ -76,13 +76,13 @@ describe('checkFile', () => {
 
 /* ----------------------------------------------------- « Réglages synchronisés » */
 describe('sync', () => {
-  const s: Settings = { ...DEFAULT_SETTINGS, sync: true, tourDone: true };
+  const s: Settings = { ...DEFAULT_SETTINGS, sync: true, firstRunAck: true };
   it('leaves what is of this computer out, in one piece', () => {
     const out = toSynced(s);
     expect(Object.keys(out)).toEqual([`${SYNC_PREFIX}settings`]);
     const plain = out[`${SYNC_PREFIX}settings`] as Record<string, unknown>;
     expect(plain.sync).toBeUndefined();
-    expect(plain.tourDone).toBeUndefined();
+    expect(plain.firstRunAck).toBeUndefined();
     expect(plain.theme).toBe(s.theme);
   });
   it('comes back whole, without what Grabby no longer has', () => {

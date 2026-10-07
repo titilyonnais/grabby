@@ -239,16 +239,6 @@ p {
   overflow: hidden;
 }
 
-/* In the side panel: as wide and as tall as the panel. */
-:root[data-side] body {
-  width: 100%;
-  height: 100vh;
-}
-
-:root[data-side] .app {
-  height: 100vh;
-}
-
 /* The main screen. It steps back a little while the settings slide over it. */
 .shell {
   display: flex;
@@ -450,9 +440,20 @@ p {
   font-size: 13px;
 }
 
-/* In a card, a choice in segments is as tall as every other choice there (48). */
+/*
+ * In a card, a choice in segments is as tall as every other choice there (48), and drawn like
+ * them: the page's colour and a fine line, the chosen one a step darker.
+ */
 .card .seg--small {
   padding: 4px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.card .seg--small .seg__jelly,
+:root[data-theme='dark'] .card .seg--small .seg__jelly {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 
 .card .seg--small .seg__thumb {
@@ -502,10 +503,7 @@ p {
   animation: from-left var(--t-gentle) var(--ease-out);
 }
 
-/* First content of the popup: it settles in from just below. */
-.panel--same {
-  animation: rise var(--t-gentle) var(--ease-out);
-}
+/* The popup's first content shows at once: nothing comes in when it opens. */
 
 /* Shaped like what is coming (a big card, then rows), so nothing jumps when it arrives. */
 .skeleton {
@@ -544,7 +542,11 @@ p {
   display: flex;
   flex-direction: column;
   padding: 12px;
-  /* Concentric with what it holds (thumbnail, panels): their radius plus the padding. */
+  /*
+   * Concentric with what it holds: everything in it sits 12 px from its edge and has a 24 px
+   * radius (thumbnail, crop frame) or is a 48 px pill, so 24 + 12. Nothing inside draws a
+   * second frame of its own, whose corners could not match both.
+   */
   border-radius: calc(var(--r-inner) + 12px);
   background: var(--surface);
   transition:
@@ -552,6 +554,11 @@ p {
     transform var(--t-bouncy) var(--spring-bouncy);
   animation: card-in var(--t-gentle) var(--spring-gentle) backwards;
   animation-delay: calc(var(--i) * 45ms);
+}
+
+/* There when the popup opened: shown at once (it should feel instant). */
+.card--still {
+  animation: none;
 }
 
 .card:not(.card--open):hover {
@@ -856,10 +863,7 @@ p {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 14px 14px 12px;
-  border-radius: var(--r-inner);
-  background: var(--bg);
-  box-shadow: inset 0 0 0 1px var(--line);
+  padding: 4px 0 0;
   animation: drawer-in var(--t-gentle) var(--ease-out);
 }
 
@@ -867,7 +871,7 @@ p {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 4px;
+  padding: 0 8px;
 }
 
 .trim__title {
@@ -947,7 +951,7 @@ p {
   border-radius: 50%;
   background: var(--pill);
   box-shadow:
-    0 0 0 3px var(--bg),
+    0 0 0 3px var(--surface),
     0 2px 6px rgba(0, 0, 0, 0.25);
   cursor: grab;
   pointer-events: auto;
@@ -964,7 +968,7 @@ p {
 
 .trim__handle:focus-visible::-webkit-slider-thumb {
   box-shadow:
-    0 0 0 3px var(--bg),
+    0 0 0 3px var(--surface),
     0 0 0 5px var(--focus);
 }
 
@@ -979,10 +983,12 @@ p {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  height: 40px;
-  padding: 0 6px 0 16px;
+  /* A 48 px pill like every choice of the card; the time in it 9 px from its edge (15 + 9 = 24). */
+  height: 48px;
+  padding: 0 9px 0 20px;
   border-radius: var(--r-pill);
-  background: var(--surface);
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 
 .trim__label {
@@ -1003,6 +1009,10 @@ p {
   text-align: right;
   outline: none;
   transition: box-shadow 140ms var(--ease);
+}
+
+.trim__field .trim__time {
+  background: var(--surface);
 }
 
 .trim__time:focus {
@@ -1036,16 +1046,18 @@ p {
 .trim__parts {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 
+/* The parts of a clip: 48 px pills like every choice of the card, their round bits 8 px in (16 + 8 = 24). */
 .chip {
   display: inline-flex;
   align-items: center;
-  height: 32px;
+  height: 48px;
   border-radius: var(--r-pill);
-  background: var(--surface);
-  font-size: 12.5px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 13px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   animation: drawer-in var(--t-gentle) var(--ease-out);
@@ -1053,35 +1065,36 @@ p {
 
 .chip--on {
   background: var(--pill);
+  box-shadow: none;
   color: var(--pill-ink);
 }
 
 .chip__main {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   height: 100%;
-  padding: 0 6px 0 5px;
+  padding: 0 8px;
   border-radius: var(--r-pill);
 }
 
 .chip__n {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  background: var(--bg);
+  background: var(--surface);
   color: var(--text);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .chip__x {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
-  margin-right: 3px;
+  width: 32px;
+  height: 32px;
+  margin-right: 8px;
   border-radius: 50%;
   opacity: 0.7;
   transition: opacity 140ms var(--ease), background-color 140ms var(--ease);
@@ -1093,8 +1106,8 @@ p {
 }
 
 .chip--add {
-  gap: 6px;
-  padding: 0 14px 0 10px;
+  gap: 8px;
+  padding: 0 20px 0 16px;
   color: var(--muted);
   transition: color 140ms var(--ease), transform var(--t-bouncy) var(--spring-bouncy);
 }
@@ -2780,21 +2793,6 @@ label.row-setting:hover {
   animation: rise 320ms var(--spring-gentle) backwards;
 }
 
-.smenu__more {
-  display: flex;
-  gap: 8px;
-  margin: 12px 0 14px;
-  animation: rise var(--t-gentle) var(--spring-gentle) 300ms backwards;
-}
-
-.smenu__more .btn {
-  flex: 1 1 0;
-  justify-content: center;
-  padding: 0 8px;
-  font-size: 12.5px;
-  white-space: nowrap;
-}
-
 /* The bottom of the settings: what Grabby promises, and right under it, which Grabby this is. */
 .page__foot {
   display: flex;
@@ -3173,116 +3171,6 @@ label.row-setting:hover {
   position: relative;
 }
 
-/* ----------------------------------------------------- guided tour */
-.tour {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-}
-
-.tour__ring {
-  position: fixed;
-  border-radius: 14px;
-  /* Everything around it dims. */
-  box-shadow:
-    0 0 0 3px var(--accent),
-    0 0 0 9999px rgba(0, 0, 0, 0.5);
-  pointer-events: none;
-  transition:
-    left 380ms var(--spring-gentle),
-    top 380ms var(--spring-gentle),
-    width 380ms var(--spring-gentle),
-    height 380ms var(--spring-gentle);
-}
-
-.tour__dim {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  animation: fade 200ms var(--ease);
-}
-
-.tour__bubble {
-  position: fixed;
-  left: 12px;
-  right: 12px;
-  display: grid;
-  grid-template-columns: 36px 1fr;
-  gap: 10px 12px;
-  padding: 16px;
-  border-radius: var(--r-card);
-  background: var(--surface);
-  box-shadow: var(--menu-shadow);
-  animation: pop-in 360ms var(--spring-bouncy);
-}
-
-.tour__bubble--center {
-  top: 50%;
-  transform: translateY(-50%);
-  animation: fade 260ms var(--ease);
-}
-
-.tour__arrow {
-  position: absolute;
-  top: -7px;
-  width: 14px;
-  height: 14px;
-  margin-left: 9px;
-  border-radius: 3px;
-  background: var(--surface);
-  transform: rotate(45deg);
-}
-
-.tour__icon {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-  background: var(--accent);
-  color: var(--on-accent);
-}
-
-.tour__text h2 {
-  margin: 2px 0 4px;
-  font-size: 15px;
-}
-
-.tour__text p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.tour__foot {
-  display: flex;
-  grid-column: 1 / -1;
-  align-items: center;
-  gap: 8px;
-}
-
-.tour__dots {
-  display: flex;
-  flex: 1;
-  gap: 5px;
-}
-
-.tour__dots span {
-  width: 6px;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--line-strong, var(--muted));
-  transition:
-    width 300ms var(--spring-gentle),
-    background 200ms var(--ease);
-}
-
-.tour__dots span.on {
-  width: 18px;
-  background: var(--accent);
-}
-
 @keyframes fade {
   from {
     opacity: 0;
@@ -3377,34 +3265,6 @@ label.row-setting:hover {
   margin-top: 6px;
 }
 
-/* Where installing a new version got to. */
-.install {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  flex-basis: 100%;
-  margin: 2px 0 0;
-  padding: 0 4px;
-  font-size: 12.5px;
-  line-height: 1.35;
-  color: var(--muted);
-}
-
-.install .icon {
-  flex: none;
-  margin-top: 1px;
-}
-
-.install--bad {
-  color: var(--text);
-}
-
-.install__row {
-  display: flex;
-  gap: 8px;
-  padding: 0 4px;
-}
-
 .update__actions .btn {
   text-decoration: none;
 }
@@ -3477,26 +3337,9 @@ label.row-setting:hover {
 .preview {
   width: 100%;
   max-height: 210px;
-  border-radius: var(--r-small);
+  border-radius: var(--r-inner);
   background: #000;
   animation: drawer-in var(--t-gentle) var(--ease-out);
-}
-
-.finish {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px;
-  border-radius: var(--r-inner);
-  background: var(--bg);
-  box-shadow: inset 0 0 0 1px var(--line);
-  animation: drawer-in var(--t-gentle) var(--ease-out);
-}
-
-.finish .option {
-  background: var(--surface);
-  box-shadow: none;
-  animation: none;
 }
 
 .option--off {
@@ -3518,7 +3361,7 @@ label.row-setting:hover {
 .crop__stage {
   overflow: hidden;
   padding: 14px;
-  border-radius: var(--r-small);
+  border-radius: var(--r-inner);
   background: #000;
   touch-action: none;
   cursor: crosshair;
@@ -3583,8 +3426,9 @@ label.row-setting:hover {
   display: grid;
   place-items: center;
   height: 176px;
-  border-radius: var(--r-small);
-  background: var(--surface);
+  border-radius: var(--r-inner);
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--line);
   overflow: hidden;
 }
 
@@ -3629,8 +3473,8 @@ label.row-setting:hover {
   align-items: center;
   gap: 10px;
   width: 100%;
-  min-height: 40px;
-  padding: 0 12px 0 14px;
+  min-height: 48px;
+  padding: 0 12px 0 20px;
   border-radius: var(--r-pill);
   color: var(--muted);
   font-size: 13px;
@@ -3678,15 +3522,15 @@ label.row-setting:hover {
   transform: rotate(180deg);
 }
 
-/* Open: one panel, its parts one under the other, each under its small title. */
+/*
+ * Open: its parts one under the other, each under its small title, straight in the card (no
+ * panel of its own: its pills keep the card's 12 px, so their corners follow the card's).
+ */
 .adv {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 12px;
-  border-radius: var(--r-inner);
-  background: var(--bg);
-  box-shadow: inset 0 0 0 1px var(--line);
+  padding-top: 4px;
 }
 
 /* What unfolds under a line (see Collapse.tsx): its own parts one under the other. */
@@ -3722,10 +3566,8 @@ label.row-setting:hover {
   font-weight: 600;
 }
 
-.adv .option,
-.adv .select {
-  background: var(--surface);
-  box-shadow: none;
+/* Unfolded with the whole panel: no entrance of their own. */
+.adv .option {
   animation: none;
 }
 
@@ -3738,7 +3580,8 @@ label.row-setting:hover {
   min-height: 48px;
   padding: 0 12px 0 20px;
   border-radius: var(--r-pill);
-  background: var(--surface);
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--line);
   font-size: 13px;
   font-weight: 600;
   text-align: left;
@@ -3769,7 +3612,8 @@ label.row-setting:hover {
   height: 48px;
   padding: 0 14px;
   border-radius: var(--r-pill);
-  background: var(--surface);
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--line);
   font-size: 13px;
   font-weight: 600;
   transition: box-shadow 140ms var(--ease);

@@ -14,7 +14,7 @@
     "test/e2e",
     "playwright.config.ts",
     "test/unit/i18n.test.ts",
-    "test/unit/sniff.test.ts", "test/unit/formats.test.ts", "test/unit/subfixtures.test.ts", "test/unit/updater.test.ts", "test/unit/menus.test.ts"
+    "test/unit/sniff.test.ts", "test/unit/formats.test.ts", "test/unit/subfixtures.test.ts", "test/unit/menus.test.ts"
   ],
   "exclude": []
 }

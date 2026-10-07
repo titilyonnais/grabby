@@ -149,8 +149,6 @@ export interface PopupState {
   browserAsks?: boolean;
   /** A newer Grabby is out (only when the user asked to be told). */
   update?: Release;
-  /** Where installing a new version got to ("Update" clicked). */
-  install?: InstallState;
   /** The YouTube playlist or channel on screen. */
   ytList?: YtList;
 }
@@ -177,7 +175,6 @@ export type PopupToBg =
   | { type: 'start-now'; jobId: string }
   /** Hides the "new version" notice until the next one. */
   | { type: 'update-seen'; version: string }
-  | { type: 'update-install' }
   | { type: 'dismiss'; jobId: string }
   | { type: 'show'; downloadId: number }
   | { type: 'open-file'; downloadId: number }
@@ -239,12 +236,3 @@ export type OffscreenToBg =
   | { target: 'bg'; type: 'job-paused'; jobId: string }
   /** capture-sink → SW: may this job write capture chunks? */
   | { target: 'bg'; type: 'sink-check'; jobId: string; probe?: string };
-
-/** Installing a new version through the update helper. */
-export type InstallStep = 'working' | 'done' | 'uptodate' | 'helper_missing' | 'busy' | 'failed';
-export interface InstallState {
-  step: InstallStep;
-  version?: string;
-  /** failed: the helper's code (offline, bad_digest…). */
-  error?: string;
-}

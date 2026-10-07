@@ -153,7 +153,7 @@ async function recordDownloads(sw: Worker) {
 async function setSettings(sw: Worker, patch: Record<string, unknown>) {
   await sw.evaluate(async (p) => {
     const cur = ((await chrome.storage.local.get('settings')) as { settings?: object }).settings ?? {};
-    await chrome.storage.local.set({ settings: { ...cur, tourDone: true, ...p } });
+    await chrome.storage.local.set({ settings: { ...cur, ...p } });
   }, patch);
 }
 
@@ -1361,30 +1361,56 @@ test('2.0: a saved video says so, with Open and Show in folder', async ({ contex
   await expect(popup.locator('.card .go > button')).toHaveCount(1);
 });
 
-test('2.0: a guided tour on first opening, once; the side panel shows the same window', async ({ context, sw, extId }) => {
-  await setSettings(sw, { firstRunAck: true, tourDone: false });
+test('3.1: no guided tour, no side panel, no one-click update; every pill of an open card follows its corners', async ({ context, sw, extId }) => {
+  await setSettings(sw, { firstRunAck: true });
+  const manifest = await sw.evaluate(() => chrome.runtime.getManifest() as unknown as Record<string, unknown>);
+  expect(manifest.side_panel).toBeUndefined();
+  expect(manifest.optional_permissions).toBeUndefined();
+  expect(manifest.permissions as string[]).not.toContain('sidePanel');
   const { tabId } = await openFixture(context, sw, 'direct.html');
   await expect.poll(() => badge(sw, tabId)).toBe('1');
   const popup = await openPopup(context, extId, tabId);
-  const tour = popup.getByRole('dialog');
-  await expect(tour).toContainText("The page's videos");
-  for (const title of ['Settings', 'And everywhere else']) {
-    await tour.getByRole('button', { name: 'Next' }).click();
-    await expect(tour).toContainText(title);
-  }
-  await tour.getByRole('button', { name: "Let's go" }).click();
-  await expect(popup.getByRole('dialog')).toHaveCount(0);
-  await expect.poll(() => sw.evaluate(async () => ((await chrome.storage.local.get('settings')) as { settings: { tourDone?: boolean } }).settings.tourDone)).toBe(true);
-  // Not shown again.
-  await popup.reload();
   await expect(popup.getByRole('heading', { name: 'Sample: direct clip' })).toBeVisible();
+  // No tour on the first opening.
+  await popup.waitForTimeout(800);
   await expect(popup.getByRole('dialog')).toHaveCount(0);
-
-  const side = await context.newPage();
-  await side.setViewportSize({ width: 420, height: 900 });
-  await side.goto(`chrome-extension://${extId}/sidepanel.html?tab=${tabId}`);
-  await expect(side.getByRole('heading', { name: 'Sample: direct clip' })).toBeVisible();
-  expect(await side.evaluate(() => document.documentElement.hasAttribute('data-side'))).toBe(true);
+  // Everything of the open card unfolded: the clip, the crop, a rotation (its preview).
+  await more(popup);
+  await popup.getByRole('button', { name: /^Clip/ }).click();
+  await popup.getByRole('button', { name: 'Crop' }).click();
+  await popup.getByRole('radio', { name: '90°' }).click();
+  await popup.waitForTimeout(700);
+  // What is drawn 12 px from the card's edge has the card's radius minus 12 (36 - 12 = 24).
+  const off = await popup.locator('.card--open').first().evaluate((card) => {
+    const box = card.getBoundingClientRect();
+    const outer = parseFloat(getComputedStyle(card).borderTopLeftRadius);
+    const bad: string[] = [];
+    let seen = 0;
+    for (const el of Array.from(card.querySelectorAll<HTMLElement>('*'))) {
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) continue;
+      const cs = getComputedStyle(el);
+      const painted = (cs.backgroundColor !== 'rgba(0, 0, 0, 0)' && cs.backgroundColor !== 'transparent') || cs.boxShadow !== 'none';
+      if (!painted || cs.visibility === 'hidden' || cs.opacity === '0') continue;
+      const atEdge = Math.abs(r.left - box.left - 12) < 0.6 || Math.abs(box.right - r.right - 12) < 0.6;
+      if (!atEdge) continue;
+      seen++;
+      const radius = Math.min(parseFloat(cs.borderTopLeftRadius), r.height / 2, r.width / 2);
+      if (Math.abs(radius + 12 - outer) > 0.6) bad.push(`${el.className} ${radius}`);
+    }
+    return { outer, seen, bad };
+  });
+  expect(off.outer).toBe(36);
+  expect(off.seen).toBeGreaterThan(10);
+  expect(off.bad).toEqual([]);
+  // Settings: no buttons under the list (side panel, tour), no « Update » in Sync and updates.
+  await popup.getByRole('button', { name: 'Settings' }).click();
+  await expect(popup.locator('.smenu__item')).toHaveCount(6);
+  await expect(popup.getByRole('button', { name: /side panel|tour/i })).toHaveCount(0);
+  await popup.locator('.smenu__item', { hasText: 'Sync and updates' }).click();
+  await expect(popup.getByText('Tell me about new versions')).toBeVisible();
+  await expect(popup.getByRole('button', { name: 'Update' })).toHaveCount(0);
+  expect(await sw.evaluate(() => fetch(chrome.runtime.getURL('updater/files.txt')).then((r) => r.ok, () => false))).toBe(false);
 });
 
 test('2.0: on YouTube, Grabby sits right after the thumbs, as YouTube buttons; no bubble over the video', async ({ context, sw }) => {
@@ -1473,7 +1499,7 @@ test('2.0: on YouTube, Grabby sits right after the thumbs, as YouTube buttons; n
   await expect(page.locator('grabby-yt')).toHaveCount(0);
 });
 
-test('no error anywhere: every screen of the popup, the settings and the side panel', async ({ context, sw, extId }) => {
+test('no error anywhere: every screen of the popup and the settings', async ({ context, sw, extId }) => {
   const errors: string[] = [];
   const watch = (p: Page) => {
     p.on('pageerror', (e) => errors.push(`${p.url()}: ${e.message}`));
@@ -1583,9 +1609,7 @@ test('no error anywhere: every screen of the popup, the settings and the side pa
   }
   // The full page is gone, and the side panel.
   expect(await sw.evaluate(() => fetch(chrome.runtime.getURL('app.html')).then((r) => r.ok, () => false))).toBe(false);
-  const side = await context.newPage();
-  await side.goto(`chrome-extension://${extId}/sidepanel.html?tab=${tabId}`);
-  await side.waitForTimeout(1000);
+  expect(await sw.evaluate(() => fetch(chrome.runtime.getURL('sidepanel.html')).then((r) => r.ok, () => false))).toBe(false);
   expect(errors).toEqual([]);
 });
 

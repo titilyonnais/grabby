@@ -45,13 +45,6 @@ Grabby does **not** collect, store on a server, sell or share any personal data.
   (`api.github.com/repos/titilyonnais/grabby/releases/latest`), without cookies or any
   identifier, to learn the latest version number. GitHub sees the request like any visit
   to its site (your IP address). Nothing is downloaded or installed.
-- **Update (only when you click "Update").** On Windows, once you installed the update
-  helper (`installer-mises-a-jour.cmd`), clicking "Update" asks the helper, a script
-  installed on your computer, to fetch the latest release from GitHub
-  (`api.github.com/repos/titilyonnais/grabby/releases/latest`, then the release's zip on
-  `github.com/titilyonnais/grabby/releases/download/…`), without cookies or any
-  identifier. It checks the zip's SHA-256 against the one GitHub publishes and replaces
-  Grabby's files. Nothing else is sent.
 - **Sponsored parts (off by default).** Only if you turn on "Remove sponsored parts", when
   you download a YouTube video Grabby asks SponsorBlock (`sponsor.ajay.app`) for the
   sponsored parts, the private way: it sends only the first 4 characters of the SHA-256 of
@@ -144,13 +137,6 @@ et ne la partage pas.
   (`api.github.com/repos/titilyonnais/grabby/releases/latest`), sans cookie ni identifiant,
   pour connaître le numéro de la dernière version. GitHub voit la requête comme toute
   visite de son site (ton adresse IP). Rien n'est téléchargé ni installé.
-- **Mise à jour (seulement quand tu cliques sur « Mettre à jour »).** Sous Windows, une
-  fois l'assistant installé (`installer-mises-a-jour.cmd`), le bouton demande à cet
-  assistant, un script installé sur ton ordinateur, de récupérer la dernière version
-  publiée sur GitHub (`api.github.com/repos/titilyonnais/grabby/releases/latest`, puis le
-  zip de la version sur `github.com/titilyonnais/grabby/releases/download/…`), sans cookie
-  ni identifiant. Il vérifie l'empreinte SHA-256 du zip avec celle que publie GitHub, puis
-  remplace les fichiers de Grabby. Rien d'autre n'est envoyé.
 - **Passages sponsorisés (désactivé par défaut).** Seulement si tu actives « Retirer les
   passages sponsorisés », quand tu télécharges une vidéo YouTube, Grabby demande ses
   passages sponsorisés à SponsorBlock (`sponsor.ajay.app`) de façon anonyme : il n'envoie

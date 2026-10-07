@@ -6,12 +6,11 @@ import { isActive } from './components/JobBar';
 import { MediaCard } from './components/MediaCard';
 import { OtherJobs } from './components/OtherJobs';
 import { Playlist } from './components/Playlist';
-import { startInstall, UpdateNotice } from './components/Update';
+import { UpdateNotice } from './components/Update';
 import { BulkBar, bulkable, BulkStart } from './components/Bulk';
 import type { OutputFormat } from '../shared/plan';
 import { FirstRun, HistoryList, StateCard } from './components/Panels';
 import { Settings } from './components/Settings';
-import { Tour } from './components/Tour';
 import { t } from './i18n';
 import { reducedMotion } from './motion';
 import { rank } from '../shared/rank';
@@ -106,6 +105,10 @@ export function App() {
   }, [settings?.accent, settings?.contrast]);
 
   const items = useMemo(() => rank(state?.items ?? []), [state?.items]);
+  // The videos already there when the popup opens show at once; only one found while it is
+  // open comes in with a little motion (it says « new »).
+  const atOpen = useRef<Set<string> | null>(null);
+  if (state && !atOpen.current) atOpen.current = new Set(items.map((i) => i.id));
   // Jobs of this tab go on their cards; the others (another tab, before a restart) get a list.
   const here = (state?.jobs ?? []).filter((j) => j.tabId === state?.tabId);
   const elsewhere = (state?.jobs ?? []).filter((j) => isActive(j) && !(j.tabId === state?.tabId && items.some((i) => i.id === j.mediaId)));
@@ -164,13 +167,13 @@ export function App() {
             Grabby
           </span>
           <span class="top__tools">
-            <button ref={gear} data-tour="settings" class="icon-btn" aria-label={t('openSettings')} title={t('openSettings')} onClick={openSettings}>
+            <button ref={gear} class="icon-btn" aria-label={t('openSettings')} title={t('openSettings')} onClick={openSettings}>
               <Icon name="settings" />
             </button>
           </span>
         </header>
 
-        <nav data-tour="tabs" class="seg" role="tablist" style={{ '--n': '2', '--at': String(TABS.indexOf(tab)) }}>
+        <nav class="seg" role="tablist" style={{ '--n': '2', '--at': String(TABS.indexOf(tab)) }}>
           <span class="seg__thumb" aria-hidden="true">
             {/* Keyed by tab: the pill squashes against the side it lands on, never past it. */}
             <span key={tab} class={`seg__jelly${dir === 'same' ? '' : ` seg__jelly--${dir}`}`} />
@@ -215,7 +218,7 @@ export function App() {
               ) : (
                 <>
                   {!settings!.firstRunAck && <FirstRun onOk={() => send({ type: 'settings', patch: { firstRunAck: true } })} />}
-                  {state.update && <UpdateNotice release={state.update} install={state.install} send={send} />}
+                  {state.update && <UpdateNotice release={state.update} send={send} />}
                   <OtherJobs jobs={rows} queue={queue} all={active} send={send} />
                   {/* A playlist or a channel page: its videos first. Under a video being watched, the list it belongs to comes after it, folded. */}
                   {state.ytList && !state.blocked && !items.length && <Playlist key={state.ytList.title} list={state.ytList} preferred={prefs} send={send} />}
@@ -230,6 +233,7 @@ export function App() {
                       {many.length > 1 && !picked && <BulkStart count={many.length} onStart={() => setPicking(many.map((i) => i.id))} />}
                       {(picked ? many : items).map((i, n) => (
                         <MediaCard
+                          atOpen={!!atOpen.current?.has(i.id)}
                           key={i.id}
                           item={i}
                           index={n}
@@ -274,7 +278,6 @@ export function App() {
         </main>
       </div>
 
-      {state && settings && settings.firstRunAck && !settings.tourDone && !settingsOpen && <Tour onDone={() => send({ type: 'settings', patch: { tourDone: true } })} />}
       {settingsOpen && state && settings && (
         <Settings
           class={settingsClosing ? 'page--out' : 'page--in'}
@@ -282,8 +285,6 @@ export function App() {
           browserAsks={!!state.browserAsks}
           onChange={(patch) => send({ type: 'settings', patch })}
           onOpenBrowserSettings={() => send({ type: 'open-browser-downloads' })}
-          install={state.install}
-          onInstall={() => startInstall(send)}
           onOpenShortcuts={() => send({ type: 'open-shortcuts' })}
           onClose={closeSettings}
         />

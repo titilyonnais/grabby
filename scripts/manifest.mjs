@@ -1,8 +1,9 @@
 // Builds the MV3 manifest.
 
 /**
- * The public half of Grabby's key: it fixes the extension's id wherever its folder is (the
- * update helper only answers this id). Nothing is signed with it here.
+ * The public half of Grabby's key: it fixes the extension's id wherever its folder is, so
+ * replacing the folder by a newer version keeps Grabby's settings and history. Nothing is
+ * signed with it here.
  */
 export const EXTENSION_KEY =
   'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqfBpV4xVYq559yE0aFOTefB7cwlQ6s4QQT6rOvDnsA+YObU7EiDhRjCePZ/R3q7xvSKsj4Hobzw/v5uwanLBfTZ4cyBLI2zJ7VsVKknoLQOJMa3LsLZEqKvOIu0NF2mINJYfTScMxy2dv6EUN8qq+ybgmIUha8r5BGniTtXQkbskxVCnl5CZeCBpux9kYbEm2I8NwifGpmMiaySLKpCXuY7UyLkWFn76NN9QkL2KxHqNxPxJClNV4dkI9wg6d+WHABPdqT+gVqXqtZlxFNI93ijWHiM4kPBhzMHnD61RIXNOs4Bc5NylCRDtjbQKGsO2D6njc0NAxbst9XfV4VciPQIDAQAB';
@@ -13,9 +14,6 @@ export async function extensionId() {
   const hex = createHash('sha256').update(Buffer.from(EXTENSION_KEY, 'base64')).digest('hex').slice(0, 32);
   return [...hex].map((h) => String.fromCharCode(97 + parseInt(h, 16))).join('');
 }
-
-/** The update helper's name for the browser (native messaging). */
-export const UPDATER_HOST = 'com.grabby.updater';
 
 const ICONS = { 16: 'icons/icon-16.png', 32: 'icons/icon-32.png', 48: 'icons/icon-48.png', 128: 'icons/icon-128.png' };
 
@@ -37,7 +35,6 @@ export function buildManifest(version) {
       default_icon: { 16: ICONS[16], 32: ICONS[32] },
     },
     background: { service_worker: 'background.js', type: 'module' },
-    side_panel: { default_path: 'sidepanel.html' },
     // « gb » + a link in the address bar.
     omnibox: { keyword: 'gb' },
     permissions: [
@@ -52,13 +49,9 @@ export function buildManifest(version) {
       'declarativeNetRequestWithHostAccess',
       'alarms',
       'contextMenus',
-      // Grabby next to the page, in the browser's side panel.
-      'sidePanel',
       // After an update, Grabby goes back into the pages already open (their old one is cut off).
       'scripting',
     ],
-    // Asked for when "Update" is first clicked: talking to the update helper.
-    optional_permissions: ['nativeMessaging'],
     commands: {
       _execute_action: { suggested_key: { default: 'Alt+Shift+G' }, description: '__MSG_cmdOpen__' },
       'download-best': { suggested_key: { default: 'Alt+Shift+D' }, description: '__MSG_cmdDownload__' },

@@ -17,21 +17,20 @@
 
 ---
 
-<!-- release:3.0.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
-## Nouveautés de la version 3.0.0
+<!-- release:3.1.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
+## Nouveautés de la version 3.1.0
 
-- **Retour à l'essentiel : télécharger des vidéos.** La page complète (l'icône aux quatre
-  carrés) est retirée avec la bibliothèque, les statistiques, Plus tard, les chaînes
-  suivies, les images de la page, l'atelier, Assembler, la sauvegarde et les règles par
-  site. **Toute l'IA** aussi (IA locale et IA de Chrome) : 14 Mo de moins.
-- **Cartes plus aérées** (12 px de marge) et **chaque choix à 48 px** de haut,
-  interrupteurs, boutons et segments compris.
-- **Extrait, Options avancées et Recadrer se replient** avec la même animation qu'à
-  l'ouverture.
-- **Image** : poignées du recadrage jamais coupées, cadre calé sur la vraie forme de la
-  vidéo, **aperçu** de la rotation et du **Miroir** (son nouveau nom).
-- **Corrigé** : les deux erreurs de la popup (« aria-hidden » et « feature flag gating
-  model execution »).
+- **La popup s'ouvre tout de suite** : 40 à 100 ms au lieu de 170 à 250 ms avec un gros
+  historique, sans animation d'entrée.
+- **Arrondis alignés** : plus de cadre dans le cadre ; tout ce qui est dans une carte est à
+  12 px de son bord avec des coins de 24 px (36 = 24 + 12). Début, Fin et les puces de
+  l'extrait passent à 48 px.
+- **Retirés** : la mise à jour en un clic (une nouvelle version s'installe à la main, comme
+  la première ; le bandeau donne son lien), le panneau latéral et la visite guidée.
+
+**Rappel de la 3.0.0** : retour à l'essentiel (plus de page complète ni d'IA), cartes à
+12 px de marge, chaque choix à 48 px, Extrait et Options avancées qui se replient,
+recadrage, rotation et Miroir refaits.
 
 **Rappel de la 2.4.0** : carte rangée avec **Options avancées** en quatre parties,
 sous-titres retirés, pilule YouTube animée qui ne déborde plus.
@@ -72,7 +71,8 @@ suppression), **Lire l'extrait** en boucle et une interface à une seule couleur
 - **Fichiers vérifiés** (refaits une fois s'ils sont abîmés) et **diagnostic clair** :
   pourquoi ça a échoué, quoi faire, et un rapport à copier (sans adresse ni titre).
 - **Panneau latéral**, **couleur au choix** et **contraste élevé**, **notifications avec
-  l'image** de la vidéo, **réglages synchronisés** (si tu l'actives), **visite guidée**.
+  l'image** de la vidéo, **réglages synchronisés** (si tu l'actives), **visite guidée**
+  (panneau latéral et visite retirés en 3.1.0).
 - Retouches : **format vertical 9:16**, **son plus propre**, encodage plus rapide.
 - **Modifié** : la bulle sur les vidéos n'est plus qu'un rond qui se déroule au clic ; les
   réglages tiennent sans défilement en 7 rubriques ; le carré du bouton Stop est plus grand.
@@ -112,8 +112,8 @@ suppression), **Lire l'extrait** en boucle et une interface à une seule couleur
 **Rappel de la 1.9.0** :
 
 - **Mettre à jour en un clic** (Windows) : un bouton dans Grabby télécharge la nouvelle
-  version, vérifie son empreinte et l'installe. Une fois l'assistant installé
-  ([voir plus bas](#mettre-à-jour-en-un-clic-windows)).
+  version, vérifie son empreinte et l'installe (retiré en 3.1.0 : la mise à jour se fait à
+  la main).
 - **File d'attente** : les téléchargements qui attendent se déplacent (glisser ou flèches),
   **Tout mettre en pause** / **Tout reprendre**.
 - **Sous-titres en français**, groupés (de la vidéo, automatiques, traduits), et toutes
@@ -286,13 +286,12 @@ Le détail de chaque version est dans le [journal des modifications](CHANGELOG.m
   YouTube, juste après le pouce levé / pouce baissé ; ⌄ ouvre le choix de la qualité, du son
   seul, de la photo et de Grabby. Rien n'est jamais dessiné sur les vidéos ni
   sur les miniatures.
-- **Panneau latéral** : la même fenêtre, ouverte à côté de la page.
 - **Fichiers vérifiés** : chaque fichier est relu avant d'être enregistré, refait une fois
   s'il est abîmé ; une erreur explique quoi faire et donne un rapport à copier.
 - **Quand télécharger** : plage horaire, Wi-Fi seulement (là où le navigateur le sait),
   vitesse maximale ; « Lancer maintenant » pour ne pas attendre.
-- **Prévenir des nouvelles versions**, si tu l'actives : une question par jour à GitHub ;
-  **Mettre à jour** les installe en un clic (Windows, avec l'assistant).
+- **Prévenir des nouvelles versions**, si tu l'actives : une question par jour à GitHub,
+  et un bandeau avec le lien de la nouvelle version quand elle sort.
 - **Clic droit, barre d'adresse et raccourcis** : un menu « Grabby » au clic droit
   (cette vidéo, son son, un lien), `gb` + un lien dans la barre
   d'adresse, Alt+Maj+G pour ouvrir Grabby, Alt+Maj+D pour télécharger la vidéo de la page
@@ -309,7 +308,7 @@ Le détail de chaque version est dans le [journal des modifications](CHANGELOG.m
   rangement dans Téléchargements, un dossier Grabby, par site ou par type.
 - Assemblage par **ffmpeg.wasm embarqué** : aucun code distant, rien n'est envoyé ailleurs.
 - Interface **français / anglais**, thème **clair / sombre / auto**, **six couleurs** au
-  choix et un mode **contraste élevé** ; **visite guidée** au premier lancement.
+  choix et un mode **contraste élevé**.
 
 ## Ce que Grabby ne fait pas (et pourquoi)
 
@@ -346,32 +345,21 @@ risques.
 3. Active le **mode développeur**.
 4. Clique **Charger l'extension non empaquetée** et choisis le dossier décompressé.
 
-### Mettre à jour en un clic (Windows)
+### Mettre à jour
 
-Une seule fois, après avoir installé Grabby : ouvre son dossier et double-clique sur
-**`installer-mises-a-jour.cmd`**. Il installe un petit assistant pour ton compte (aucun
-droit administrateur) et l'annonce à Chrome, Brave, Edge, Chromium et Vivaldi.
-
-Ensuite, quand une version sort, clique sur **Mettre à jour** dans le bandeau de Grabby
-(ou dans Réglages → Mises à jour). Le navigateur demande la première fois l'autorisation de
-parler à l'assistant ; celui-ci télécharge la version publiée sur GitHub, vérifie son
-empreinte SHA-256, remplace les fichiers du dossier et Grabby redémarre. Tes réglages et
-ton historique sont gardés, les fichiers que tu as ajoutés au dossier aussi.
-
-Si tu déplaces le dossier de Grabby, relance `installer-mises-a-jour.cmd` depuis le nouveau
-dossier. `desinstaller-mises-a-jour.cmd` retire l'assistant.
-
-> **Venant d'une version avant la 1.9.0** : installe la 1.9.0 une fois à la main (retire
-> l'ancienne Grabby de `brave://extensions`, puis charge le nouveau dossier). Elle a un
-> identifiant fixe, nécessaire à l'assistant : pour le navigateur c'est une nouvelle
-> extension, donc réglages et historique repartent de zéro cette fois-ci.
-
-### Mettre à jour à la main (tous les systèmes)
-
-1. Télécharge le zip de la nouvelle version.
+1. Télécharge le zip de la nouvelle version (le bandeau de Grabby donne son lien si tu as
+   activé « Prévenir des nouvelles versions »).
 2. Remplace le contenu de ton dossier Grabby par celui du zip, au même emplacement.
 3. Dans `brave://extensions`, clique sur ↻ sous Grabby. Tes réglages et ton historique
-   sont conservés.
+   sont conservés (Grabby garde le même identifiant d'une version à l'autre).
+
+> **Tu avais installé l'assistant de mise à jour** (`installer-mises-a-jour.cmd`, avant la
+> 3.1.0) : il ne sert plus. Pour le retirer, lance `desinstaller-mises-a-jour.cmd` depuis
+> ton dossier Grabby **avant** d'y copier la 3.1.0 ; sinon il reste inscrit sans rien faire.
+
+> **Venant d'une version avant la 1.9.0** : retire l'ancienne Grabby de
+> `brave://extensions`, puis charge le nouveau dossier. Pour le navigateur c'est une
+> nouvelle extension, donc réglages et historique repartent de zéro cette fois-ci.
 
 **Depuis les sources**
 
@@ -485,10 +473,8 @@ Général, Formats, Noms et dossiers, Téléchargements, Raccourcis, Synchro et 
 | Raccourci clavier | La touche qui télécharge sans ouvrir Grabby (Changer ouvre la page des raccourcis) et ce qu'elle prend : la vidéo ou le son seul |
 | Retirer les passages sponsorisés | YouTube : coupe les sponsors et l'autopromotion repérés par SponsorBlock (désactivé par défaut) |
 | Boutons sous les vidéos YouTube | « Télécharger » et son menu d'options sous le lecteur YouTube (activé par défaut) |
-| Panneau latéral, Revoir la visite | Deux boutons sous la liste des rubriques |
 | Réglages synchronisés | Tes réglages suivent ton compte de navigateur sur tes autres ordinateurs (désactivé par défaut) |
-| Prévenir des nouvelles versions | Une fois par jour, demande à GitHub la dernière version (désactivé par défaut) |
-| Installer la dernière version | Bouton Mettre à jour : télécharge, vérifie et installe la dernière version (Windows, avec l'assistant) |
+| Prévenir des nouvelles versions | Une fois par jour, demande à GitHub la dernière version ; un bandeau donne son lien (désactivé par défaut) |
 
 ## Formats d'enregistrement
 
@@ -561,8 +547,7 @@ la page.
 
 Aucun compte, aucune statistique, aucun serveur : rien ne quitte ton appareil. Grabby ne
 fait de requête de lui-même que si tu l'actives ou le demandes : la vérification
-quotidienne des nouvelles versions auprès de GitHub, la mise à jour quand tu cliques sur
-Mettre à jour, la question à SponsorBlock (sans dire quelle vidéo) si tu retires les
+quotidienne des nouvelles versions auprès de GitHub, la question à SponsorBlock (sans dire quelle vidéo) si tu retires les
 passages sponsorisés. Détails dans
 la [politique de confidentialité](docs/PRIVACY.md) et
 [à quoi sert chaque autorisation](docs/PERMISSIONS.md).

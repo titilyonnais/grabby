@@ -13,6 +13,67 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 ## [Non publié]
 
+## [3.1.0] — 2026-10-07
+
+Encore un peu plus simple : plus de mise à jour en un clic, plus de panneau latéral, plus
+de visite guidée. La popup s'affiche tout de suite quand tu cliques sur l'icône, et les
+coins de tout ce qui est dans une carte suivent enfin ceux de la carte.
+
+### Supprimé
+- **« Installer la dernière version »** (Réglages → Synchro et mises à jour) et le bouton
+  **Mettre à jour** du bandeau de nouvelle version. Grabby s'installe à la main ; ses
+  nouvelles versions aussi, de la même façon : télécharger le zip, remplacer le dossier,
+  cliquer sur ↻ dans la page des extensions. Tes réglages et ton historique restent.
+  - Le bandeau « Grabby x.y est sorti » (seulement si « Prévenir des nouvelles versions »
+    est activé) donne maintenant le **lien de la nouvelle version** et la marche à suivre.
+  - L'assistant de mise à jour (`installer-mises-a-jour.cmd`,
+    `desinstaller-mises-a-jour.cmd`, le dossier `updater`) n'est plus dans le zip.
+    **Si tu l'avais installé**, lance `desinstaller-mises-a-jour.cmd` depuis ton dossier
+    Grabby **avant** d'y copier la 3.1.0 ; sinon il reste inscrit, sans plus rien faire.
+  - L'autorisation facultative `nativeMessaging` n'est plus demandée.
+- **Le panneau latéral** : le bouton **Panneau latéral** sous la liste des réglages et
+  l'autorisation `sidePanel`. Quand Chrome refuse d'ouvrir la popup depuis la pilule
+  YouTube (⌄ → Ouvrir Grabby), il ne se passe plus rien au lieu d'ouvrir le panneau.
+- **La visite guidée** du premier lancement et le bouton **Revoir la visite**. Le
+  réglage qui retenait qu'elle avait été vue est effacé.
+
+### Modifié
+- **Les arrondis d'une carte sont alignés.** Les « Options avancées » n'ont plus de
+  cadre à elles à l'intérieur de la carte : ce cadre avait des coins de 24 px, et les
+  pilules posées dedans aussi, alors qu'elles étaient 12 px plus à l'intérieur ; leurs
+  arrondis ne suivaient pas ceux du cadre. Maintenant tout est posé directement dans la
+  carte, à 12 px de son bord, et la règle est la même partout : **coin de la carte 36 px =
+  24 px de ce qu'elle contient + 12 px de marge**.
+  - Les pilules d'**Image**, de **Son**, de **Fichier** et la ligne **Extrait** ont le fond
+    et le fin contour des listes Qualité et Format. Les petits titres et les traits qui
+    séparent les parties restent.
+  - Les choix en segments (**Rotation**, forme du cadre de recadrage, sorte d'image) ont le
+    même fond et le même contour ; le choix actif est un cran plus foncé.
+  - **Extrait** n'a plus de cadre non plus : ses champs **Début** et **Fin** font 48 px de
+    haut comme tout le reste (40 avant), l'heure à 9 px du bord (15 + 9 = 24). Les puces
+    des parties (1, 2, 3… et **Ajouter un extrait**) passent de 32 à 48 px, leurs ronds à
+    8 px du bord (16 + 8 = 24).
+  - Le cadre du **recadrage**, l'aperçu de la **rotation** et du **miroir** et l'**aperçu**
+    de l'extrait ont des coins de 24 px (18 avant), comme la miniature.
+  - La ligne **Options avancées** fait 48 px de haut (40 avant).
+  - Un test vérifie que tout ce qui est dessiné à 12 px du bord d'une carte ouverte a bien
+    des coins de 24 px.
+
+### Corrigé
+- **La popup mettait un moment à arriver** quand on cliquait sur l'icône de Grabby :
+  - la liste attendait que Grabby vérifie, fichier par fichier (jusqu'à 500), que chaque
+    téléchargement de l'historique était encore sur le disque. Cette vérification se fait
+    maintenant à côté, et la liste est corrigée si un fichier manque ;
+  - le premier état était envoyé après une petite attente (faite pour regrouper les
+    mises à jour pendant un téléchargement) ; il part maintenant tout de suite ;
+  - les cartes et la liste jouaient une animation d'entrée à chaque ouverture : ce qui est
+    là à l'ouverture s'affiche directement (une vidéo qui arrive ensuite garde son
+    animation).
+
+  Mesuré avec un historique de 500 téléchargements (`.debug/popupspeed.mjs`) : le contenu
+  s'affiche en **40 à 100 ms** au lieu de 170 à 250 ms, et en **100 à 200 ms** quand
+  Grabby dormait (après 30 s sans rien faire), dans Chromium comme dans Brave.
+
 ## [3.0.0] — 2026-10-07
 
 Grabby revient à l'essentiel : **télécharger des vidéos**. La page complète (l'icône aux
@@ -1638,7 +1699,8 @@ Première version.
 - Capture YouTube expérimentale.
 - Interface en français et en anglais, thème clair et sombre.
 
-[Non publié]: https://github.com/titilyonnais/grabby/compare/v3.0.0...HEAD
+[Non publié]: https://github.com/titilyonnais/grabby/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/titilyonnais/grabby/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/titilyonnais/grabby/compare/v2.4.0...v3.0.0
 [2.4.0]: https://github.com/titilyonnais/grabby/compare/v2.3.3...v2.4.0
 [2.3.3]: https://github.com/titilyonnais/grabby/compare/v2.3.2...v2.3.3

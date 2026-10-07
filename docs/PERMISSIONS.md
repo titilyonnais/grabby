@@ -14,18 +14,16 @@ comme protégée, et aucun téléchargement n'est proposé.
 | `notifications` | Une notification système quand un téléchargement se termine ou échoue (désactivable dans les réglages). Un clic ouvre le fichier ; ses boutons l'ouvrent ou le montrent dans son dossier. |
 | `downloads` | Enregistrer le fichier par le gestionnaire de téléchargements du navigateur, le montrer dans son dossier, suivre la progression. |
 | `downloads.open` | **Ouvrir le fichier** depuis l'historique ou la notification de fin. Seulement un fichier que Grabby a enregistré, et seulement quand tu cliques. |
-| `nativeMessaging` (**facultative**) | Demandée la première fois que tu cliques sur **Mettre à jour**, jamais avant. Elle permet à Grabby de parler à l'assistant de mise à jour (`com.grabby.updater`) que tu as installé toi-même avec `installer-mises-a-jour.cmd`. Grabby lui envoie seulement « mettre à jour » ; l'assistant ne connaît que deux ordres (dire bonjour, installer la dernière version publiée de Grabby) et refuse tout le reste. |
 | `offscreen` | Une page invisible de l'extension télécharge les morceaux des flux et lance ffmpeg.wasm (inclus dans l'extension) pour produire le format choisi, réduire l'image si une qualité plus petite est demandée, et héberger le lecteur YouTube caché. |
 | `storage` | Réglages, historique (500 entrées au plus, effaçable), vidéos repérées par onglet (mémoire de session) et téléchargements en cours, pour les reprendre après un redémarrage. La popup garde aussi le thème choisi pour s'ouvrir sans clignoter. |
 | `unlimitedStorage` | Les morceaux d'un téléchargement sont rangés dans la base locale de l'extension au fur et à mesure (c'est ce qui permet la pause et la reprise), comme les données du mode capture avant l'assemblage ; une longue vidéo dépasse le quota par défaut. Tout est effacé dès que le fichier est enregistré ou le téléchargement annulé. |
 | `alarms` | Réveiller Grabby pour retenter un téléchargement coupé par une perte de connexion (après 3 s, 6 s… jusqu'à 2 min), même si le navigateur a mis l'extension en veille entre-temps ; lancer les téléchargements en attente quand s'ouvre la plage horaire choisie ; continuer d'ouvrir, deux à la fois, les pages des liens donnés avec `gb` ; et, seulement si tu as activé « Prévenir des nouvelles versions », vérifier une fois par jour la dernière version publiée. |
 | `contextMenus` | Le menu « Grabby » du clic droit : télécharger cette vidéo (ou seulement son son), télécharger la vidéo d'un lien (ou son son), télécharger la vidéo de la page. Rien d'autre. |
 | `scripting` | Après une mise à jour, l'ancien Grabby est coupé des pages déjà ouvertes : il remet `hook.js` et `scanner.js` dans ces onglets pour qu'ils fonctionnent sans les recharger. Aucun autre script n'est injecté. |
-| `sidePanel` | Grabby dans le **panneau latéral** du navigateur : la même fenêtre, qui reste ouverte à côté de la page et suit l'onglet affiché. Rien n'est lu de plus que dans la fenêtre habituelle. |
 | Mot-clé `gb` de la barre d'adresse (`omnibox`, sans autorisation) | Taper `gb` puis un ou plusieurs liens les donne à Grabby (`gb son …` pour le son seul). Grabby ne voit que ce qui est tapé après `gb`, jamais le reste de ta navigation. |
 | Photo d'une vidéo (`captureVisibleTab`, sans autorisation de plus) | Quand le site interdit de lire l'image d'une vidéo, Grabby fait une capture de l'**onglet visible** au moment où tu cliques sur **Photo** (ou Alt+Maj+S) et n'en garde que le rectangle de la vidéo. Jamais sans ton clic. |
 | Raccourcis clavier (`commands`, sans autorisation) | Alt+Maj+G ouvre Grabby, Alt+Maj+D télécharge la vidéo principale de la page (ou son son seul, au choix), Alt+Maj+S prend une photo de la vidéo à l'écran. Modifiables dans `chrome://extensions/shortcuts` (le bouton Changer des réglages l'ouvre). |
-| Clé `key` du manifeste | Donne à Grabby le même identifiant sur tous les ordinateurs : l'assistant de mise à jour n'accepte de parler qu'à cet identifiant. Ce n'est pas une autorisation. |
+| Clé `key` du manifeste | Donne à Grabby le même identifiant sur tous les ordinateurs, où que soit son dossier : en remplaçant le dossier par une nouvelle version, le navigateur garde tes réglages et ton historique. Ce n'est pas une autorisation. |
 | Scripts dans les pages | `scanner.js` liste les `<video>` (et leurs fichiers de sous-titres `<track>`), le titre et la miniature de la page et les fichiers vidéo qu'elle cite (12 au plus) ; il affiche aussi la bulle « Téléchargement terminé » et le petit bouton « Télécharger » sur les vidéos (désactivable dans les réglages). `hook.js` repère l'usage d'un DRM et suit les tampons Media Source pour pouvoir enregistrer la lecture quand — et seulement quand — tu le demandes. |
 | Onglets | Pour finir un enregistrement interrompu (navigateur fermé, page fermée pendant la pause), Grabby rouvre la page **en arrière-plan** si elle n'est plus ouverte, puis referme cet onglet une fois l'enregistrement terminé. Les liens donnés avec `gb` sont traités de même : leurs pages s'ouvrent deux à la fois en arrière-plan et se referment une fois leur vidéo trouvée. Aucune autorisation supplémentaire. |
 | `capture-sink.html` accessible aux pages | Cadre invisible de l'extension qui reçoit les données d'un enregistrement sans les recopier par messages (`use_dynamic_url: true`). |
@@ -35,6 +33,8 @@ La version 2.0 ajoute une seule autorisation, `sidePanel` (le panneau latéral) 
 
 La version 3.0 n'ajoute aucune autorisation ; Grabby y fait moins de choses, donc moins de requêtes : la liste ci-dessous est complète.
 
+La version 3.1 en retire deux : `sidePanel` (le panneau latéral n'existe plus) et `nativeMessaging`, l'autorisation facultative que demandait le bouton **Mettre à jour** (retiré : une nouvelle version s'installe à la main, comme la première).
+
 **Code distant** : aucun. Tout le JavaScript et le WebAssembly (ffmpeg.wasm) sont dans
 l'extension, et rien d'autre n'est téléchargé pour être exécuté.
 
@@ -43,11 +43,6 @@ l'extension, et rien d'autre n'est téléchargé pour être exécuté.
 - Si tu actives « Prévenir des nouvelles versions », une requête par jour vers
   `https://api.github.com/repos/titilyonnais/grabby/releases/latest` (sans cookie ni
   identifiant), pour connaître le numéro de la dernière version.
-- Si tu cliques sur **Mettre à jour**, l'assistant (et non l'extension) refait cette
-  requête puis télécharge le zip de la version sur
-  `https://github.com/titilyonnais/grabby/releases/download/…`, vérifie son empreinte
-  SHA-256 et remplace les fichiers. Ce sont les fichiers publiés de Grabby, comme si tu les
-  téléchargeais toi-même : aucun code n'est chargé par l'extension.
 - Si tu actives « Retirer les passages sponsorisés », une requête vers
   `https://sponsor.ajay.app/api/skipSegments/<4 caractères>` par vidéo YouTube
   téléchargée : seulement le début de l'empreinte de son identifiant, partagé par des

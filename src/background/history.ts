@@ -26,7 +26,7 @@ export async function addHistory(entry: HistoryEntry): Promise<void> {
   // The oldest ones beyond the limit go, with what was said in them.
   const gone = all.slice(MAX).flatMap((e) => KEPT(e.id));
   if (gone.length) await chrome.storage.local.remove(gone);
-  presence = null;
+  presence.at = 0;
   if (thumbnail) void keepThumb(entry.id, thumbnail);
 }
 
@@ -70,7 +70,7 @@ export async function restoreHistory(entries: HistoryEntry[]): Promise<void> {
   await chrome.storage.local.set({
     [KEY]: [...list, ...back].sort((a, b) => b.date - a.date).slice(0, MAX),
   });
-  presence = null;
+  presence.at = 0;
 }
 
 /** Their texts, once taking them out can no longer be undone. */
@@ -105,7 +105,7 @@ export async function markHistory(
     };
   });
   await chrome.storage.local.set({ [KEY]: list });
-  presence = null;
+  presence.at = 0;
 }
 
 export async function clearHistory(): Promise<void> {
@@ -113,21 +113,32 @@ export async function clearHistory(): Promise<void> {
   await chrome.storage.local.remove([KEY, ...kept]);
 }
 
-let presence: { at: number; missing: Set<number> } | null = null;
+/** Which files were last seen gone (their download ids), and when; `at` 0: to look again. */
+let presence: { at: number; missing: Set<number> } = { at: 0, missing: new Set() };
+let looking: Promise<void> | null = null;
 
-/** The history, each entry marked when its file can no longer be shown in its folder. */
-export async function historyWithPresence(): Promise<HistoryEntry[]> {
+/**
+ * The history, each entry marked when its file can no longer be shown in its folder. Never
+ * waits for that check (a look at every file, slow with a long history, and the popup waits
+ * for this to show anything): what was last seen is used at once, and a new look, at most
+ * every few seconds, calls `changed` when it finds something else.
+ */
+export async function historyWithPresence(changed?: () => void): Promise<HistoryEntry[]> {
   const list = await getHistory();
-  if (!presence || Date.now() - presence.at > PRESENCE_MS) {
-    const missing = new Set<number>();
-    await Promise.all(
-      list.map(async (e) => {
-        if (e.downloadId === undefined) return;
-        const [d] = await chrome.downloads.search({ id: e.downloadId }).catch(() => []);
-        if (!d || d.exists === false || d.state !== 'complete') missing.add(e.downloadId);
-      }),
-    );
-    presence = { at: Date.now(), missing };
+  if (!looking && Date.now() - presence.at > PRESENCE_MS) {
+    looking = (async () => {
+      const missing = new Set<number>();
+      await Promise.all(
+        list.map(async (e) => {
+          if (e.downloadId === undefined) return;
+          const [d] = await chrome.downloads.search({ id: e.downloadId }).catch(() => []);
+          if (!d || d.exists === false || d.state !== 'complete') missing.add(e.downloadId);
+        }),
+      );
+      const before = presence.missing;
+      presence = { at: Date.now(), missing };
+      if (missing.size !== before.size || [...missing].some((id) => !before.has(id))) changed?.();
+    })().finally(() => (looking = null));
   }
   const gone = presence.missing;
   return list.map((e) => (e.downloadId !== undefined && gone.has(e.downloadId) ? { ...e, missing: true } : e));

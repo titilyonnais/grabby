@@ -13,7 +13,7 @@ import { forgetRedo, redo, redoIfWaiting } from './redo';
 import { saveThumbnail } from './thumbnail';
 import { findVisible } from './visible';
 import { BROWSER_ASKS_KEY, JobManager, SCHEDULE_ALARM } from './jobs';
-import { checkUpdate, installState, installUpdate, seenUpdate, UPDATE_ALARM, updateNotice, watchUpdates } from './updates';
+import { checkUpdate, seenUpdate, UPDATE_ALARM, updateNotice, watchUpdates } from './updates';
 import { listenNotificationClicks } from './notify';
 import { handlePageInfo } from './pageinfo';
 import { Registry, sessionKV } from './registry';
@@ -177,7 +177,8 @@ async function buildState(tabId: number): Promise<PopupState> {
   const tabTitle = tab?.title ? cleanTitle(tab.title, hostOf(tab.url ?? pageUrl)) : undefined;
   const [items, history, settings, asks, update, ytList] = await Promise.all([
     registry.get(tabId, tabTitle),
-    historyWithPresence(),
+    // What was last seen of the files; a newer look sends the state again if it differs.
+    historyWithPresence(() => pushAll()),
     getSettings(),
     chrome.storage.local.get(BROWSER_ASKS_KEY),
     updateNotice().catch(() => undefined),
@@ -194,15 +195,19 @@ async function buildState(tabId: number): Promise<PopupState> {
     settings,
     ...(asks[BROWSER_ASKS_KEY] ? { browserAsks: true } : {}),
     ...(update ? { update } : {}),
-    ...(installState() ? { install: installState() } : {}),
     ...(ytList ? { ytList } : {}),
   };
 }
 
 const pushSeq = new WeakMap<chrome.runtime.Port, number>();
 
-function schedulePush(port: chrome.runtime.Port) {
-  if (pushTimers.has(port)) return;
+/** The state sent to a popup: soon (changes close together are sent once), or now (`wait` 0: a popup just opened). */
+function schedulePush(port: chrome.runtime.Port, wait = 120) {
+  if (pushTimers.has(port)) {
+    if (wait) return;
+    clearTimeout(pushTimers.get(port));
+    pushTimers.delete(port);
+  }
   pushTimers.set(
     port,
     setTimeout(async () => {
@@ -221,7 +226,7 @@ function schedulePush(port: chrome.runtime.Port) {
       } catch {
         ports.delete(port);
       }
-    }, 120),
+    }, wait),
   );
 }
 
@@ -271,7 +276,8 @@ async function onPopupMessage(port: chrome.runtime.Port, msg: PopupToBg) {
   switch (msg.type) {
     case 'subscribe':
       ports.set(port, msg.tabId);
-      schedulePush(port);
+      // Just opened: the state at once, the popup shows nothing useful until it comes.
+      schedulePush(port, 0);
       // Ask every frame to report its <video> elements again (cheap, catches late players).
       if (msg.tabId >= 0) chrome.tabs.sendMessage(msg.tabId, { type: 'scan' }).catch(() => {});
       return;
@@ -319,11 +325,6 @@ async function onPopupMessage(port: chrome.runtime.Port, msg: PopupToBg) {
     case 'update-seen':
       await seenUpdate(msg.version);
       schedulePush(port);
-      return;
-    case 'update-install':
-      await installUpdate(jobs.isBusy(), () => {
-        for (const p of ports.keys()) schedulePush(p);
-      });
       return;
     case 'dismiss':
       return jobs.dismiss(msg.jobId);
@@ -460,8 +461,8 @@ chrome.runtime.onMessage.addListener((msg: ContentToBg | OffscreenToBg, sender, 
       })();
       return true;
     case 'open-grabby':
-      // The popup, over this page; where Chrome refuses it, the side panel.
-      void chrome.action.openPopup({ windowId: sender.tab.windowId }).catch(() => chrome.sidePanel.open({ tabId }).catch(() => {}));
+      // The popup, over this page (where Chrome refuses it, nothing happens).
+      void chrome.action.openPopup({ windowId: sender.tab.windowId }).catch(() => {});
       break;
     case 'show-download':
       // Only downloads Grabby made can be shown from a page.

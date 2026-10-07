@@ -1,7 +1,7 @@
 // Builds Grabby into dist/: `node scripts/build.mjs`.
 import { build } from 'vite';
-import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname, relative, resolve, sep } from 'node:path';
+import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildManifest } from './manifest.mjs';
 
@@ -40,7 +40,6 @@ async function buildAll() {
       rollupOptions: {
         input: {
           popup: resolve(root, 'src/pages/popup.html'),
-          sidepanel: resolve(root, 'src/pages/sidepanel.html'),
           offscreen: resolve(root, 'src/pages/offscreen.html'),
           'capture-sink': resolve(root, 'src/pages/capture-sink.html'),
         },
@@ -86,13 +85,6 @@ async function buildAll() {
     resolve(out, 'manifest.json'),
     JSON.stringify(buildManifest(pkg.version), null, 2),
   );
-  // Every file of this version: the update helper replaces these, and only these.
-  const files = (await readdir(out, { recursive: true, withFileTypes: true }))
-    .filter((e) => e.isFile())
-    .map((e) => relative(out, resolve(e.parentPath ?? e.path, e.name)).split(sep).join('/'))
-    .concat('updater/files.txt')
-    .sort();
-  await writeFile(resolve(out, 'updater/files.txt'), `${[...new Set(files)].join('\n')}\n`);
   console.log('✓ built → dist');
 }
 

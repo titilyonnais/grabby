@@ -45,8 +45,6 @@ export interface Settings {
   verify: boolean;
   /** Settings follow the browser's account (the browser's own sync). */
   sync: boolean;
-  /** The guided tour was seen (or skipped). */
-  tourDone: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -73,7 +71,6 @@ export const DEFAULT_SETTINGS: Settings = {
   parallel: 2,
   verify: true,
   sync: false,
-  tourDone: false,
 };
 
 export const PARALLEL_CHOICES = [1, 2, 3, 4] as const;
@@ -83,7 +80,7 @@ const KEY = 'settings';
 export async function getSettings(): Promise<Settings> {
   const res = await chrome.storage.local.get(KEY);
   // What Grabby no longer has (its AI, the rules per site of the full page) is left behind.
-  const { aiModels: _a, chromeAi: _c, rules: _r, ...stored } = (res[KEY] as Partial<Settings> & Record<'aiModels' | 'chromeAi' | 'rules', unknown>) ?? {};
+  const { aiModels: _a, chromeAi: _c, rules: _r, tourDone: _t, ...stored } = (res[KEY] as Partial<Settings> & Record<'aiModels' | 'chromeAi' | 'rules' | 'tourDone', unknown>) ?? {};
   // Set before 1.9 as "in a Grabby folder".
   const folder = stored.folder ?? (stored.subfolder ? 'grabby' : 'none');
   const accent = (ACCENTS as readonly string[]).includes(stored.accent as string) ? stored.accent! : DEFAULT_SETTINGS.accent;

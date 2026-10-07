@@ -26,6 +26,8 @@ const MAX_ANIMATION = 30;
 
 interface Props {
   item: MediaItem;
+  /** Already there when the popup opened: shown as it is, without coming in. */
+  atOpen?: boolean;
   job?: Job;
   /** Its other downloads under way (the sound while the video downloads…), shown with it. */
   others?: Job[];
@@ -175,7 +177,7 @@ function AdvSection({ title, children }: { title: string; children: ComponentChi
   );
 }
 
-export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen, onToggle: toggleOpen, index, preferred, send, select, saved }: Props) {
+export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen, onToggle: toggleOpen, index, preferred, send, select, saved, atOpen }: Props) {
   const open = wantOpen && !select;
   const onToggle = select ? select.toggle : toggleOpen;
   const card = useUnfold<HTMLElement>(open);
@@ -365,7 +367,7 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
   return (
     <article
       ref={card}
-      class={`card${open ? ' card--open' : ''}${blocked ? ' card--blocked' : ''}${select?.on ? ' card--picked' : ''}`}
+      class={`card${atOpen ? ' card--still' : ''}${open ? ' card--open' : ''}${blocked ? ' card--blocked' : ''}${select?.on ? ' card--picked' : ''}`}
       style={{ '--i': String(Math.min(index, 8)) }}
     >
       {/* The whole head opens or closes the card; the chevron is its keyboard handle. */}
