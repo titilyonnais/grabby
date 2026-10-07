@@ -48,6 +48,22 @@ describe('describeFormats', () => {
     expect(info.qualities[0]!.label).toBe('1080p60');
   });
 
+  it('without the format list (signed in), takes the qualities of its player menu', () => {
+    const r = { videoDetails: { videoId: 'abc', title: 'Clip', lengthSeconds: '634' }, playabilityStatus: { status: 'OK', playableInEmbed: true } };
+    expect(describeFormats(r)).toBeNull();
+    const info = describeFormats(r, [
+      { quality: 'hd2160', qualityLabel: '2160p60 HDR' },
+      { quality: 'hd1080', qualityLabel: '1080p' },
+      { quality: 'hd720', qualityLabel: '720p' },
+      { quality: 'auto', qualityLabel: 'Auto' },
+    ])!;
+    expect(info.qualities.map((q) => q.label)).toEqual(['2160p60', '1080p', '720p']);
+    expect(info.qualities[0]).toMatchObject({ quality: 'hd2160', avc: false, vp9: true, sizes: {} });
+    expect(info.qualities[1]).toMatchObject({ quality: 'hd1080', avc: true });
+    expect(info.embeddable).toBe(true);
+    expect(info.duration).toBe(634);
+  });
+
   it('ignores empty responses and marks live streams (recorded from the page)', () => {
     expect(describeFormats({})).toBeNull();
     const live = describeFormats(response([AAC], { videoDetails: { videoId: 'x', title: 'Direct', isLive: true } }))!;

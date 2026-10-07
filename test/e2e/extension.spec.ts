@@ -71,10 +71,12 @@ async function openPopup(context: BrowserContext, extId: string, tabId: number):
 }
 
 /** Opens a drop-down list of the card ("Quality", "Format") and picks an option. */
-/** The first card's options (subtitles, sound tracks, clips, retouches): in view, no fold. */
+/** The first card's « Advanced options » (clip, sound, picture, file), opened. */
 async function more(popup: Page) {
-  await popup.locator('.card .more').first().waitFor();
-  await expect(popup.locator('.more-toggle')).toHaveCount(0);
+  const toggle = popup.locator('.card .adv-toggle').first();
+  await toggle.waitFor();
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+  await popup.locator('.card .adv').first().waitFor();
 }
 
 async function pick(popup: Page, list: string, option: string) {
@@ -765,169 +767,6 @@ for (const [page, label] of [
   });
 }
 
-/** The saved video and the .srt next to it (if any), once both are complete. */
-async function videoAndSrt(sw: Worker, withSrt: boolean): Promise<{ video: string; srt: string | null }> {
-  const list = () =>
-    sw.evaluate(async () =>
-      (await chrome.downloads.search({ state: 'complete', orderBy: ['-startTime'] })).map((d) => ({ file: d.filename, srt: d.url.startsWith('data:application/x-subrip') })),
-    );
-  await expect.poll(async () => (await list()).some((d) => d.srt) || !withSrt, { timeout: 30_000 }).toBe(true);
-  const all = await list();
-  const srt = all.find((d) => d.srt);
-  return { video: all.find((d) => !d.srt)!.file, srt: srt ? readFileSync(srt.file, 'utf8').replace(/^﻿/, '') : null };
-}
-
-/** The subtitles inside a video, as SubRip (null without ffmpeg). */
-function embeddedSrt(file: string): string | null {
-  try {
-    return execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-map', '0:s:0', '-f', 'srt', '-'], { encoding: 'utf8' });
-  } catch {
-    return null;
-  }
-}
-
-const lines = (srt: string) => srt.split(/\r?\n/).filter((l) => l && !/^\d+$/.test(l));
-
-for (const [page, format, label, track] of [
-  ['hls.html', 'MP4', 'HLS in MP4', 'French'],
-  ['dash.html', 'MKV', 'DASH in MKV', 'French'],
-] as const) {
-  test(`subtitles of ${label}: put in the video, each line once`, async ({ context, sw, extId }) => {
-    const { tabId } = await openFixture(context, sw, page);
-    await expect.poll(() => badge(sw, tabId)).toBe('1');
-    const popup = await openPopup(context, extId, tabId);
-    await pick(popup, 'Format', format);
-    await pick(popup, 'Subtitles', track);
-    await popup.getByRole('button', { name: 'Download', exact: true }).click();
-    await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
-    const { video, srt } = await videoAndSrt(sw, false);
-    expect(srt).toBeNull();
-    const info = probe(video);
-    if (info) expect(info.streams).toEqual(['audio', 'subtitle', 'video']);
-    const inside = embeddedSrt(video);
-    if (inside !== null) {
-      expect(lines(inside)).toEqual([
-        '00:00:00,500 --> 00:00:01,800',
-        'Bonjour',
-        '00:00:02,500 --> 00:00:03,800',
-        '<i>le monde</i>',
-        '00:00:03,900 --> 00:00:04,600',
-        'Au revoir',
-        '00:00:05,000 --> 00:00:05,800',
-        'Fin',
-      ]);
-    }
-  });
-}
-
-test('subtitles a format can not hold are saved next to it, as .srt named after the video', async ({ context, sw, extId }) => {
-  const { tabId } = await openFixture(context, sw, 'hls.html');
-  await expect.poll(() => badge(sw, tabId)).toBe('1');
-  const asked = await recordDownloads(sw);
-  const popup = await openPopup(context, extId, tabId);
-  await pick(popup, 'Format', 'TS');
-  await pick(popup, 'Subtitles', 'French');
-  const apart = popup.getByRole('switch', { name: 'In a separate .srt file' });
-  await expect(apart).toBeChecked();
-  await expect(apart).toBeDisabled();
-  await popup.getByRole('button', { name: 'Download', exact: true }).click();
-  await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
-  const { srt } = await videoAndSrt(sw, true);
-  expect(lines(srt!)).toEqual([
-    '00:00:00,500 --> 00:00:01,800',
-    'Bonjour',
-    '00:00:02,500 --> 00:00:03,800',
-    '<i>le monde</i>',
-    '00:00:03,900 --> 00:00:04,600',
-    'Au revoir',
-    '00:00:05,000 --> 00:00:05,800',
-    'Fin',
-  ]);
-  const names = (await asked()).map((o) => o.filename ?? '');
-  expect(names.some((n) => n.endsWith('.ts'))).toBe(true);
-  expect(names.some((n) => n.endsWith('.fr.srt'))).toBe(true);
-});
-
-test('a clip with its subtitles: only the lines of the part, from zero', async ({ context, sw, extId }) => {
-  const { tabId } = await openFixture(context, sw, 'dash.html');
-  await expect.poll(() => badge(sw, tabId)).toBe('1');
-  const popup = await openPopup(context, extId, tabId);
-  await pick(popup, 'Subtitles', 'French');
-  await popup.getByRole('switch', { name: 'In a separate .srt file' }).check();
-  await cutClip(popup, '0:03', '0:05');
-  await popup.getByRole('button', { name: 'Download clip' }).click();
-  await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
-  const { video, srt } = await videoAndSrt(sw, true);
-  // The copied picture starts on the keyframe before the part (at 2 s): the lines too.
-  expect(lines(srt!)).toEqual(['00:00:00,500 --> 00:00:01,800', '<i>le monde</i>', '00:00:01,900 --> 00:00:02,600', 'Au revoir']);
-  const info = probe(video);
-  if (info) expect(info.streams).toEqual(['audio', 'video']);
-});
-
-const ALL_LINES = [
-  '00:00:00,500 --> 00:00:01,800',
-  'Bonjour',
-  '00:00:02,500 --> 00:00:03,800',
-  '<i>le monde</i>',
-  '00:00:03,900 --> 00:00:04,600',
-  'Au revoir',
-  '00:00:05,000 --> 00:00:05,800',
-  'Fin',
-];
-
-test('a file with a <track>: its subtitles are put in the video', async ({ context, sw, extId }) => {
-  const { tabId } = await openFixture(context, sw, 'track.html');
-  await expect.poll(() => badge(sw, tabId)).toBe('1');
-  const popup = await openPopup(context, extId, tabId);
-  await pick(popup, 'Subtitles', 'French');
-  await popup.getByRole('button', { name: 'Download', exact: true }).click();
-  await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
-  const { video, srt } = await videoAndSrt(sw, false);
-  expect(srt).toBeNull();
-  const info = probe(video);
-  if (info) expect(info.streams).toEqual(['audio', 'subtitle', 'video']);
-  const inside = embeddedSrt(video);
-  if (inside !== null) expect(lines(inside)).toEqual(ALL_LINES);
-});
-
-for (const [track, form] of [
-  ['German', 'WebVTT packed in MP4 (wvtt)'],
-  ['Spanish', 'TTML packed in MP4 (stpp)'],
-  ['Italian', 'a TTML file'],
-] as const) {
-  test(`DASH subtitles in ${form} are read, each line once`, async ({ context, sw, extId }) => {
-    const { tabId } = await openFixture(context, sw, 'dash-packed.html');
-    await expect.poll(() => badge(sw, tabId)).toBe('1');
-    const popup = await openPopup(context, extId, tabId);
-    await pick(popup, 'Subtitles', track);
-    await popup.getByRole('switch', { name: 'In a separate .srt file' }).check();
-    await popup.getByRole('button', { name: 'Download', exact: true }).click();
-    await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
-    const { srt } = await videoAndSrt(sw, true);
-    expect(lines(srt!)).toEqual(ALL_LINES);
-  });
-}
-
-test('a clip of a recorded player, with the subtitles of its <track>', async ({ context, sw, extId }) => {
-  const { page, tabId } = await openFixture(context, sw, 'mse-track.html');
-  await page.waitForSelector('body[data-ready="1"]');
-  await expect.poll(() => badge(sw, tabId)).toBe('1');
-  const popup = await openPopup(context, extId, tabId);
-  await pick(popup, 'Subtitles', 'French');
-  await popup.getByRole('switch', { name: 'In a separate .srt file' }).check();
-  await cutClip(popup, '0:02', '0:05');
-  await popup.getByRole('button', { name: 'Record the clip' }).click();
-  await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
-  const { video, srt } = await videoAndSrt(sw, true);
-  expect(lines(srt!)).toEqual(['00:00:00,500 --> 00:00:01,800', '<i>le monde</i>', '00:00:01,900 --> 00:00:02,600', 'Au revoir']);
-  const info = probe(video);
-  if (info) {
-    expect(info.streams).toEqual(['audio', 'video']);
-    expect(info.duration).toBeGreaterThan(2);
-    expect(info.duration).toBeLessThan(4.5);
-  }
-});
-
 test('a recording can be paused and resumed: both parts end up in one file', async ({ context, sw, extId }) => {
   // A player that fetches its segments as playback goes, slowly: the recording takes a while.
   const { page, tabId } = await openFixture(context, sw, 'mse-slow.html');
@@ -1076,38 +915,6 @@ test('one other sound language only: it replaces the first one', async ({ contex
   await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
   const info = probeFull((await lastDownload(sw)).filename);
   if (info) expect(info.streams.filter((s) => s.type === 'audio').map((s) => s.lang)).toEqual(['fra']);
-});
-
-test('several subtitle languages: all of them in the video', async ({ context, sw, extId }) => {
-  const { tabId } = await openFixture(context, sw, 'dash-packed.html');
-  await expect.poll(() => badge(sw, tabId)).toBe('1');
-  const popup = await openPopup(context, extId, tabId);
-  await pick(popup, 'Format', 'MKV');
-  await tick(popup, 'Subtitles', ['German', 'Spanish']);
-  await expect(popup.getByRole('button', { name: /^Subtitles\s*2 languages/ })).toBeVisible();
-  await popup.getByRole('button', { name: 'Download', exact: true }).click();
-  await expect(popup.getByText('Saved')).toBeVisible({ timeout: 60_000 });
-  const { video } = await videoAndSrt(sw, false);
-  const info = probeFull(video);
-  if (info) {
-    expect(info.streams.map((s) => s.type).sort()).toEqual(['audio', 'subtitle', 'subtitle', 'video']);
-    expect(info.streams.filter((s) => s.type === 'subtitle').map((s) => s.lang)).toEqual(['deu', 'spa']);
-  }
-});
-
-test('several subtitle languages apart: one .srt each, named by language', async ({ context, sw, extId }) => {
-  const { tabId } = await openFixture(context, sw, 'dash-packed.html');
-  await expect.poll(() => badge(sw, tabId)).toBe('1');
-  const asked = await recordDownloads(sw);
-  const popup = await openPopup(context, extId, tabId);
-  await tick(popup, 'Subtitles', ['German', 'Italian']);
-  await popup.getByRole('switch', { name: 'In a separate .srt file' }).check();
-  const before = await completed(sw);
-  await popup.getByRole('button', { name: 'Download', exact: true }).click();
-  await expect.poll(() => completed(sw), { timeout: 60_000 }).toBe(before + 3);
-  const names = (await asked()).map((o) => o.filename ?? '');
-  expect(names.some((n) => n.endsWith('.de.srt'))).toBe(true);
-  expect(names.some((n) => n.endsWith('.it.srt'))).toBe(true);
 });
 
 test('a <video> with chapters: they are written in the file', async ({ context, sw, extId }) => {
@@ -1383,11 +1190,10 @@ test('sound evened out: the file is encoded with the loudness filter, and plays'
 
 // ——— 1.10: retouching, local AI, live streams, the button on videos, the full page ———
 
-/** Opens the card's "Retouch" panel. */
+/** Opens the card's retouches: they are in « Advanced options » (sound, picture, file). */
 async function openRetouch(popup: Page) {
   await more(popup);
-  await popup.getByRole('button', { name: /^Retouch/ }).click();
-  await expect(popup.getByRole('heading', { name: 'Speed and size' })).toBeVisible();
+  await expect(popup.getByRole('heading', { name: 'Sound', exact: true })).toBeVisible();
 }
 
 /** Width × height of the first video stream (null without ffprobe). */
@@ -1414,8 +1220,9 @@ test('retouch: turned, mirrored, twice as fast, without sound: the file is made 
   await popup.getByRole('switch', { name: /Mirror/ }).check();
   await pick(popup, 'Speed', '2×');
   await popup.getByRole('switch', { name: 'Without sound' }).check();
-  await popup.getByRole('button', { name: 'Close' }).click();
-  await expect(popup.getByRole('button', { name: 'Retouch (4)' })).toBeVisible();
+  // Folded, its line says how many retouches are on.
+  await popup.locator('.card .adv-toggle').first().click();
+  await expect(popup.locator('.card .adv-toggle__on').first()).toHaveText('4 edits');
   await popup.getByRole('button', { name: 'Download', exact: true }).click();
   await expect(popup.getByText('Saved')).toBeVisible({ timeout: 90_000 });
   const { filename } = await lastDownload(sw);
@@ -1463,33 +1270,6 @@ test('one file per chapter: each one in a folder named like the video, numbered'
   expect(names.sort()).toEqual(['File with chapters test/01 - Début.mp4', 'File with chapters test/02 - Milieu.mp4', 'File with chapters test/03 - Fin.mp4']);
   const lengths = (await latestFiles(sw, 3)).map((f) => probe(f)?.duration).filter((d): d is number => d !== undefined);
   if (lengths.length) expect(lengths.reduce((a, b) => a + b, 0)).toBeGreaterThan(5);
-});
-
-test('burned subtitles and a summary: written into the picture, the summary in a text file', async ({ context, sw, extId }) => {
-  const { tabId } = await openFixture(context, sw, 'track.html');
-  await expect.poll(() => badge(sw, tabId)).toBe('1');
-  const asked = await recordDownloads(sw);
-  const popup = await openPopup(context, extId, tabId);
-  await pick(popup, 'Subtitles', 'French');
-  await openRetouch(popup);
-  await popup.getByRole('switch', { name: 'Burn the subtitles into the picture' }).check();
-  await popup.getByRole('switch', { name: /Summary and keywords/ }).check();
-  const before = await completed(sw);
-  await popup.getByRole('button', { name: 'Download', exact: true }).click();
-  await expect.poll(() => completed(sw), { timeout: 90_000 }).toBe(before + 2);
-  const files = (await asked()).slice(-2).map((o) => o.filename ?? '');
-  expect(files[0]).toMatch(/\.mp4$/);
-  expect(files[1]).toMatch(/\.txt$/);
-  const saved = await latestFiles(sw, 2);
-  // The text file starts with its byte order mark.
-  const txt = saved.find((f) => readFileSync(f).subarray(0, 3).toString('hex') === 'efbbbf')!;
-  const video = saved.find((f) => f !== txt)!;
-  const text = readFileSync(txt, 'utf8');
-  expect(text).toContain('File with subtitles test');
-  expect(text).toMatch(/\[0:00\] Bonjour le monde Au revoir Fin/);
-  // Written into the picture: no subtitle track left.
-  const info = probe(video);
-  if (info) expect(info.streams).toEqual(['audio', 'video']);
 });
 
 test('a live stream is recorded until "Stop and save", then made into one file', async ({ context, sw, extId }) => {
@@ -1900,28 +1680,23 @@ test('no error anywhere: every screen of the popup, the settings, the full page 
   watch(page);
   await expect.poll(() => badge(sw, tabId)).toBe('1');
   const popup = await openPopup(context, extId, tabId);
-  // The card, its options (Clip, Retouch, Later: equal columns on one line, a number of
-  // retouches changes nothing), a download.
+  // The card: « Télécharger » and « Plus tard » on one line, the same height; « Advanced
+  // options » in four parts, folded it says what is on in it; a download.
   await more(popup);
-  const row = () =>
-    popup.locator('.card__actions--even > button').evaluateAll((bs) => bs.map((b) => { const r = b.getBoundingClientRect(); return { top: Math.round(r.top), w: Math.round(r.width) }; }));
-  const even = async () => {
-    const r = await row();
-    expect(r.length).toBeGreaterThanOrEqual(3);
-    expect(new Set(r.map((b) => b.top)).size).toBe(1);
-    expect(Math.max(...r.map((b) => b.w)) - Math.min(...r.map((b) => b.w))).toBeLessThanOrEqual(1);
-  };
-  await even();
-  await popup.getByRole('button', { name: /^Retouch/ }).click();
+  const go = await popup.locator('.card .go > button').evaluateAll((bs) => bs.map((b) => { const r = b.getBoundingClientRect(); return { top: Math.round(r.top), h: Math.round(r.height) }; }));
+  expect(go).toHaveLength(2);
+  expect(go[0]).toEqual(go[1]);
+  await expect(popup.locator('.card .adv__title')).toHaveText(['Cut', 'Sound', 'Picture', 'File']);
   await popup.getByRole('switch', { name: 'Without sound' }).check();
   await popup.getByRole('switch', { name: /Mirror/ }).check();
-  await popup.getByRole('button', { name: 'Close' }).click();
-  await expect(popup.getByRole('button', { name: 'Retouch (2)' })).toBeVisible();
-  await even();
-  await popup.getByRole('button', { name: 'Retouch (2)' }).click();
+  const toggle = popup.locator('.card .adv-toggle').first();
+  await toggle.click();
+  await expect(popup.locator('.card .adv-toggle__on').first()).toHaveText('2 edits');
+  await more(popup);
   await popup.getByRole('switch', { name: 'Without sound' }).uncheck();
   await popup.getByRole('switch', { name: /Mirror/ }).uncheck();
-  await popup.getByRole('button', { name: 'Close' }).click();
+  await toggle.click();
+  await expect(popup.locator('.card .adv-toggle__on')).toHaveCount(0);
   const before = await completed(sw);
   await popup.getByRole('button', { name: 'Download', exact: true }).click();
   await nextDownload(sw, before);

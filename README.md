@@ -17,33 +17,26 @@
 
 ---
 
-<!-- release:2.3.3 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
-## Nouveautés de la version 2.3.3
+<!-- release:2.4.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
+## Nouveautés de la version 2.4.0
 
-- **Corrigé, « All menu items except for separators must have a title »** : ce message
-  pouvait apparaître dans les erreurs de l'extension juste après l'installation. Si Chrome
-  ne donne pas le texte d'une entrée du menu du clic droit au démarrage, Grabby utilise le
-  sien : le menu est toujours complet et plus aucun message n'est écrit.
-- **Corrigé, la pilule figée sur « 100 % »** après l'annulation d'un téléchargement (par
-  exemple « Son seul ») : elle revient tout de suite à **Télécharger**.
-- **Corrigé, « Photo de l'image affichée » qui ne faisait rien** : la photo est prise même
-  si tu as fait défiler la page, et chaque clic affiche un message (photo enregistrée, ou
-  pourquoi elle n'a pas pu l'être).
+- **Une carte de téléchargement rangée** : en vue, la qualité, le format, **Télécharger**
+  et à côté un bouton rond **Plus tard**. Tout le reste est dans **Options avancées**, en
+  quatre parties : **Découper** (extrait), **Son** (langue, vitesse, son plus net, sans
+  son), **Image** (recadrer, vertical, pivoter, miroir) et **Fichier** (chapitres, taille).
+  Repliée, la ligne dit ce qui est activé dedans.
+- **Retirés** : les sous-titres (et ce qui en dépendait : incruster, transcrire, traduire,
+  résumé), le badge « Lecteur / Fichier », et le bouton carré « Arrêter et enregistrer »
+  (gardé pour les directs seulement).
+- **Nouvelles icônes** lecture, pause et croix pendant un téléchargement.
+- **YouTube** : une vraie animation au clic (« Préparation… », puis le remplissage), la
+  barre ne dépasse plus de la pilule, et le menu ⌄ montre les résolutions tout de suite.
 
-**Rappel de la 2.3.2** :
+**Rappel de la 2.3.3** : plus d'erreur « menu items must have a title », la pilule revient
+à « Télécharger » après une annulation, « Photo de l'image affichée » répond toujours.
 
-- **Corrigé, le téléchargement YouTube bloqué à 0 %** : après une mise à jour de Grabby,
-  les onglets YouTube déjà ouverts gardaient un ancien script qui n'écoutait plus personne,
-  et l'enregistrement restait à 0 % sans fin. Grabby remet maintenant tous ses scripts dans
-  les onglets ouverts (plus besoin de recharger la page), reconnaît une vidéo YouTube à son
-  adresse, et s'arrête avec un message clair au lieu de rester bloqué si rien n'arrive.
-- **Les options sont de nouveau directement sous Télécharger** : **Extrait**, **Lire
-  l'extrait**, **Retouches** et **Plus tard**, sans passer par « Plus d'options ».
-- **Corrigé, le double écart à droite de Télécharger | ⌄** : l'espace est mesuré sur les
-  boutons réellement dessinés, 8 px de chaque côté comme entre les boutons de YouTube.
-- **Corrigé, la croix du message en bas de page** : elle est à la même distance du bord
-  que la coche de l'autre côté.
-- La pilule garde son **pourcentage** pendant un téléchargement, même en icône seule.
+**Rappel de la 2.3.2** : le téléchargement YouTube ne reste plus bloqué à 0 % après une
+mise à jour, écarts des boutons YouTube et croix du message en bas de page corrigés.
 
 **Rappel de la 2.3.1** : plus de défilement sans fin sur YouTube, plus aucun message dans
 les erreurs de l'extension, détection de la langue parlée avant la transcription.

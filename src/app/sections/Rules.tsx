@@ -75,15 +75,6 @@ export function Rules({ rules, onChange }: { rules: Rule[]; onChange: (r: Rule[]
             {r.mode === 'video' && (
               <Select label={t('qualityLabel')} value={r.quality} options={RULE_QUALITIES.map((q) => ({ value: q, label: qualityLabel(q) }))} onChange={(quality) => set(r.id, { quality })} />
             )}
-            {r.mode === 'video' && (
-              <Field
-                key={`${r.id}-subs`}
-                label={t('ruleSubs')}
-                value={r.subs.join(', ')}
-                placeholder="fr, en"
-                onCommit={(v) => set(r.id, { subs: v.split(/[\s,;]+/).map((s) => s.trim().toLowerCase()).filter((s) => /^[a-z]{2,3}(-[a-z0-9]{2,8})?$/i.test(s)).slice(0, 8) })}
-              />
-            )}
             <Field key={`${r.id}-folder`} label={t('ruleFolder')} value={r.folder} placeholder={t('ruleFolderHint')} onCommit={(v) => set(r.id, { folder: v.trim().slice(0, 120) })} />
           </div>
         </section>

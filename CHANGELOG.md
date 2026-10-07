@@ -13,6 +13,60 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 ## [Non publié]
 
+## [2.4.0] — 2026-10-07
+
+Une carte de téléchargement rangée, sur tes retours : l'essentiel en vue (qualité,
+format, Télécharger), tout le reste dans **Options avancées**, rangé en quatre parties.
+Les sous-titres sont retirés. Côté YouTube, la pilule a une vraie animation et sa barre
+ne déborde plus, et le menu ⌄ connaît les qualités avant le premier téléchargement.
+
+### Modifié
+- **La carte d'une vidéo** :
+  - en vue : **Qualité**, **Format**, puis **Télécharger** avec, juste à côté, un bouton
+    rond **Plus tard** (une horloge, qui devient une coche une fois la vidéo mise de côté) ;
+  - **Options avancées** : une ligne discrète sous les choix. Repliée, elle dit ce qui est
+    activé dedans (« 0:12 → 1:30, 2 retouches »), pour que rien ne soit oublié. Ouverte, une
+    liste en quatre parties, chacune sous son petit titre :
+    - **Découper** : **Extrait** (sa valeur à droite : « Toute la vidéo » ou les temps
+      choisis), et **Lire l'extrait** une fois une partie choisie ;
+    - **Son** : la langue audio (quand la vidéo en a plusieurs), la vitesse, un son plus
+      net, sans le son ;
+    - **Image** : recadrer, format vertical, pivoter, miroir ;
+    - **Fichier** : garder les chapitres, un fichier par chapitre, la taille du fichier.
+  - le bouton **Retouches** disparaît : ses réglages sont directement dans ces parties.
+- **Le badge « Lecteur » / « Fichier »** à côté du poids est retiré : il ne disait rien
+  d'utile. Il reste la qualité et la taille.
+- **Pendant un téléchargement** (popup) :
+  - le bouton carré **Arrêter et enregistrer** est retiré. Il reste seulement pour un
+    direct, qui n'a pas de fin et ne peut être enregistré que comme ça ;
+  - nouvelles icônes **lecture** et **pause** (pleines, aux coins arrondis, comme celles
+    d'un lecteur) et une **croix** plus nette (trait plus épais, mieux proportionnée).
+- **La pilule sous les vidéos YouTube** : au clic, « Préparation… » avec un reflet qui
+  traverse le bouton et la flèche qui descend, puis le remplissage avance avec le
+  pourcentage ; jamais de retour à « Télécharger » avant la fin (elle attend jusqu'à 20 s
+  que le téléchargement démarre, au lieu de 6). « En attente » n'apparaît que si le
+  téléchargement attend vraiment son tour derrière d'autres.
+
+### Supprimé
+- **Les sous-titres** dans la carte : le choix des sous-titres, « Dans un fichier .srt à
+  part », **Créer les sous-titres** (IA locale), et dans les retouches **Incruster les
+  sous-titres**, **Transcrire**, **Traduire** et **Résumé** (qui avaient besoin d'un texte).
+  Les règles par site (page complète) n'ont plus de champ « Sous-titres » ; une règle faite
+  avant ne demande plus aucun sous-titre. L'**atelier** (transformer un fichier de
+  l'ordinateur) garde ses outils.
+
+### Corrigé
+- **La barre de progression dépassait de la pilule YouTube** (en haut et en bas du bord
+  gauche, à quelques %). Elle reprenait les coins arrondis de 20 px du bouton alors qu'elle
+  ne faisait que quelques pixels de large : son arrondi ne suivait plus la courbe. Le
+  bouton découpe maintenant ce qui dépasse, la barre suit exactement sa forme.
+- **Le menu ⌄ n'affichait les résolutions qu'une fois un téléchargement lancé.** Grabby
+  lisait les qualités dans la liste détaillée des formats que YouTube donne à la page ;
+  sans elle (fréquent avec un compte connecté), il ne retenait rien. Il prend maintenant
+  aussi les qualités que propose le lecteur de YouTube dans son propre menu ⚙ : les
+  résolutions sont là dès l'ouverture de la page, leurs tailles s'ajoutent quand YouTube
+  les donne.
+
 ## [2.3.3] — 2026-10-07
 
 Un correctif, sur tes retours de la 2.3.2 : le message « All menu items except for
@@ -1506,7 +1560,8 @@ Première version.
 - Capture YouTube expérimentale.
 - Interface en français et en anglais, thème clair et sombre.
 
-[Non publié]: https://github.com/titilyonnais/grabby/compare/v2.3.3...HEAD
+[Non publié]: https://github.com/titilyonnais/grabby/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/titilyonnais/grabby/compare/v2.3.3...v2.4.0
 [2.3.3]: https://github.com/titilyonnais/grabby/compare/v2.3.2...v2.3.3
 [2.3.2]: https://github.com/titilyonnais/grabby/compare/v2.3.1...v2.3.2
 [2.3.1]: https://github.com/titilyonnais/grabby/compare/v2.3.0...v2.3.1

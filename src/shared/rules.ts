@@ -111,7 +111,8 @@ export function applyRule(item: MediaItem, rule: Rule | undefined, fallback: { v
     mode: audio ? 'audio' : 'video',
     ...(variant ? { variantId: variant.id } : {}),
     format,
-    subtitles: audio || !rule ? [] : subtitlesFor(item.subtitles, rule.subs),
+    // Subtitles are no longer offered (2.4.0): a rule from before asks for none.
+    subtitles: [],
     ...(rule?.folder.trim() ? { folder: rule.folder.trim() } : {}),
   };
 }

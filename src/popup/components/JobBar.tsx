@@ -238,27 +238,28 @@ export function JobBar({ job, send }: { job: Job; send: (m: PopupToBg) => void }
         </div>
         {job.status === 'queued' && job.held ? (
           <button class="btn btn--primary btn--icon" title={t('startNow')} aria-label={t('startNow')} onClick={() => send({ type: 'start-now', jobId: job.id })}>
-            <Icon name="play" />
+            <Icon name="play" size={20} />
           </button>
         ) : paused ? (
           <button class="btn btn--primary btn--icon" title={t('resume')} aria-label={t('resume')} onClick={() => send({ type: 'resume', jobId: job.id })}>
-            <Icon name="play" />
+            <Icon name="play" size={20} />
           </button>
         ) : (
           canPause(job) && (
             <button class="btn btn--primary btn--icon" title={t('pause')} aria-label={t('pause')} onClick={() => send({ type: 'pause', jobId: job.id })}>
-              <Icon name="pause" />
+              <Icon name="pause" size={20} />
             </button>
           )
         )}
-        {canFinish(job) && (
+        {/* A live only: it has no end of its own, this is how it is saved. */}
+        {canFinish(job) && !!job.live && (
           <button class="btn btn--primary btn--icon btn--stop" title={t('finishCapture')} aria-label={t('finishCapture')} onClick={() => send({ type: 'finish-capture', jobId: job.id })}>
             <Icon name="stop" size={20} />
           </button>
         )}
         {/* Pause, stop and cancel: the same buttons, in the colours of « Télécharger ». */}
         <button class="btn btn--primary btn--icon" title={t('cancel')} aria-label={t('cancel')} onClick={() => send({ type: 'cancel', jobId: job.id })}>
-          <Icon name="close" />
+          <Icon name="close" size={20} />
         </button>
       </div>
       {stats.length > 0 && (

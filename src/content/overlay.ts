@@ -91,8 +91,10 @@ button:focus-visible { outline: 2px solid var(--t); outline-offset: -2px; }
 .w:first-child button::after { content: ''; position: absolute; right: 0; top: 8px; width: 1px; height: 24px; background: var(--line); }
 svg { position: relative; display: block; width: 24px; height: 24px; flex: none; }
 .label { position: relative; margin-left: 6px; font-variant-numeric: tabular-nums; }
-.fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: inherit; background: var(--line); pointer-events: none; transition: width .5s cubic-bezier(.2,.7,.2,1); }
-.busy svg { animation: pulse 1.4s ease-in-out infinite; }
+.w:first-child button { overflow: hidden; }
+.fill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--line); pointer-events: none; transition: width .5s cubic-bezier(.2,.7,.2,1); }
+.wait .fill { width: 100% !important; background: linear-gradient(90deg, rgba(0,0,0,0), var(--line) 50%, rgba(0,0,0,0)); animation: sweep 1.3s ease-in-out infinite; transition: none; }
+.wait svg { animation: drop 1.3s ease-in-out infinite; }
 .done svg, .failed svg { animation: pop .38s cubic-bezier(.34,1.56,.64,1); }
 /* Too narrow: the icon only — but never while it counts (the percentage always shows). */
 .compact button:not(.busy):not(.done):not(.failed) .label { display: none; }
@@ -101,9 +103,10 @@ svg { position: relative; display: block; width: 24px; height: 24px; flex: none;
   opacity: 0; transition: opacity .1s ease, transform .1s ease; }
 .w:hover .tip { opacity: 1; transform: translate(-50%, 0); transition-delay: .5s; }
 button[aria-expanded='true'] + .tip { display: none; }
-@keyframes pulse { 50% { opacity: .45; } }
+@keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+@keyframes drop { 0% { transform: translateY(-4px); opacity: 0; } 35%, 65% { transform: none; opacity: 1; } 100% { transform: translateY(4px); opacity: 0; } }
 @keyframes pop { from { transform: scale(.4); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .fill, .tip { transition: none; } .busy svg, .done svg, .failed svg { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .fill, .tip { transition: none; } .wait svg, .wait .fill, .done svg, .failed svg { animation: none; } }
 `;
 
 /* YouTube's menu, copied: 12 px corners, 8 px above and below, 36 px rows, 24 px icons 12 px before Roboto 14 px. */
@@ -172,7 +175,7 @@ interface YtRow {
   close: () => void;
   stop: () => void;
 }
-type PageJob = { mode: 'video' | 'audio'; status: string; progress: number };
+type PageJob = { mode: 'video' | 'audio'; status: string; progress: number; startedAt?: number };
 const ACTIVE = ['queued', 'downloading', 'capturing', 'processing', 'saving', 'paused'];
 const quiet = (el: Element) => {
   // The page's player must not take these clicks (play/pause).
@@ -229,9 +232,12 @@ function ytRowIn(row: Element, video: () => HTMLVideoElement | null): YtRow {
   /** What « Télécharger » shows: idle, a download's progress, then « Enregistré » or « Échec ». */
   // What it says changes its width: whether the word fits is decided again (set further down).
   let refit = () => {};
-  const set = (state: '' | 'busy' | 'done' | 'failed', icon: YtIcon, words: string, progress = 0) => {
-    const same = main.b.className === state && label.textContent === words;
-    main.b.className = state;
+  // `wait`: under way but no figure yet (getting ready, queued): a light sweeps through the
+  // button and the arrow falls, instead of a bar at 0 %.
+  const set = (state: '' | 'busy' | 'done' | 'failed', icon: YtIcon, words: string, progress = 0, wait = false) => {
+    const cls = wait ? `${state} wait` : state;
+    const same = main.b.className === cls && label.textContent === words;
+    main.b.className = cls;
     label.textContent = words;
     fillBar.style.width = state === 'busy' ? `${Math.round(progress * 100)}%` : '0';
     if (same) return;
@@ -252,24 +258,33 @@ function ytRowIn(row: Element, video: () => HTMLVideoElement | null): YtRow {
     const now = Date.now();
     if (now < until) return;
     const job = list.find((j) => ACTIVE.includes(j.status)) ?? list.find((j) => j.status === 'done' || j.status === 'error' || j.status === 'canceled');
+    // The one just asked for is its own whatever its state, even ended before it was ever seen
+    // running (failed at once, or that quick): its outcome then, not « Préparation… » for 20 s.
+    if (job && asked && (job.startedAt ?? 0) >= asked - 2000) seen = true;
     let again = false;
     if (job && ACTIVE.includes(job.status)) {
       seen = true;
       again = true;
-      const words = job.status === 'queued' ? say('ytQueued') : job.status === 'paused' ? say('ytPaused') : `${Math.round(job.progress * 100)} %`;
-      set('busy', job.mode === 'audio' ? YT_ICONS.audio : YT_ICONS.down, words, job.progress);
+      // No figure yet: « Préparation… » (or « En attente » behind other downloads), never « 0 % ».
+      // (Under 1 % shows as « 0 % »: still getting ready as far as anyone can tell.)
+      const wait = job.status === 'queued' || (job.status !== 'paused' && Math.round(job.progress * 100) === 0);
+      const words = job.status === 'queued' ? say('ytQueued') : job.status === 'paused' ? say('ytPaused') : wait ? say('ytStarting') : `${Math.round(job.progress * 100)} %`;
+      set('busy', job.mode === 'audio' ? YT_ICONS.audio : YT_ICONS.down, words, job.progress, wait);
     } else if (job?.status === 'canceled' && seen) {
       // Cancelled (here, in the popup or in the full page): back to « Télécharger » at once.
       seen = false;
+      asked = 0;
       idle();
     } else if (job && seen) {
+      // Its outcome said once: the request is over (not taken up again at the next look).
       seen = false;
+      asked = 0;
       until = now + 3000;
       const ok = job.status === 'done';
       set(ok ? 'done' : 'failed', ok ? YT_ICONS.check : YT_ICONS.failed, say(ok ? 'ytSaved' : 'ytFailed'));
       timer = setTimeout(() => (idle(), void poll()), 3000);
       return;
-    } else if (now - asked < 6000) again = true;
+    } else if (now - asked < 20000) again = true;
     else {
       // Nothing running any more, whatever became of it (cancelled, then cleared away): idle,
       // never a pill stuck on its last figure.
@@ -280,7 +295,7 @@ function ytRowIn(row: Element, video: () => HTMLVideoElement | null): YtRow {
   };
   const start = (mode: 'video' | 'audio', variantId?: string) => {
     asked = Date.now();
-    set('busy', mode === 'audio' ? YT_ICONS.audio : YT_ICONS.down, say('ytQueued'), 0);
+    set('busy', mode === 'audio' ? YT_ICONS.audio : YT_ICONS.down, say('ytStarting'), 0, true);
     void send({ type: 'grab', mode, ...(variantId ? { variantId } : {}) });
     timer = setTimeout(() => void poll(), 500);
   };

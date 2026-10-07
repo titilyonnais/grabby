@@ -6,14 +6,14 @@ const PATHS = {
   sun: 'M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0-13v2m0 14v2M3 12h2m14 0h2M5.6 5.6 7 7m10 10 1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4',
   moon: 'M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5Z',
   settings: 'M4 7h10m4 0h2M4 17h2m4 0h10M16 9a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM8 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z',
-  close: 'M6 6l12 12M18 6 6 18',
+  close: 'M7 7l10 10M17 7 7 17',
   check: 'M5 12.5l4.5 4.5L19 7.5',
   chevron: 'M7 10l5 5 5-5',
   lock: 'M7 11V8a5 5 0 0 1 10 0v3M6 11h12v9H6z',
   live: 'M12 13.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM7.8 16.2a6 6 0 0 1 0-8.4m8.4 0a6 6 0 0 1 0 8.4M5 19a10 10 0 0 1 0-14m14 0a10 10 0 0 1 0 14',
   folder: 'M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z',
   retry: 'M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M18 3v4h-4M6 21v-4h4',
-  stop: 'M7.5 6h9A1.5 1.5 0 0 1 18 7.5v9a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 16.5v-9A1.5 1.5 0 0 1 7.5 6Z',
+  stop: 'M8 6.5h8a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H8A1.5 1.5 0 0 1 6.5 16V8A1.5 1.5 0 0 1 8 6.5Z',
   film: 'M4 6h16v12H4zM8 6v12m8-12v12M4 10h4m8 0h4M4 14h4m8 0h4',
   shield: 'M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z',
   back: 'M15 5l-7 7 7 7',
@@ -21,9 +21,9 @@ const PATHS = {
   alert: 'M12 4 2.8 19.5h18.4L12 4Zm0 6v4.5m0 2.5v.5',
   file: 'M7 3h7l4 4v14H7zM14 3v4h4',
   external: 'M14 5h5v5M19 5l-8 8M17 14v5H5V7h5',
-  pause: 'M9 6.5v11M15 6.5v11',
+  pause: 'M7.5 5h2.5a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H7.5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm6.5 0h2.5a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H14a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z',
   scissors: 'M6 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm0 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12',
-  play: 'M8.5 6.2v11.6a.6.6 0 0 0 .9.5l9.3-5.8a.6.6 0 0 0 0-1L9.4 5.7a.6.6 0 0 0-.9.5Z',
+  play: 'M8 6.1v11.8a1.2 1.2 0 0 0 1.8 1l9.3-5.9a1.2 1.2 0 0 0 0-2L9.8 5.1A1.2 1.2 0 0 0 8 6.1Z',
   plus: 'M12 5v14M5 12h14',
   image: 'M4 5h16v14H4zM4 15l4.5-4.5 4 4L15 12l5 5M15.5 9.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z',
   list: 'M9 6h11M9 12h11M9 18h11M4.5 6h.5M4.5 12h.5M4.5 18h.5',
@@ -73,16 +73,22 @@ const PATHS = {
 
 export type IconName = keyof typeof PATHS;
 
+/** Media controls drawn solid, like a player's: they read at a glance at any size. */
+const SOLID = new Set<IconName>(['play', 'pause', 'stop']);
+/** Thicker strokes where a thin line looks frail (the cross of « Annuler »). */
+const STROKE: Partial<Record<IconName, number>> = { close: 2.2 };
+
 export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
+  const solid = SOLID.has(name);
   return (
     <svg
       class="icon"
       width={size}
       height={size}
       viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="1.8"
+      fill={solid ? 'currentColor' : 'none'}
+      stroke={solid ? 'none' : 'currentColor'}
+      stroke-width={STROKE[name] ?? 1.8}
       stroke-linecap="round"
       stroke-linejoin="round"
       shape-rendering="geometricPrecision"

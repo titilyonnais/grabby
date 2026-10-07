@@ -86,14 +86,38 @@ const levelFor = (lines: number) => LEVELS.find(([h]) => lines >= h)?.[1] ?? 'ti
 const lines = (f: Format) => parseInt(f.qualityLabel ?? '', 10) || 0;
 const size = (f?: Format) => Number(f?.contentLength) || 0;
 
-/** Qualities offered for a video, from the player's format list (pure, unit-tested). */
-export function describeFormats(r: PlayerResponse): YtInfo | null {
+/**
+ * Qualities offered for a video, from the player's format list (pure, unit-tested). Without
+ * that list (YouTube often leaves it out of the page, signed in), from the qualities its
+ * player offers in its own ⚙ menu: the same choices, their sizes unknown until the list comes.
+ */
+export function describeFormats(r: PlayerResponse, menu: { quality?: string; qualityLabel?: string }[] = []): YtInfo | null {
   const d = r.videoDetails;
   const formats = r.streamingData?.adaptiveFormats ?? [];
   if (!d?.videoId) return null;
   // A live stream: recorded from the page's own player, as it plays.
   if (d.isLive) return { id: d.videoId, title: d.title ?? '', duration: 0, embeddable: false, qualities: [], live: true, ...(d.author ? { author: d.author } : {}) };
-  if (!formats.length) return null;
+  if (!formats.length) {
+    const seen = new Set<number>();
+    const qualities = menu
+      .map((q) => ({ label: (q.qualityLabel ?? '').replace(/^(\d+p)(\d+)?.*$/, '$1$2'), height: parseInt(q.qualityLabel ?? '', 10) || 0 }))
+      .filter((q) => q.height > 0 && !seen.has(q.height) && !!seen.add(q.height))
+      .sort((a, b) => b.height - a.height)
+      // YouTube offers H.264 up to 1080p, VP9 at every size.
+      .map((q) => ({ ...q, quality: levelFor(q.height), avc: q.height <= 1080, vp9: true, sizes: {} }));
+    if (!qualities.length) return null;
+    const duration = Number(d.lengthSeconds) || 0;
+    const chapters: Chapter[] = descriptionChapters(d.shortDescription, duration || undefined);
+    return {
+      id: d.videoId,
+      title: d.title ?? '',
+      duration,
+      ...(d.author ? { author: d.author } : {}),
+      ...(chapters.length ? { chapters } : {}),
+      embeddable: r.playabilityStatus?.playableInEmbed !== false && r.playabilityStatus?.status === 'OK',
+      qualities,
+    };
+  }
   const video = formats.filter((f) => f.mimeType.startsWith('video/') && lines(f) > 0);
   const audio = formats.filter((f) => f.mimeType.startsWith('audio/'));
   const aac = audio.find((f) => f.itag === 140) ?? audio.find((f) => f.mimeType.includes('mp4a'));
@@ -159,10 +183,19 @@ const player = () => document.getElementById('movie_player') as Player | null;
 function reportPlayerInfo(api: HookApi) {
   let last = '';
   const check = () => {
-    const r = player()?.getPlayerResponse?.() ?? (window as { ytInitialPlayerResponse?: PlayerResponse }).ytInitialPlayerResponse;
-    const info = r ? describeFormats(r) : null;
+    const p = player();
+    const r = p?.getPlayerResponse?.() ?? (window as { ytInitialPlayerResponse?: PlayerResponse }).ytInitialPlayerResponse;
+    let offered: { quality?: string; qualityLabel?: string }[] = [];
+    try {
+      offered = p?.getAvailableQualityData?.() ?? [];
+    } catch {
+      // A player still starting.
+    }
+    const info = r ? describeFormats(r, offered) : null;
     if (!info) return;
-    const sig = `${info.id}|${info.qualities.length}|${info.embeddable}|${info.captions?.length ?? 0}|${info.chapters?.length ?? 0}`;
+    // Told again when the sizes come (the format list arriving after the player's qualities).
+    const sized = info.qualities.some((q) => Object.keys(q.sizes).length > 0);
+    const sig = `${info.id}|${info.qualities.length}|${sized}|${info.embeddable}|${info.captions?.length ?? 0}|${info.chapters?.length ?? 0}`;
     if (sig === last) return;
     last = sig;
     api.post({ type: 'yt', info });

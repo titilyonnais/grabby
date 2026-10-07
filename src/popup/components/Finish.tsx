@@ -171,7 +171,7 @@ interface Props {
   onAllowAi: () => void;
 }
 
-/** "Retouches et IA": what is done to the file once it is made. */
+/** "Retouches et IA" of the workshop (a file of the computer): everything, AI included. */
 export function FinishPanel({ value: f, onChange, audio, format, picture, subsChosen, chapters, aiAllowed, onAllowAi }: Props) {
   const [cropping, setCropping] = useState(!!f.edit?.crop);
   // « Format vertical »: the crop opens on a 9:16 frame, to move where the action is.
@@ -313,6 +313,124 @@ export function FinishPanel({ value: f, onChange, audio, format, picture, subsCh
       {(f.edit || f.compress || f.burn) && <p class="hint">{t('finishSlow')}</p>}
       {(f.transcribe || f.translate || f.summary) && <p class="hint">{t('finishLocal')}</p>}
     </div>
+  );
+}
+
+/** The retouches as the card's « Options avancées » lays them out: picture, sound, file. */
+interface Edits {
+  value: Finish;
+  onChange: (f: Finish) => void;
+}
+
+/** Changes to one setting of the retouches, the empty ones dropped (nothing sent for them). */
+function editor({ value: f, onChange }: Edits) {
+  const edit = f.edit ?? {};
+  const setEdit = (patch: Partial<NonNullable<Finish['edit']>>) => {
+    const next = { ...edit, ...patch };
+    for (const k of Object.keys(next) as (keyof typeof next)[]) if (next[k] === undefined || next[k] === false || (k === 'speed' && next[k] === 1) || (k === 'rotate' && next[k] === 0)) delete next[k];
+    const { edit: _old, ...rest } = f;
+    onChange(Object.keys(next).length ? { ...rest, edit: next } : rest);
+  };
+  const set = <K extends keyof Finish>(k: K, v: Finish[K] | undefined) => {
+    const { [k]: _old, ...rest } = f;
+    onChange(v === undefined || v === false || v === '' ? rest : { ...rest, [k]: v });
+  };
+  return { edit, setEdit, set };
+}
+
+/** « Image »: crop (free, or the vertical 9:16 of phones), turn, mirror. */
+export function PictureEdits({ picture, ...props }: Edits & { picture?: string }) {
+  const { edit, setEdit } = editor(props);
+  const [cropping, setCropping] = useState(!!edit.crop);
+  // « Format vertical »: the crop opens on a 9:16 frame, to move where the action is.
+  const [cropStart, setCropStart] = useState<string | undefined>();
+  return (
+    <>
+      <div class="adv__pair">
+        <button class={`adv__chip${cropping || edit.crop ? ' adv__chip--on' : ''}`} aria-expanded={cropping} onClick={() => setCropping((v) => !v)}>
+          <Icon name="crop" size={16} />
+          {edit.crop ? t('cropOn') : t('cropOpen')}
+        </button>
+        <button
+          class="adv__chip"
+          title={t('verticalHint')}
+          onClick={() => {
+            setCropStart('9:16');
+            setCropping(true);
+            setEdit({ crop: undefined });
+          }}
+        >
+          <Icon name="vertical" size={16} />
+          {t('verticalOpen')}
+        </button>
+      </div>
+      {cropping && (
+        <CropBox
+          key={cropStart ?? 'free'}
+          {...(picture ? { picture } : {})}
+          {...(edit.crop ? { crop: edit.crop } : {})}
+          {...(cropStart ? { start: cropStart } : {})}
+          onChange={(crop) => setEdit({ crop })}
+        />
+      )}
+      <Segmented
+        label={t('rotateLabel')}
+        value={String(edit.rotate ?? 0)}
+        options={ROTATIONS.map((r) => [String(r), r ? `${r}°` : t('rotateNone')] as [string, string])}
+        onChange={(v) => setEdit({ rotate: Number(v) as Rotation })}
+      />
+      <label class="option">
+        <span>{t('flipLabel')}</span>
+        <input class="switch" type="checkbox" role="switch" checked={!!edit.flip} onChange={(e) => setEdit({ flip: e.currentTarget.checked })} />
+      </label>
+    </>
+  );
+}
+
+/** « Son »: speed, background noise taken out, no sound at all (a video). */
+export function SoundEdits({ audio, ...props }: Edits & { audio: boolean }) {
+  const { edit, setEdit } = editor(props);
+  const speedOptions: SelectOption<string>[] = SPEEDS.map((s) => ({ value: String(s), label: `${new Intl.NumberFormat(uiLang()).format(s)}×`, ...(s === 1 ? { detail: t('speedNormal') } : {}) }));
+  return (
+    <>
+      <Select label={t('speedLabel')} value={String(edit.speed ?? 1)} options={speedOptions} onChange={(v) => setEdit({ speed: Number(v) })} />
+      <label class={`option${edit.mute ? ' option--off' : ''}`}>
+        <span>
+          {t('cleanLabel')}
+          <span class="option__detail">{t('cleanDetail')}</span>
+        </span>
+        <input class="switch" type="checkbox" role="switch" disabled={!!edit.mute} checked={!!edit.clean && !edit.mute} onChange={(e) => setEdit({ clean: e.currentTarget.checked })} />
+      </label>
+      {!audio && (
+        <label class="option">
+          <span>{t('muteLabel')}</span>
+          <input class="switch" type="checkbox" role="switch" checked={!!edit.mute} onChange={(e) => setEdit({ mute: e.currentTarget.checked })} />
+        </label>
+      )}
+    </>
+  );
+}
+
+/** « Fichier »: one file per chapter, a smaller file. */
+export function FileEdits({ audio, format, chapters, ...props }: Edits & { audio: boolean; format: string; chapters: number }) {
+  const { set } = editor(props);
+  const f = props.value;
+  const sizeOptions: SelectOption<string>[] = [
+    { value: '', label: t('compressNone') },
+    ...COMPRESS_SIZES.map((mb) => ({ value: String(mb), label: size(mb * 1024 * 1024), detail: t(`compress_${mb}`) })),
+  ];
+  const canCompress = !audio || COMPRESSIBLE_AUDIO.has(format);
+  return (
+    <>
+      {chapters > 0 && (
+        <label class="option">
+          {/* How many chapters is said once, on « Garder les chapitres » just above. */}
+          <span>{t('splitLabel')}</span>
+          <input class="switch" type="checkbox" role="switch" checked={!!f.split} onChange={(e) => set('split', e.currentTarget.checked)} />
+        </label>
+      )}
+      {canCompress && <Select label={t('compressLabel')} value={String(f.compress ?? '')} options={sizeOptions} onChange={(v) => set('compress', v ? Number(v) : undefined)} />}
+    </>
   );
 }
 

@@ -554,7 +554,7 @@ chrome.runtime.onMessage.addListener((msg: ContentToBg | OffscreenToBg | AppRequ
       sendResponse(
         (['video', 'audio'] as const).flatMap((mode) => {
           const j = mine.find((x) => x.mode === mode);
-          return j ? [{ mode, status: j.status, progress: j.progress }] : [];
+          return j ? [{ mode, status: j.status, progress: j.progress, startedAt: j.startedAt }] : [];
         }),
       );
       break;
