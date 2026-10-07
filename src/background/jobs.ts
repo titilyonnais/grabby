@@ -31,6 +31,7 @@ import { listItem, numbered, type YtEntry, type YtList } from '../shared/ytlist'
 import { sponsorParts, withoutSponsors } from '../shared/sponsors';
 import { cleanFinish } from '../shared/finish';
 import { jobThumb } from '../shared/title';
+import { youTubeIdOf } from '../shared/saved';
 
 const STORE_KEY = 'jobs';
 /** A job's download plan, kept apart (it can be big) for resuming. */
@@ -48,6 +49,18 @@ const KEEP_FINISHED_MS = 30 * 60_000;
 const STALL_MS = 120_000;
 /** A recording that receives nothing for this long is wrapped up, or carried on later. */
 const CAPTURE_STALL_MS = 60_000;
+/** A page player asked to record: this long without a single byte, it is not listening. */
+const ARM_SILENCE_MS = 20_000;
+
+/** A YouTube video page (watch or Short), not a live one: its video id is in its address. */
+const isYouTubeVideoPage = (url: string): boolean => {
+  try {
+    const u = new URL(url);
+    return /(^|.)youtube.com$/.test(u.hostname) && (u.pathname === '/watch' || u.pathname.startsWith('/shorts/'));
+  } catch {
+    return false;
+  }
+};
 /** A recording that carries on starts again this far back: what was stored last may be missing. */
 const CAPTURE_OVERLAP = 8;
 /** Hidden players recording at the same time (each plays at high speed). */
@@ -138,6 +151,8 @@ export class JobManager {
   private items = new Map<string, MediaItem>();
   /** Stalled recordings the page was asked to end. */
   private stopAsked = new Set<string>();
+  /** When the page was asked to record (a page player): nothing within 20 s, nobody heard. */
+  private armedAt = new Map<string, number>();
   /** Last byte count of each job and when it was seen, to measure the speed. */
   private rate = new Map<string, { at: number; bytes: number }>();
   /** Plans of jobs that may be resumed (also in storage, for after a restart). */
@@ -397,6 +412,10 @@ export class JobManager {
     if (dup) return dup;
 
     const variant = item.variants.find((v) => v.id === variantId) ?? item.variants[0];
+    // A YouTube video whose player said nothing (its tab was open before Grabby was installed
+    // or updated, so the page hook isn't there): still known by its address, and recorded by
+    // the hidden player like any other — never from a page player nobody listens to.
+    const ytId = item.ytId ?? (item.kind === 'capture' && !item.live && isYouTubeVideoPage(item.pageUrl) ? youTubeIdOf(item.pageUrl) : undefined);
     const job: Job = {
       id: uid(),
       tabId,
@@ -430,12 +449,12 @@ export class JobManager {
         ? { total: partOf(variant?.sizes?.[format as VideoFormat] ?? item.size!, clip, item.duration), totalApprox: true }
         : {}),
       ...(item.kind === 'capture' && item.duration ? { duration: item.duration } : {}),
-      ...(item.ytId ? { ytId: item.ytId, ...(variant?.codecs ? { ytCodecs: variant.codecs } : {}) } : {}),
+      ...(ytId ? { ytId, ...(variant?.codecs ? { ytCodecs: variant.codecs } : {}) } : {}),
       ...(format && (image || (mode === 'audio' ? isAudioFormat(format) : (scale ? SHRUNK_FORMATS : (item.formats ?? VIDEO_FORMATS)).includes(format as VideoFormat)))
         ? { format }
         : {}),
       // A live YouTube video is recorded from the page's own player.
-      ...(item.ytId && !item.live ? { hidden: true } : {}),
+      ...(ytId && !item.live ? { hidden: true } : {}),
       ...(item.fromList ? { entry: item.fromList } : {}),
       ...(item.frameId !== undefined ? { frameId: item.frameId } : {}),
       ...(item.videoIndex !== undefined ? { videoIndex: item.videoIndex } : {}),
@@ -999,6 +1018,7 @@ export class JobManager {
     }
     if (job.videoIndex === undefined) return this.fail(job.id, 'capture_unavailable');
     this.update(job.id, { status: 'capturing', capturePlan: plan, bytesBefore: job.bytes, ...(job.live && !job.liveSince ? { liveSince: Date.now() } : {}) });
+    this.armedAt.set(job.id, Date.now());
     const ok = await this.toContent(job, {
       type: 'capture-start',
       jobId: job.id,
@@ -1368,6 +1388,16 @@ export class JobManager {
           } else void this.assembleCapture(j);
           continue;
         }
+        // A page player asked to record that sent nothing at all (its page script is from
+        // before an update, or the player was replaced): said at once, not a bar left at 0 %.
+        const armed = this.armedAt.get(j.id);
+        if (j.status === 'capturing' && !j.hidden && !j.live && j.bytes === 0 && armed && now - armed > ARM_SILENCE_MS) {
+          this.armedAt.delete(j.id);
+          void this.toContent(j, { type: 'capture-stop', jobId: j.id });
+          this.fail(j.id, 'capture_unavailable');
+          continue;
+        }
+        if (j.status !== 'capturing' || j.bytes > 0) this.armedAt.delete(j.id);
         // Offscreen jobs send a heartbeat even while queued behind ffmpeg: silence means it died.
         if (['downloading', 'processing'].includes(j.status) && j.downloadId === undefined && idle > STALL_MS) {
           // Nothing heard for long: the offscreen document died or the server went quiet.

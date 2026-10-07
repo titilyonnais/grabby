@@ -13,6 +13,54 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 ## [Non publié]
 
+## [2.3.2] — 2026-10-07
+
+Un correctif, sur tes retours de la 2.3.1 : le téléchargement YouTube qui restait bloqué à
+0 %, les options remises directement sous **Télécharger**, l'écart en trop à droite des
+boutons YouTube, et la croix du message en bas de page. Cette fois, la panne a été
+reproduite telle que tu la vivais (Grabby mis à jour pendant qu'un onglet YouTube est
+ouvert), puis vérifiée corrigée sur un vrai téléchargement YouTube, dans Chromium et dans
+Brave.
+
+### Corrigé
+- **Téléchargement YouTube bloqué à 0 %, sur la pilule comme dans le popup.** Après une
+  installation ou une mise à jour, Grabby remettait son script dans les onglets déjà
+  ouverts, mais pas le petit script qui écoute le lecteur de la page : l'ancien restait,
+  relié à l'ancienne version de Grabby qui n'existait plus. Grabby ne savait donc plus que
+  la vidéo était une vidéo YouTube, l'enregistrait par le lecteur de la page… que plus
+  personne n'écoutait : 0 octet, pour toujours, sans message. Désormais :
+  - les deux scripts sont remis ensemble dans les onglets ouverts, et le nouveau prend la
+    place de l'ancien : plus besoin de recharger la page après une mise à jour ;
+  - une vidéo YouTube est reconnue à son adresse (`/watch?v=…`, `/shorts/…`) même si le
+    lecteur n'a rien dit, et passe par le lecteur caché de Grabby comme prévu ;
+  - si un enregistrement par le lecteur de la page ne reçoit toujours rien au bout de 20 s,
+    il s'arrête avec un message clair (« Ce lecteur ne peut pas être enregistré. Recharge
+    la page et réessaie. ») au lieu de rester à 0 % sans fin.
+  - le bouton **Télécharger | ⌄** est remplacé dès que la nouvelle version arrive (avant, l'ancien restait jusqu'à 1,5 s et un clic dessus ne faisait rien).
+- **Le pourcentage disparaissait de la pilule** quand elle était en icône seule (fenêtre
+  étroite) : pendant un téléchargement, le pourcentage reste maintenant affiché, et la
+  pilule revient à l'icône seule une fois fini s'il n'y a pas la place.
+- **Double écart à droite de Télécharger | ⌄.** L'espace était calculé d'après les styles
+  de YouTube, qui ne correspondent pas toujours à ce qui est dessiné (bouton suivant avec
+  sa propre marge intérieure, compte connecté). Il est maintenant mesuré sur les boutons
+  réellement dessinés de chaque côté : 8 px visibles à gauche comme à droite, comme entre
+  les boutons de YouTube. Vérifié à 1400, 1100, 900, 700 et 500 px de large, après un
+  changement de vidéo, avec le bouton suivant caché ou passé à la ligne : l'écart ne bouge
+  plus et la page ne déborde jamais.
+- **Croix pas centrée dans le message en bas de page** (« Téléchargement lancé »). Le
+  message avait 12 px de marge à gauche mais 8 px à droite : la croix était collée au
+  bord. Les deux côtés font maintenant 12 px, la croix est à la même distance du bord que
+  la coche de l'autre côté.
+
+### Modifié
+- **Les options sont de nouveau directement sous Télécharger** : **Extrait**, **Lire
+  l'extrait**, **Retouches** et **Plus tard** sont visibles tout de suite, sans passer par
+  « Plus d'options » (le pli de la 2.3.0 est retiré). Elles gardent les colonnes égales et
+  la pastille du nombre de retouches de la 2.3.1.
+- **Directs** : le bouton **Retouches** revient sous la carte d'un direct.
+- Pendant un téléchargement, la ligne d'infos (taille reçue / taille totale, vitesse,
+  temps restant) s'affiche dès les premiers octets reçus, y compris pour YouTube.
+
 ## [2.3.1] — 2026-10-06
 
 Un correctif : la page YouTube ne défile plus sans fin vers la droite, les deux messages
@@ -1418,7 +1466,8 @@ Première version.
 - Capture YouTube expérimentale.
 - Interface en français et en anglais, thème clair et sombre.
 
-[Non publié]: https://github.com/titilyonnais/grabby/compare/v2.3.1...HEAD
+[Non publié]: https://github.com/titilyonnais/grabby/compare/v2.3.2...HEAD
+[2.3.2]: https://github.com/titilyonnais/grabby/compare/v2.3.1...v2.3.2
 [2.3.1]: https://github.com/titilyonnais/grabby/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/titilyonnais/grabby/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/titilyonnais/grabby/compare/v2.1.0...v2.2.0

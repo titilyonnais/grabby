@@ -76,7 +76,8 @@ svg { position: relative; display: block; width: 24px; height: 24px; flex: none;
 .fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: inherit; background: var(--line); pointer-events: none; transition: width .5s cubic-bezier(.2,.7,.2,1); }
 .busy svg { animation: pulse 1.4s ease-in-out infinite; }
 .done svg, .failed svg { animation: pop .38s cubic-bezier(.34,1.56,.64,1); }
-.compact .label { display: none; }
+/* Too narrow: the icon only — but never while it counts (the percentage always shows). */
+.compact button:not(.busy):not(.done):not(.failed) .label { display: none; }
 .tip { position: absolute; left: 50%; top: calc(100% + 8px); z-index: 2; transform: translate(-50%, -4px); padding: 8px; border-radius: 4px;
   background: rgba(97,97,97,.92); color: #fff; font: 400 12px/18px Roboto, Arial, sans-serif; white-space: nowrap; pointer-events: none;
   opacity: 0; transition: opacity .1s ease, transform .1s ease; }
@@ -208,11 +209,16 @@ function ytRowIn(row: Element, video: () => HTMLVideoElement | null): YtRow {
     colors.textContent = `:host { ${ytColors(row)} }`;
   };
   /** What « Télécharger » shows: idle, a download's progress, then « Enregistré » or « Échec ». */
+  // What it says changes its width: whether the word fits is decided again (set further down).
+  let refit = () => {};
   const set = (state: '' | 'busy' | 'done' | 'failed', icon: YtIcon, words: string, progress = 0) => {
+    const same = main.b.className === state && label.textContent === words;
     main.b.className = state;
     label.textContent = words;
     fillBar.style.width = state === 'busy' ? `${Math.round(progress * 100)}%` : '0';
+    if (same) return;
     main.b.replaceChildren(light(), fillBar, ytSvg(icon), label);
+    refit();
   };
   const idle = () => set('', YT_ICONS.down, say('overlayVideo'));
   idle();
@@ -359,6 +365,7 @@ function ytRowIn(row: Element, video: () => HTMLVideoElement | null): YtRow {
     until = 0;
     idle();
     paint();
+    refit();
     void poll();
   };
   document.addEventListener('pointerdown', onDown, true);
@@ -381,21 +388,37 @@ function ytRowIn(row: Element, video: () => HTMLVideoElement | null): YtRow {
    * on the next button, a gap on the row): the same space on both sides as between the thumbs
    * and the button that follows them.
    */
-  // Read only from YouTube's own styles (the row's gap, the next button's margin), never from
-  // where Grabby ends up: what is written never changes what is read, so it can't grow, and
-  // each side stays between 0 and 8 px. Nothing is written when nothing changes.
   const WANT = 8;
   const margin = (side: 'marginLeft' | 'marginRight', px: number) => {
-    const v = `${Math.min(WANT, Math.max(0, Math.round(px)))}px`;
+    const v = `${Math.min(WANT, Math.max(-WANT, Math.round(px)))}px`;
     if (el.style[side] !== v) el.style[side] = v;
   };
-  const px = (v: string) => parseFloat(v) || 0;
+  const own = (side: 'marginLeft' | 'marginRight') => parseFloat(el.style[side]) || 0;
+  // What is drawn of a neighbour: its button on Grabby's side when it has some (a wrapper may
+  // be wider than what it shows; the thumbs are two buttons).
+  const drawn = (n: Element, side: 'first' | 'last') => {
+    const all = n.matches('button') ? [n] : Array.from(n.querySelectorAll('button')).filter((b) => b.getBoundingClientRect().width > 0);
+    const b = side === 'first' ? all[0] : all[all.length - 1];
+    return (b ?? n).getBoundingClientRect();
+  };
+  /*
+   * The space YouTube itself leaves on each side of Grabby (whatever gives it: a margin on
+   * the next button or inside it, a gap on the row), measured between what is drawn, Grabby's
+   * own margin taken out — so what Grabby writes never changes what it reads. Each side is
+   * then made 8 px, like between YouTube's buttons, with a margin between −8 and 8 px.
+   */
   const space = () => {
-    const gap = px(getComputedStyle(row).columnGap);
     let next = el.nextElementSibling;
     while (next && getComputedStyle(next).display === 'none') next = next.nextElementSibling;
-    margin('marginLeft', WANT - gap - (thumbs ? px(getComputedStyle(thumbs).marginRight) : 0));
-    margin('marginRight', next ? WANT - gap - px(getComputedStyle(next).marginLeft) : 0);
+    const me = el.getBoundingClientRect();
+    if (thumbs) {
+      const left = drawn(thumbs, 'last');
+      margin('marginLeft', WANT - (me.left - own('marginLeft') - left.right));
+    } else margin('marginLeft', WANT);
+    const right = next ? drawn(next, 'first') : undefined;
+    // Put on the next line by YouTube (or nothing after): no space to make on this side.
+    if (!right || Math.abs(right.top + right.height / 2 - (me.top + me.height / 2)) > me.height / 2) margin('marginRight', 0);
+    else margin('marginRight', WANT - (right.left - me.right - own('marginRight')));
   };
   // Too narrow for the word: the icon only, like YouTube does with its own buttons. Too narrow
   // means the row spills out of itself, or pushes YouTube's « ⋯ » out of its menu, or out of the
@@ -420,6 +443,7 @@ function ytRowIn(row: Element, video: () => HTMLVideoElement | null): YtRow {
     if (compact) seg.classList.remove('compact');
     if (spill() > 1) seg.classList.add('compact');
   };
+  refit = fit;
   const sizes = new ResizeObserver(fit);
   sizes.observe(row);
   if (menuBox !== row) sizes.observe(menuBox);
@@ -488,7 +512,11 @@ export function startOverlay() {
   safely(() => {
     void chrome.storage.local
       .get('settings')
-      .then((r) => apply(r.settings as { overlayButton?: boolean } | undefined))
+      .then((r) => {
+        apply(r.settings as { overlayButton?: boolean } | undefined);
+        // At once, not at the next check: after an update the old pill no longer answers.
+        ytCheck();
+      })
       .catch(() => {});
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local' && changes.settings && alive()) apply(changes.settings.newValue as { overlayButton?: boolean } | undefined);

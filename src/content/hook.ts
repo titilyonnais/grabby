@@ -30,8 +30,14 @@ type Down =
 const LOG_BUDGET = 48 * 1024 * 1024;
 
 (() => {
-  const w = window as Window & { __grabbyHook?: boolean };
-  if (w.__grabbyHook) return;
+  /*
+   * One hook per page. Put back by Grabby into an open page after an update, it takes over:
+   * the hook already there is bound to the page script of the old version, which is gone.
+   */
+  const w = window as Window & { __grabbyHook?: boolean; __grabbyHookAgain?: boolean };
+  const again = w.__grabbyHookAgain === true;
+  delete w.__grabbyHookAgain;
+  if (w.__grabbyHook && !again) return;
   w.__grabbyHook = true;
 
   /*

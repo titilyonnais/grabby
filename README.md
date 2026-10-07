@@ -17,26 +17,24 @@
 
 ---
 
-<!-- release:2.3.1 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
-## Nouveautés de la version 2.3.1
+<!-- release:2.3.2 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
+## Nouveautés de la version 2.3.2
 
-- **Corrigé, le défilement horizontal sans fin sur YouTube** : l'espace à droite de
-  **Télécharger | ⌄** pouvait grandir sans arrêt et pousser la page vers la droite. Il est
-  maintenant fixe (8 px au plus de chaque côté), quelle que soit la largeur de la fenêtre.
-  Sur une fenêtre étroite, la pilule passe à l'icône seule au lieu de faire déborder la page.
-- **Corrigé, les deux messages dans les erreurs de l'extension** :
-  - « The feature flag gating model execution was disabled » : c'est Chrome qui l'écrit
-    dès qu'on lui demande si son IA intégrée est là alors qu'il l'a coupée. Grabby ne lui
-    demande plus rien sauf si tu actives le nouveau réglage **IA de Chrome** (désactivé par
-    défaut) ;
-  - « No language specified - defaulting to English » : avec **Détecter**, Whisper prenait
-    en fait l'anglais pour toute vidéo. Grabby détecte maintenant vraiment la langue parlée
-    avant de transcrire (une vidéo en français est transcrite en français).
-- **Plus d'options** : **Extrait**, **Retouches** et **Plus tard** se partagent toute la
-  largeur, en colonnes égales. Le nombre de retouches s'affiche dans une pastille à la
-  place de l'icône : plus rien ne bouge ni ne passe à la ligne.
-- **Retiré** de la carte : « Grabby télécharge cette vidéo en arrière-plan… ».
-- **Réglages** : la phrase sur la confidentialité est centrée, la version juste en dessous.
+- **Corrigé, le téléchargement YouTube bloqué à 0 %** : après une mise à jour de Grabby,
+  les onglets YouTube déjà ouverts gardaient un ancien script qui n'écoutait plus personne,
+  et l'enregistrement restait à 0 % sans fin. Grabby remet maintenant tous ses scripts dans
+  les onglets ouverts (plus besoin de recharger la page), reconnaît une vidéo YouTube à son
+  adresse, et s'arrête avec un message clair au lieu de rester bloqué si rien n'arrive.
+- **Les options sont de nouveau directement sous Télécharger** : **Extrait**, **Lire
+  l'extrait**, **Retouches** et **Plus tard**, sans passer par « Plus d'options ».
+- **Corrigé, le double écart à droite de Télécharger | ⌄** : l'espace est mesuré sur les
+  boutons réellement dessinés, 8 px de chaque côté comme entre les boutons de YouTube.
+- **Corrigé, la croix du message en bas de page** : elle est à la même distance du bord
+  que la coche de l'autre côté.
+- La pilule garde son **pourcentage** pendant un téléchargement, même en icône seule.
+
+**Rappel de la 2.3.1** : plus de défilement sans fin sur YouTube, plus aucun message dans
+les erreurs de l'extension, détection de la langue parlée avant la transcription.
 
 **Rappel de la 2.3.0** : boutons YouTube identiques au pixel près, plus aucune bulle sur
 les vidéos ni les miniatures, cartes allégées avec **Plus d'options**.

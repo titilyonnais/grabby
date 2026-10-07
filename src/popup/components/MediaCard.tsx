@@ -200,8 +200,6 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
   const [previewing, setPreviewing] = useState(false);
   // « Plus tard »: kept aside (the button says so).
   const [kept, setKept] = useState(false);
-  // « Plus d'options »: folded, the card shows only what most downloads need.
-  const [more, setMore] = useState(false);
   const image = isImageFormat(format);
   const whole = (c: Clip) => !!item.duration && c.start <= 0 && c.end >= Math.floor(item.duration);
   const chosen = trimming && parts ? parts.filter((c) => !whole(c) || parts.length > 1) : [];
@@ -302,14 +300,8 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
   // One stays: the sound of the video can't be taken away here.
   const toggleAudio = (id: string) => setAudioIds(audioSel.includes(id) ? (audioSel.length > 1 ? audioSel.filter((x) => x !== id) : audioSel) : [...audioSel, id]);
   const chaptersOffered = !!item.chapters?.length && !image && CHAPTER_FORMATS.has(format);
-  // What « Plus d'options » holds that is on, said on its line.
+  // The options of a video (not of a picture), shown in the card under the format.
   const hasMore = !image;
-  const extras = [
-    ...(audiosOffered && audioSel.length > 1 ? [t('moreAudio', String(audioSel.length))] : []),
-    ...(subsOffered && subsIds.length ? [t('moreSubs')] : []),
-    ...(chosen.length ? [t('moreCut')] : []),
-    ...(finishCount(finish) ? [t('moreFinish', String(finishCount(finish)))] : []),
-  ];
   // What a JPEG can be: a sheet needs the length, a thumbnail a picture of the video.
   const stills: ['frame' | 'sheet' | 'thumb', string][] = [
     ['frame', t('stillFrame')],
@@ -532,18 +524,16 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
                   />
                 </div>
               )}
-              {/* A live: its only option, the retouches, behind « Plus d'options » too. */}
+              {/* A live: its only option, the retouches. */}
               {!showJob && (
-                <button class={`more-toggle${more ? ' more-toggle--open' : ''}`} aria-expanded={more} onClick={() => setMore((v) => !v)}>
-                  <Icon name="settings" size={16} />
-                  <span class="more-toggle__text">
-                    <span class="more-toggle__title">{t('moreOptions')}</span>
-                    {extras.length > 0 && <span class="more-toggle__on">{extras.join(', ')}</span>}
-                  </span>
-                  <Icon name="chevron" size={16} />
-                </button>
+                <div class="card__actions">
+                  <button class="trim-toggle" aria-expanded={finishing} onClick={() => setFinishing((v) => !v)}>
+                    <Icon name={finishing ? 'close' : 'wand'} size={16} />
+                    <span class="trim-toggle__label">{finishing ? t('finishClose') : t('finishOpen')}</span>
+                  </button>
+                </div>
               )}
-              {!showJob && more && (
+              {!showJob && finishing && (
                 <FinishPanel
                   value={finish}
                   onChange={setFinish}
@@ -598,21 +588,8 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
               {!showJob && image && format !== 'jpg' && clippable && (
                 <Trim key="animation" duration={item.duration!} parts={parts} onChange={setParts} single={{ max: MAX_ANIMATION }} />
               )}
-              {/*
-               * Everything else waits behind « Plus d'options »: one line that says what is on
-               * (sous-titres, extrait, retouches…), so nothing chosen goes unnoticed.
-               */}
+              {/* Its options, all in view: sound, subtitles, chapters, extract, retouches, later. */}
               {!showJob && hasMore && (
-                <button class={`more-toggle${more ? ' more-toggle--open' : ''}`} aria-expanded={more} onClick={() => setMore((v) => !v)}>
-                  <Icon name="settings" size={16} />
-                  <span class="more-toggle__text">
-                    <span class="more-toggle__title">{t('moreOptions')}</span>
-                    {extras.length > 0 && <span class="more-toggle__on">{extras.join(', ')}</span>}
-                  </span>
-                  <Icon name="chevron" size={16} />
-                </button>
-              )}
-              {!showJob && more && (
                 <div class="more">
                   {audiosOffered && <Select label={t('audioLabel')} value="" values={audioSel} summary={audioSummary} options={audioOptions} onChange={toggleAudio} />}
                   {subsOffered && (

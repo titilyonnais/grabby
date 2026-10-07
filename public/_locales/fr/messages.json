@@ -751,11 +751,6 @@
   "switchToLight": {"message": "Passer au thème clair"},
   "aiSummarySimple": {"message": "Résumé simple"},
   "aiSummarySimpleFor": {"message": "Résumé simple (Chrome à télécharger)"},
-  "moreOptions": {"message": "Plus d'options"},
-  "moreAudio": {"message": "$P1$ pistes audio", "placeholders": {"p1": {"content": "$1"}}},
-  "moreSubs": {"message": "sous-titres"},
-  "moreCut": {"message": "extrait"},
-  "moreFinish": {"message": "$P1$ retouches", "placeholders": {"p1": {"content": "$1"}}},
   "set_chrome_ai": {"message": "IA de Chrome"},
   "set_chrome_ai_hint": {"message": "Désactivée par défaut. Activée, Grabby essaie d'abord le traducteur et le résumeur intégrés à Chrome, s'ils sont prêts."},
   "aiChromeOff": {"message": "Chrome a coupé son IA dans ce navigateur : Grabby utilise ses propres modèles."}

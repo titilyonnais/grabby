@@ -71,12 +71,10 @@ async function openPopup(context: BrowserContext, extId: string, tabId: number):
 }
 
 /** Opens a drop-down list of the card ("Quality", "Format") and picks an option. */
-/** Unfolds the first card's « More options », where subtitles, sound tracks, clips and retouches wait. */
+/** The first card's options (subtitles, sound tracks, clips, retouches): in view, no fold. */
 async function more(popup: Page) {
-  const toggle = popup.locator('.more-toggle').first();
-  await toggle.waitFor();
-  if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await popup.locator('.card .more').first().waitFor();
+  await expect(popup.locator('.more-toggle')).toHaveCount(0);
 }
 
 async function pick(popup: Page, list: string, option: string) {
@@ -1052,8 +1050,7 @@ test('several sound languages: each one a track of the video, with its language'
   const { tabId } = await openFixture(context, sw, 'hls-multi.html');
   await expect.poll(() => badge(sw, tabId)).toBe('1');
   const popup = await openPopup(context, extId, tabId);
-  // Folded, « More options » says nothing is on; unfolded, the default track.
-  await expect(popup.locator('.more-toggle__on')).toHaveCount(0);
+  // The options are in view: the default track.
   await more(popup);
   await expect(popup.getByRole('button', { name: /^Audio language\s*English/ })).toBeVisible();
   await tick(popup, 'Audio language', ['Français']);
@@ -1949,4 +1946,40 @@ test('no error anywhere: every screen of the popup, the settings, the full page 
   await side.goto(`chrome-extension://${extId}/sidepanel.html?tab=${tabId}`);
   await side.waitForTimeout(1000);
   expect(errors).toEqual([]);
+});
+
+test('2.3.2: Grabby updated while a YouTube video is open: its button still downloads it, never a bar stuck at 0 %', async ({ context, sw, extId }) => {
+  // A page shaped like YouTube's, opened before the update (its page hook is the old one's).
+  await context.route('https://www.youtube.com/watch?v=abcdefghijk', (r) =>
+    r.fulfill({
+      contentType: 'text/html',
+      body: `<!doctype html><html><head><meta charset="utf-8"><title>Une vidéo - YouTube</title></head><body>
+<video src="${origin}/media/sample.mp4" muted style="width:640px;height:360px"></video>
+<ytd-watch-metadata><div id="top-level-buttons-computed" style="display:flex">
+<segmented-like-dislike-button-view-model><button>154</button></segmented-like-dislike-button-view-model><button id="share">Partager</button>
+</div></ytd-watch-metadata></body></html>`,
+    }),
+  );
+  await context.route(/^https:\/\/(www\.youtube\.com\/(?!watch\?v=abcdefghijk)|.*\.(googlevideo|ytimg|google)\.com)/, (r) => r.abort());
+  const page = await context.newPage();
+  await page.goto('https://www.youtube.com/watch?v=abcdefghijk');
+  await expect(page.locator('grabby-yt')).toHaveCount(1, { timeout: 10_000 });
+  // The update: Grabby reloaded, the page left open.
+  const ext = await context.newPage();
+  await ext.goto('chrome://extensions');
+  await ext.evaluate(() => new Promise((ok) => chrome.developerPrivate.updateProfileConfiguration({ inDeveloperMode: true }, () => ok(null))));
+  const again = context.waitForEvent('serviceworker');
+  await ext.evaluate((id) => new Promise((ok) => chrome.developerPrivate.reload(id, { failQuietly: true }, () => ok(null))), extId);
+  const fresh = await again;
+  expect(fresh).not.toBe(sw);
+  // Its page scripts are put back: one row of buttons, the hook taking over from the old one.
+  await expect.poll(() => page.evaluate(() => document.querySelectorAll('grabby-yt').length), { timeout: 10_000 }).toBe(1);
+  const tabId = await fresh.evaluate(async () => (await chrome.tabs.query({ url: 'https://www.youtube.com/*' }))[0]?.id ?? -1);
+  // Its video found again by the new page script.
+  await expect.poll(() => badge(fresh, tabId), { timeout: 10_000 }).toBe('1');
+  const box = (await page.locator('grabby-yt').boundingBox())!;
+  await page.mouse.click(box.x + 30, box.y + box.height / 2);
+  // Known as a YouTube video by its address: recorded by the hidden player.
+  const job = () => fresh.evaluate(async () => ((await chrome.storage.local.get('jobs')).jobs as { hidden?: boolean; ytId?: string }[] | undefined)?.[0]);
+  await expect.poll(job, { timeout: 10_000 }).toMatchObject({ hidden: true, ytId: 'abcdefghijk' });
 });

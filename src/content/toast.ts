@@ -13,7 +13,7 @@ const CSS = `
   position: fixed; right: 20px; bottom: 20px; z-index: 2147483647;
   display: flex; align-items: center; gap: 12px;
   width: min(360px, calc(100vw - 40px)); box-sizing: border-box;
-  padding: 12px 8px 12px 12px; border-radius: 16px;
+  padding: 12px; border-radius: 16px;
   background: #ffffff; color: #0f0f0f;
   box-shadow: 0 12px 32px rgba(0,0,0,.2), 0 0 0 1px rgba(0,0,0,.06);
   font: 400 14px/20px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;

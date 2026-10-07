@@ -102,12 +102,23 @@ async function keepForLater(tabId: number, tab?: chrome.tabs.Tab, src?: string) 
   await toastIn(tabId, true, 'laterAdded', title);
 }
 
-/** Grabby's page script, back into every open web page (the player hook needs a reload). */
+/**
+ * Grabby's page scripts, back into every open web page after an update: the player hook
+ * first (marked as put back, so it takes over from the old version's), then the page script
+ * that talks to it. Without the hook, a YouTube page would not say which video it shows.
+ */
 async function reinject() {
   const tabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] }).catch(() => [] as chrome.tabs.Tab[]);
   for (const tab of tabs) {
     if (tab.id === undefined || tab.discarded) continue;
-    void chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, files: ['scanner.js'] }).catch(() => {});
+    const target = { tabId: tab.id, allFrames: true };
+    void (async () => {
+      await chrome.scripting
+        .executeScript({ target, world: 'MAIN', func: () => void ((window as { __grabbyHookAgain?: boolean }).__grabbyHookAgain = true) })
+        .then(() => chrome.scripting.executeScript({ target, world: 'MAIN', files: ['hook.js'] }))
+        .catch(() => {});
+      await chrome.scripting.executeScript({ target, files: ['scanner.js'] }).catch(() => {});
+    })();
   }
 }
 
