@@ -38,8 +38,26 @@ function biggestVideo(): HTMLVideoElement | null {
   return seen[0]?.v ?? null;
 }
 
-/** « Photo »: the picture on screen, at the video's own size when the site allows it. */
-async function shoot(v: HTMLVideoElement): Promise<unknown> {
+/**
+ * The video a photo is taken of: the biggest one on screen, else the page's player even out of
+ * view (comments scrolled to, the mini player) or not started yet (null: no video at all).
+ */
+function photoVideo(): HTMLVideoElement | null {
+  return (
+    biggestVideo() ??
+    document.querySelector<HTMLVideoElement>('#movie_player video.html5-main-video') ??
+    [...document.querySelectorAll('video')].sort((a, b) => b.videoWidth * b.videoHeight - a.videoWidth * a.videoHeight)[0] ??
+    null
+  );
+}
+
+/**
+ * « Photo »: the picture on screen, at the video's own size when the site allows it. Always
+ * answered by a message, « Photo enregistrée » or why not: never a click that does nothing.
+ */
+async function shoot(v: HTMLVideoElement | null): Promise<unknown> {
+  // No video, or no picture in it yet (not started): said so.
+  if (!v || v.readyState < 2 || !v.videoWidth) return send({ type: 'snap', noFrame: true });
   const still = stillOf(v);
   if (still) return send({ type: 'snap', dataUrl: still, time: v.currentTime });
   const r = v.getBoundingClientRect();
@@ -233,13 +251,17 @@ function ytRowIn(row: Element, video: () => HTMLVideoElement | null): YtRow {
     const list = (await message<PageJob[]>({ type: 'page-jobs' } satisfies ContentToBg, [])) ?? [];
     const now = Date.now();
     if (now < until) return;
-    const job = list.find((j) => ACTIVE.includes(j.status)) ?? list.find((j) => j.status === 'done' || j.status === 'error');
+    const job = list.find((j) => ACTIVE.includes(j.status)) ?? list.find((j) => j.status === 'done' || j.status === 'error' || j.status === 'canceled');
     let again = false;
     if (job && ACTIVE.includes(job.status)) {
       seen = true;
       again = true;
       const words = job.status === 'queued' ? say('ytQueued') : job.status === 'paused' ? say('ytPaused') : `${Math.round(job.progress * 100)} %`;
       set('busy', job.mode === 'audio' ? YT_ICONS.audio : YT_ICONS.down, words, job.progress);
+    } else if (job?.status === 'canceled' && seen) {
+      // Cancelled (here, in the popup or in the full page): back to « Télécharger » at once.
+      seen = false;
+      idle();
     } else if (job && seen) {
       seen = false;
       until = now + 3000;
@@ -248,7 +270,12 @@ function ytRowIn(row: Element, video: () => HTMLVideoElement | null): YtRow {
       timer = setTimeout(() => (idle(), void poll()), 3000);
       return;
     } else if (now - asked < 6000) again = true;
-    else if (!seen) idle();
+    else {
+      // Nothing running any more, whatever became of it (cancelled, then cleared away): idle,
+      // never a pill stuck on its last figure.
+      seen = false;
+      idle();
+    }
     if (again) timer = setTimeout(() => void poll(), 700);
   };
   const start = (mode: 'video' | 'audio', variantId?: string) => {
@@ -320,10 +347,7 @@ function ytRowIn(row: Element, video: () => HTMLVideoElement | null): YtRow {
     }
     box.append(
       item(YT_ICONS.audio, say('overlayAudio'), media ? media.audioFormat.toUpperCase() : '', () => start('audio')),
-      item(YT_ICONS.photo, say('overlayPhoto'), '', () => {
-        const v = video();
-        if (v) void shoot(v);
-      }),
+      item(YT_ICONS.photo, say('overlayPhoto'), '', () => void shoot(video())),
       item(YT_ICONS.later, say('overlayLater'), '', () => void send({ type: 'later' })),
       divider(),
       item(YT_ICONS.open, say('ytOpenGrabby'), '', () => void send({ type: 'open-grabby' })),
@@ -477,8 +501,7 @@ export function startOverlay() {
     () =>
       chrome.runtime.onMessage.addListener((msg: { type?: string }) => {
         if (msg?.type !== 'photo' || !alive()) return;
-        const v = biggestVideo();
-        if (v) void shoot(v);
+        void shoot(photoVideo());
       }),
     undefined,
   );
@@ -495,7 +518,7 @@ export function startOverlay() {
     if (!row) return;
     if (ytRow?.el.isConnected && row.contains(ytRow.el)) return;
     drop();
-    ytRow = ytRowIn(row, biggestVideo);
+    ytRow = ytRowIn(row, photoVideo);
   };
   const ytTimer = window === window.top ? setInterval(ytCheck, 1500) : undefined;
   // Grabby updated while the page stays open: this one leaves the page to the new one.

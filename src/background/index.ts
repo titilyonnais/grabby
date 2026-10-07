@@ -5,6 +5,7 @@ import { getSettings, setSettings } from '../shared/settings';
 import { cleanTitle } from '../shared/title';
 import { hostOf } from '../parsers/url';
 import { forgetBadge, paintTab, showJobs, updateBadge } from './badge';
+import { createMenus } from './menus';
 import { startDetector } from './detector';
 import { resetHeaderRules } from './headers';
 import { allThumbs, allTranscripts, clearHistory, saveEditedTranscript, forgetTexts, getHistory, historyWithPresence, markHistory, removeHistory, restoreHistory } from './history';
@@ -52,18 +53,7 @@ chrome.runtime.onInstalled.addListener(({ reason }) => {
   if (reason === 'install' || reason === 'update') void reinject();
   void resetHeaderRules();
   void getSettings().then((s) => watchUpdates(s.updateCheck));
-  // Right-click on a video, on a link, or anywhere on a page (whose player may hide its own menu).
-  chrome.contextMenus.removeAll(() => {
-    const item = (id: string, contexts: NonNullable<chrome.contextMenus.CreateProperties['contexts']>) => chrome.contextMenus.create({ id, title: chrome.i18n.getMessage(`menu_${id}`), contexts });
-    item('media', ['video', 'audio']);
-    item('media_audio', ['video', 'audio']);
-    item('link', ['link']);
-    item('link_audio', ['link']);
-    item('link_later', ['link']);
-    item('page', ['page', 'frame', 'image']);
-    item('page_later', ['page', 'frame', 'image']);
-    item('images', ['page', 'frame', 'image']);
-  });
+  createMenus();
 });
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   const id = String(info.menuItemId);
@@ -545,8 +535,8 @@ chrome.runtime.onMessage.addListener((msg: ContentToBg | OffscreenToBg | AppRequ
     case 'snap':
       void (async () => {
         const item = pickFor(visibleItems(await registry.get(tabId)));
-        const ok = await saveSnapshot(sender.tab!, msg, item);
-        await toastIn(tabId, ok, ok ? 'photoSaved' : 'photoFailed', ok ? (item?.title ?? sender.tab?.title ?? '') : '');
+        const ok = !msg.noFrame && (await saveSnapshot(sender.tab!, msg, item));
+        await toastIn(tabId, ok, ok ? 'photoSaved' : msg.noFrame ? 'photoNoFrame' : 'photoFailed', ok ? (item?.title ?? sender.tab?.title ?? '') : '');
         sendResponse(ok);
       })();
       return true;

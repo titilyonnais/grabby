@@ -519,6 +519,7 @@
   "photoName": {"message": "photo"},
   "photoSaved": {"message": "Photo enregistrée"},
   "photoFailed": {"message": "Photo impossible sur cette page"},
+  "photoNoFrame": {"message": "Pas encore d'image : lance la vidéo puis réessaie"},
   "laterAdded": {"message": "Ajouté à Plus tard"},
   "menu_media": {"message": "Télécharger cette vidéo"},
   "menu_media_audio": {"message": "Télécharger seulement le son"},

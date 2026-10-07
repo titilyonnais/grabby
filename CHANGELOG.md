@@ -13,6 +13,46 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 ## [Non publié]
 
+## [2.3.3] — 2026-10-07
+
+Un correctif, sur tes retours de la 2.3.2 : le message « All menu items except for
+separators must have a title » juste après l'installation, la pilule YouTube figée sur
+« 100 % » après une annulation, et « Photo de l'image affichée » qui ne faisait rien.
+
+### Corrigé
+- **« All menu items except for separators must have a title »** (Contexte : Inconnu). Au
+  démarrage, Grabby crée les entrées de son menu du clic droit (« Télécharger cette
+  vidéo », « Télécharger seulement le son », « Mettre ce lien de côté pour plus tard »…)
+  avec les textes de l'extension. Pendant que Grabby redémarre juste après une
+  installation ou une mise à jour, Chrome peut répondre par un texte vide : il refuse alors
+  l'entrée et écrit ce message. Le menu n'était pas en cause dans le zip (tous les textes y
+  sont, en français et en anglais) ; impossible de le reproduire dans Chrome ou Brave en
+  installation neuve ni en mise à jour 2.3.1 → 2.3.2, mais le cas restait possible.
+  Désormais :
+  - si Chrome répond par un texte vide, Grabby prend les mêmes mots écrits dans son code
+    (en français si le navigateur est en français, en anglais sinon) : chaque entrée a
+    toujours son titre et le menu du clic droit est complet ;
+  - chaque réponse de Chrome à la création du menu est lue : plus rien ne peut arriver
+    dans la liste d'erreurs de l'extension à cet endroit.
+  Un test vérifie que ces mots restent identiques aux traductions de l'extension.
+- **Pilule figée après une annulation** (par exemple « ♫ 100 % » sous la vidéo). La pilule
+  sous le lecteur YouTube ne connaissait que trois fins : enregistré, échec, ou plus rien.
+  Un téléchargement annulé (depuis le popup, la page complète ou le panneau latéral) ne
+  rentrait dans aucune : elle gardait son dernier chiffre et arrêtait de se mettre à jour.
+  Elle revient maintenant à **Télécharger** dès que le téléchargement est annulé, et dans
+  tous les cas où plus rien ne tourne. Vérifié dans Brave sur YouTube : « Son seul » lancé,
+  annulé à 19 %, la pilule affiche « Télécharger » moins d'une seconde après.
+- **« Photo de l'image affichée » ne faisait rien.** Grabby cherchait la vidéo uniquement si
+  elle était visible à l'écran et avait déjà une image : la page défilée jusqu'aux
+  commentaires, le mini-lecteur, une vidéo pas encore lancée… et le clic ne faisait rien,
+  sans un mot. Désormais :
+  - la photo est prise sur le lecteur de YouTube même hors de l'écran ;
+  - chaque clic a sa réponse : « Photo enregistrée », ou « Pas encore d'image : lance la
+    vidéo puis réessaie », ou « Photo impossible sur cette page » ;
+  - pareil pour le raccourci clavier de la photo.
+  Vérifié sur YouTube dans Chromium et dans Brave (photo 1280 × 720 enregistrée, message
+  affiché en 0,2 s) ; un test vérifie qu'un clic sans image affiche bien un message.
+
 ## [2.3.2] — 2026-10-07
 
 Un correctif, sur tes retours de la 2.3.1 : le téléchargement YouTube qui restait bloqué à
@@ -1466,7 +1506,8 @@ Première version.
 - Capture YouTube expérimentale.
 - Interface en français et en anglais, thème clair et sombre.
 
-[Non publié]: https://github.com/titilyonnais/grabby/compare/v2.3.2...HEAD
+[Non publié]: https://github.com/titilyonnais/grabby/compare/v2.3.3...HEAD
+[2.3.3]: https://github.com/titilyonnais/grabby/compare/v2.3.2...v2.3.3
 [2.3.2]: https://github.com/titilyonnais/grabby/compare/v2.3.1...v2.3.2
 [2.3.1]: https://github.com/titilyonnais/grabby/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/titilyonnais/grabby/compare/v2.2.0...v2.3.0

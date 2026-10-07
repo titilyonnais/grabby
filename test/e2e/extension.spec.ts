@@ -1845,6 +1845,9 @@ test('2.0: on YouTube, Grabby sits right after the thumbs, as YouTube buttons; n
       const cs = getComputedStyle(g);
       return { left: cs.marginLeft, right: cs.marginRight, page: document.documentElement.scrollWidth - document.documentElement.clientWidth };
     });
+  // The sound asked for above has ended (« Échec » for 3 s, wider): the pill back at rest
+  // before measuring, or its own width moves « Partager » to the next line and back.
+  await expect.poll(async () => Math.round((await page.locator('grabby-yt').boundingBox())!.width), { timeout: 8_000 }).toBe(Math.round(box.width));
   expect(await spacing()).toEqual({ left: '8px', right: '8px', page: 0 });
   await page.evaluate(() => {
     document.getElementById('share')!.style.display = 'none';
@@ -1984,4 +1987,41 @@ test('2.3.2: Grabby updated while a YouTube video is open: its button still down
   // Known as a YouTube video by its address: recorded by the hidden player.
   const job = () => fresh.evaluate(async () => ((await chrome.storage.local.get('jobs')).jobs as { hidden?: boolean; ytId?: string }[] | undefined)?.[0]);
   await expect.poll(job, { timeout: 10_000 }).toMatchObject({ hidden: true, ytId: 'abcdefghijk' });
+});
+
+test('2.3.3: on YouTube, the pill comes back once « Son seul » has ended; « Photo » always answers', async ({ context, sw }) => {
+  await context.route('https://www.youtube.com/watch?v=abcdefghijk', (r) =>
+    r.fulfill({
+      contentType: 'text/html',
+      body: `<!doctype html><html><head><meta charset="utf-8"><title>Une vidéo - YouTube</title></head><body>
+<video src="${origin}/media/sample.mp4" muted style="width:640px;height:360px"></video>
+<ytd-watch-metadata><div id="top-level-buttons-computed" style="display:flex">
+<segmented-like-dislike-button-view-model><button>154</button></segmented-like-dislike-button-view-model><button id="share">Partager</button>
+</div></ytd-watch-metadata></body></html>`,
+    }),
+  );
+  await context.route(/^https:\/\/(www\.youtube\.com\/(?!watch\?v=abcdefghijk)|.*\.(googlevideo|ytimg|google)\.com)/, (r) => r.abort());
+  const page = await context.newPage();
+  await page.goto('https://www.youtube.com/watch?v=abcdefghijk');
+  await expect(page.locator('grabby-yt')).toHaveCount(1, { timeout: 10_000 });
+  const tabId = await sw.evaluate(async () => (await chrome.tabs.query({ url: 'https://www.youtube.com/*' }))[0]?.id ?? -1);
+  await expect.poll(() => badge(sw, tabId)).toBe('1');
+  const width = async () => Math.round((await page.locator('grabby-yt').boundingBox())!.width);
+  const idle = await width();
+  const box = (await page.locator('grabby-yt').boundingBox())!;
+  // The menu, its first row (this page has no qualities): the sound alone. This fake video
+  // can't be had: the job ends at once, and the pill must not stay on its last figure.
+  await page.mouse.click(box.x + box.width - 20, box.y + box.height / 2);
+  await expect(page.locator('grabby-yt-menu')).toHaveCount(1);
+  await page.keyboard.press('Enter');
+  const jobs = () => sw.evaluate(async () => ((await chrome.storage.local.get('jobs')).jobs as { mode: string; status: string }[] | undefined) ?? []);
+  await expect.poll(async () => (await jobs()).map((j) => `${j.mode} ${j.status}`)).toEqual(['audio error']);
+  await expect.poll(width, { timeout: 8_000 }).toBe(idle);
+  // « Photo de l'image affichée » (the second row) on a video with no picture: a message that
+  // says so, not a click that does nothing.
+  await page.mouse.click(box.x + box.width - 20, box.y + box.height / 2);
+  await expect(page.locator('grabby-yt-menu')).toHaveCount(1);
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('grabby-toast')).toHaveCount(1, { timeout: 5_000 });
 });

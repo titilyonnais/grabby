@@ -107,7 +107,7 @@ export type ContentToBg =
   /** The button over a video: `src`, the video's address when it has one. */
   | { type: 'grab'; src?: string; mode?: 'video' | 'audio'; variantId?: string }
   /** « Photo »: the picture on screen, read by the page (`dataUrl`) or to be cut from a screenshot (`rect`, CSS pixels). */
-  | { type: 'snap'; dataUrl?: string; rect?: { x: number; y: number; w: number; h: number }; dpr?: number; time?: number }
+  | { type: 'snap'; dataUrl?: string; rect?: { x: number; y: number; w: number; h: number }; dpr?: number; time?: number; noFrame?: boolean }
   /** « Plus tard »: the video (or the page) kept aside, to be downloaded later. */
   | { type: 'later'; src?: string }
   /** YouTube's buttons under the player: the downloads of this video, to show their progress. */

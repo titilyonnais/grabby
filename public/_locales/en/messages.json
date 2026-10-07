@@ -519,6 +519,7 @@
   "photoName": {"message": "photo"},
   "photoSaved": {"message": "Photo saved"},
   "photoFailed": {"message": "No photo possible on this page"},
+  "photoNoFrame": {"message": "No picture yet: play the video, then try again"},
   "laterAdded": {"message": "Added to Later"},
   "menu_media": {"message": "Download this video"},
   "menu_media_audio": {"message": "Download the sound only"},
