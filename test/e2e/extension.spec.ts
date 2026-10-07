@@ -1967,9 +1967,11 @@ test('2.3.2: Grabby updated while a YouTube video is open: its button still down
   // The update: Grabby reloaded, the page left open.
   const ext = await context.newPage();
   await ext.goto('chrome://extensions');
-  await ext.evaluate(() => new Promise((ok) => chrome.developerPrivate.updateProfileConfiguration({ inDeveloperMode: true }, () => ok(null))));
+  // chrome://extensions' own API (not in @types/chrome).
+  type Dev = { updateProfileConfiguration: (c: object, done: () => void) => void; reload: (id: string, o: object, done: () => void) => void };
+  await ext.evaluate(() => new Promise((ok) => (chrome as unknown as { developerPrivate: Dev }).developerPrivate.updateProfileConfiguration({ inDeveloperMode: true }, () => ok(null))));
   const again = context.waitForEvent('serviceworker');
-  await ext.evaluate((id) => new Promise((ok) => chrome.developerPrivate.reload(id, { failQuietly: true }, () => ok(null))), extId);
+  await ext.evaluate((id) => new Promise((ok) => (chrome as unknown as { developerPrivate: Dev }).developerPrivate.reload(id, { failQuietly: true }, () => ok(null))), extId);
   const fresh = await again;
   expect(fresh).not.toBe(sw);
   // Its page scripts are put back: one row of buttons, the hook taking over from the old one.
