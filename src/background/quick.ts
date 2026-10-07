@@ -1,7 +1,6 @@
 import { normalizeMediaUrl } from '../parsers/url';
 import type { BgToContent } from '../shared/messages';
 import { rank } from '../shared/rank';
-import { applyRule, newRule, ruleFor } from '../shared/rules';
 import { getSettings, type Settings } from '../shared/settings';
 import type { MediaItem } from '../shared/types';
 import type { JobManager } from './jobs';
@@ -35,22 +34,17 @@ export async function quickDownload(registry: Registry, jobs: JobManager, tabId:
     return;
   }
   const settings = await getSettings();
-  const job = await startWithRules(jobs, tabId, item, settings, mode, variantId);
+  const job = await startQuick(jobs, tabId, item, settings, mode, variantId);
   if (job) await say(true, chrome.i18n.getMessage('quickStarted'), item.title);
 }
 
 /**
- * A download started without the popup: what the site's rule says (else the settings: the
- * best quality, the video or its sound as chosen for the shortcut). `mode` forces one, and
- * `variantId` a quality (YouTube's menu under the player).
+ * A download started without the popup: the best quality, the video or its sound as chosen
+ * for the shortcut, in the settings' format. `mode` forces one, and `variantId` a quality
+ * (YouTube's menu under the player).
  */
-export async function startWithRules(jobs: JobManager, tabId: number, item: MediaItem, settings: Settings, mode?: 'video' | 'audio', variantId?: string) {
-  const rule = ruleFor(settings.rules, item.pageUrl);
-  const asked = mode ?? (rule ? rule.mode : settings.quickMode);
-  const c = applyRule(item, { ...(rule ?? newRule()), mode: asked }, { video: settings.videoFormat, audio: settings.audioFormat });
-  const chosen = c.mode === 'video' && variantId && item.variants.some((v) => v.id === variantId) ? variantId : c.variantId;
-  return jobs.start(tabId, item.id, chosen ?? item.variants[0]?.id, c.mode, c.format, {
-    ...(c.subtitles.length ? { subtitles: { ids: c.subtitles, separate: false } } : {}),
-    ...(c.folder ? { folder: c.folder } : {}),
-  });
+export async function startQuick(jobs: JobManager, tabId: number, item: MediaItem, settings: Settings, mode?: 'video' | 'audio', variantId?: string) {
+  const audio = !!item.audioOnly || (mode ?? settings.quickMode) === 'audio';
+  const chosen = audio ? undefined : variantId && item.variants.some((v) => v.id === variantId) ? variantId : item.variants[0]?.id;
+  return jobs.start(tabId, item.id, chosen, audio ? 'audio' : 'video', audio ? settings.audioFormat : settings.videoFormat);
 }

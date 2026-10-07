@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { channelProfile } from '../../src/shared/feeds';
 import { forgetForcedQuality } from '../../src/features/youtube';
 import { PLAYER_MEMORY, shieldPlayerMemory } from '../../src/features/youtube-hook';
 import { jobThumb, ytTitle } from '../../src/shared/title';
@@ -129,42 +128,5 @@ describe('lists up to 4K', () => {
     expect(listItem(entry, 1, 'hd1440').variants[0]).toMatchObject({ height: 1440, codecs: 'vp9' });
     expect(listItem(entry, 1, 'hd1080').variants[0]).toMatchObject({ height: 1080, codecs: 'avc1' });
     expect(listItem(entry, 1, 'hd720').variants[0]!.codecs).toBe('avc1');
-  });
-});
-
-describe("a channel's profile", () => {
-  const page = (subtitle: string) =>
-    [
-      '<html><head>',
-      '<meta property="og:title" content="Lofi Girl">',
-      '<meta property="og:image" content="https://yt3.googleusercontent.com/abc=s900-c-k-c0x00ffffff-no-rj">',
-      '<meta property="og:description" content="Tune in &amp; relax">',
-      '</head><body><script>var ytInitialData = {"metadata":{"channelMetadataRenderer":{"vanityChannelUrl":"http://www.youtube.com/@LofiGirl"}},',
-      // Other channels listed on the page come first: they must not be taken.
-      '"items":[{"subtitle":{"content":"@Other • 3 M d’abonnés"}}],',
-      `"header":{"subtitle":{"content":"${subtitle}"}}}</script></body></html>`,
-    ].join('');
-
-  it('reads the picture, @name, subscribers and description', () => {
-    expect(channelProfile(page('@LofiGirl • 15,8 M d’abonnés'))).toEqual({
-      title: 'Lofi Girl',
-      avatar: 'https://yt3.googleusercontent.com/abc=s176-c-k-c0x00ffffff-no-rj',
-      handle: '@LofiGirl',
-      subscribers: '15,8 M d’abonnés',
-      description: 'Tune in & relax',
-    });
-  });
-
-  it('strips the invisible direction marks', () => {
-    expect(channelProfile(page('⁨@LofiGirl⁩ • ‎15,8 M d’abonnés‏')).subscribers).toBe('15,8 M d’abonnés');
-  });
-
-  it('keeps pictures from YouTube only, and nothing without digits as subscribers', () => {
-    const other = page('@LofiGirl • aucun').replace('https://yt3.googleusercontent.com/', 'https://evil.example/');
-    const p = channelProfile(other);
-    expect(p.avatar).toBeUndefined();
-    expect(p.subscribers).toBeUndefined();
-    expect(p.handle).toBe('@LofiGirl');
-    expect(channelProfile('<html></html>')).toEqual({});
   });
 });

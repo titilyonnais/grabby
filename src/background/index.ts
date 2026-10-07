@@ -1,5 +1,5 @@
 import { youTubeIdOf } from '../shared/saved';
-import type { AppRequest, BgToContent, BgToPopup, BlockedReason, ContentToBg, OffscreenToBg, PageMedia, PopupState, PopupToBg } from '../shared/messages';
+import type { BgToContent, BgToPopup, BlockedReason, ContentToBg, OffscreenToBg, PageMedia, PopupState, PopupToBg } from '../shared/messages';
 import type { VideoFormat } from '../shared/plan';
 import { getSettings, setSettings } from '../shared/settings';
 import { cleanTitle } from '../shared/title';
@@ -8,7 +8,7 @@ import { forgetBadge, paintTab, showJobs, updateBadge } from './badge';
 import { createMenus } from './menus';
 import { startDetector } from './detector';
 import { resetHeaderRules } from './headers';
-import { allThumbs, allTranscripts, clearHistory, saveEditedTranscript, forgetTexts, getHistory, historyWithPresence, markHistory, removeHistory, restoreHistory } from './history';
+import { clearHistory, forgetTexts, getHistory, historyWithPresence, markHistory, removeHistory, restoreHistory } from './history';
 import { forgetRedo, redo, redoIfWaiting } from './redo';
 import { saveThumbnail } from './thumbnail';
 import { findVisible } from './visible';
@@ -23,11 +23,8 @@ import { deleteJob, listTrackMimes, putChunk } from '../shared/idb';
 import { pickFor, quickDownload } from './quick';
 import { saveSnapshot } from './snapshot';
 import { startSync } from './sync';
-import { addLater, getLater, LATER_ALARM, laterAt, launchLater, removeLater, scheduleLater } from './later';
 import { Batch, BATCH_ALARM } from './batch';
 import { omniboxRequest } from '../shared/batch';
-import { exportBackup, importBackup } from './backup';
-import { addWatch, changeWatch, checkWatches, getWatches, removeWatch, syncWatchAlarm, WATCH_ALARM } from './watch';
 
 const registry = new Registry(sessionKV);
 const jobs = new JobManager(registry);
@@ -37,13 +34,12 @@ const batch = new Batch(registry, jobs, () => pushAll());
 // A new document replaced the page: recordings in that tab can't continue.
 startDetector(registry, (tabId) => void jobs.onTabGone(tabId));
 listenNotificationClicks();
-// Settings and rules shared with the user's other computers (when asked).
+// Settings shared with the user's other computers (when asked).
 startSync();
 
 chrome.runtime.onStartup.addListener(() => {
   void resetHeaderRules();
   void getSettings().then((s) => watchUpdates(s.updateCheck));
-  void syncWatchAlarm();
   // Pages being opened before the browser closed: given up, the next ones opened.
   void batch.pump();
 });
@@ -54,6 +50,10 @@ chrome.runtime.onInstalled.addListener(({ reason }) => {
   void resetHeaderRules();
   void getSettings().then((s) => watchUpdates(s.updateCheck));
   createMenus();
+  // What Grabby no longer does (channels followed, videos kept for later): its timers and lists go.
+  void chrome.alarms.clear('grabby-watch');
+  void chrome.alarms.clear('grabby-later');
+  void chrome.storage.local.remove(['watches', 'later', 'laterAt']);
 });
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   const id = String(info.menuItemId);
@@ -64,14 +64,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       if (info.linkUrl) await batch.add(info.linkUrl, id === 'link' ? 'auto' : 'audio');
       return;
     }
-    if (id === 'link_later') {
-      if (info.linkUrl) await addLater({ url: info.linkUrl, title: info.selectionText || info.linkUrl, mode: 'auto' });
-      if (tabId >= 0) await toastIn(tabId, true, 'laterAdded', info.linkUrl ?? '');
-      return;
-    }
     if (tabId < 0) return;
-    if (id === 'images') return void (await openApp('images', tabId));
-    if (id === 'page_later') return void (await keepForLater(tabId, tab));
     await quickDownload(registry, jobs, tabId, id.startsWith('media') ? info.srcUrl : undefined, id === 'media_audio' ? 'audio' : undefined);
   })();
 });
@@ -79,17 +72,6 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 /** A short bubble in the page. */
 async function toastIn(tabId: number, ok: boolean, title: string, detail: string) {
   await chrome.tabs.sendMessage(tabId, { type: 'toast', ok, title: chrome.i18n.getMessage(title), detail } satisfies BgToContent, { frameId: 0 }).catch(() => {});
-}
-
-/** « Plus tard »: the video the user means (else the page itself) kept aside. */
-async function keepForLater(tabId: number, tab?: chrome.tabs.Tab, src?: string) {
-  const item = pickFor(visibleItems(await registry.get(tabId)), src);
-  const url = item ? (item.fromList || /^https?:/i.test(item.pageUrl) ? item.pageUrl : item.url) : (tab?.url ?? (await tabUrl(tabId)));
-  if (!/^https?:/i.test(url)) return;
-  const title = item?.title || (tab?.title ? cleanTitle(tab.title, hostOf(url)) : url);
-  await addLater({ url, title, ...(item?.thumbnail ? { thumbnail: item.thumbnail } : {}), mode: 'auto' });
-  pushAll();
-  await toastIn(tabId, true, 'laterAdded', title);
 }
 
 /**
@@ -112,19 +94,6 @@ async function reinject() {
   }
 }
 
-/** The full page, on a section (and the tab it is about). */
-async function openApp(section?: string, tabId?: number) {
-  const base = chrome.runtime.getURL('app.html');
-  const hash = section ? `#${encodeURIComponent(section)}${tabId !== undefined ? `?tab=${tabId}` : ''}` : '';
-  const url = `${base}${hash}`;
-  // Already open: shown again, on the section asked for.
-  const [open] = await chrome.tabs.query({ url: `${base}*` });
-  if (open?.id !== undefined) {
-    await chrome.tabs.update(open.id, { active: true, ...(section ? { url } : {}) });
-    if (open.windowId !== undefined) await chrome.windows.update(open.windowId, { focused: true }).catch(() => {});
-  } else await chrome.tabs.create({ url });
-  return true;
-}
 // « gb » + a link in the address bar: its page opened behind, its video downloaded (« gb son … »: the sound).
 chrome.omnibox?.setDefaultSuggestion({ description: chrome.i18n.getMessage('omniboxHint') });
 chrome.omnibox?.onInputChanged.addListener((text, suggest) => {
@@ -136,7 +105,6 @@ chrome.omnibox?.onInputChanged.addListener((text, suggest) => {
 chrome.omnibox?.onInputEntered.addListener((text) => {
   const { urls, mode } = omniboxRequest(text);
   if (urls.length) void batch.add(urls.join('\n'), mode).then(() => pushAll());
-  else void openApp('batch');
 });
 
 // Keyboard shortcut: the page's best video, straight away.
@@ -153,9 +121,7 @@ chrome.commands.onCommand.addListener((command, tab) => {
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === 'grabby-resume' || a.name === SCHEDULE_ALARM) void jobs.wake();
   if (a.name === UPDATE_ALARM) void checkUpdate();
-  if (a.name === WATCH_ALARM) void checkWatches(jobs);
   if (a.name === BATCH_ALARM) void batch.pump();
-  if (a.name === LATER_ALARM) void launchLater(batch).then(() => pushAll());
 });
 // Wi-Fi only: the connection changed (only some systems tell its type).
 (navigator as Navigator & { connection?: EventTarget }).connection?.addEventListener?.('change', () => void jobs.wake());
@@ -209,18 +175,13 @@ async function buildState(tabId: number): Promise<PopupState> {
   // An invalid id throws synchronously (not a rejected promise).
   const tab = await (async () => chrome.tabs.get(tabId))().catch(() => undefined);
   const tabTitle = tab?.title ? cleanTitle(tab.title, hostOf(tab.url ?? pageUrl)) : undefined;
-  const [items, history, settings, asks, update, ytList, watches, pasted, later, laterTime] = await Promise.all([
+  const [items, history, settings, asks, update, ytList] = await Promise.all([
     registry.get(tabId, tabTitle),
     historyWithPresence(),
     getSettings(),
     chrome.storage.local.get(BROWSER_ASKS_KEY),
     updateNotice().catch(() => undefined),
     blocked ? undefined : registry.ytList(tabId),
-    getWatches(),
-    // The pasted addresses: only the full page shows them.
-    tabId < 0 ? batch.list() : undefined,
-    getLater(),
-    laterAt(),
   ]);
   return {
     tabId,
@@ -235,10 +196,6 @@ async function buildState(tabId: number): Promise<PopupState> {
     ...(update ? { update } : {}),
     ...(installState() ? { install: installState() } : {}),
     ...(ytList ? { ytList } : {}),
-    ...(watches.length ? { watches } : {}),
-    ...(pasted?.length ? { batch: pasted } : {}),
-    ...(later.length ? { later } : {}),
-    ...(laterTime ? { laterAt: laterTime } : {}),
   };
 }
 
@@ -292,7 +249,7 @@ jobs.onChange(() => {
 
 // The browser was found asking where to save: open popups explain it right away.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && (BROWSER_ASKS_KEY in changes || 'watches' in changes || 'later' in changes || 'laterAt' in changes)) pushAll();
+  if (area === 'local' && BROWSER_ASKS_KEY in changes) pushAll();
 });
 
 chrome.tabs.onActivated.addListener(({ tabId }) => void paintTab(tabId));
@@ -414,82 +371,12 @@ async function onPopupMessage(port: chrome.runtime.Port, msg: PopupToBg) {
       }
       schedulePush(port);
       return;
-    case 'batch-remove':
-      return batch.remove(msg.id);
-    case 'batch-retry':
-      return batch.retry(msg.id);
-    case 'batch-clear':
-      return batch.clear(msg.all);
-    case 'watch-remove':
-      return removeWatch(msg.id);
-    case 'watch-change':
-      return changeWatch(msg.id, msg.patch);
-    case 'later-add': {
-      const tabId = ports.get(port);
-      const item = tabId === undefined ? undefined : findVisible(await registry.get(tabId), msg.mediaId);
-      if (item) await addLater({ url: /^https?:/i.test(item.pageUrl) ? item.pageUrl : item.url, title: item.title, ...(item.thumbnail ? { thumbnail: item.thumbnail } : {}), mode: msg.mode ?? 'auto' });
-      return;
-    }
-    case 'later-remove':
-      return removeLater(msg.id);
-    case 'later-launch':
-      await launchLater(batch, msg.ids);
-      return;
-    case 'later-schedule':
-      return scheduleLater(msg.at);
-  }
-}
-
-/** The full page's (or the popup's) questions, answered. */
-async function onAppRequest(msg: AppRequest): Promise<unknown> {
-  switch (msg.app) {
-    case 'watch-add':
-      return addWatch(msg.url, { mode: msg.mode, quality: msg.quality, ...(msg.format ? { format: msg.format } : {}) });
-    case 'watch-check':
-      return checkWatches(jobs, msg.id);
-    case 'batch-add':
-      return batch.add(msg.text, msg.mode);
-    case 'export':
-      return exportBackup();
-    case 'import': {
-      const done = await importBackup(msg.data);
-      if (done) {
-        const s = await getSettings();
-        await watchUpdates(s.updateCheck);
-        pushAll();
-      }
-      return done;
-    }
-    case 'open-app':
-      return openApp(msg.section, msg.tabId);
-    case 'texts':
-      return allTranscripts(msg.ids.slice(0, 500));
-    case 'thumbs':
-      return allThumbs(msg.ids.slice(0, 500));
-    case 'text-save':
-      return saveEditedTranscript(msg.id, msg.text);
-    case 'page-images':
-      return chrome.tabs.sendMessage(msg.tabId, { type: 'images' } satisfies BgToContent, { frameId: 0 }).catch(() => null);
-    case 'file-paths': {
-      const ids = msg.ids.filter((n) => Number.isInteger(n)).slice(0, 500);
-      const found = ids.length ? await Promise.all(ids.map((id) => chrome.downloads.search({ id }).then((r) => r[0]))) : [];
-      return found.filter((d): d is chrome.downloads.DownloadItem => !!d).map((d) => ({ id: d.id, path: d.filename, exists: d.exists, mime: d.mime }));
-    }
   }
 }
 
 /* --------------------------------------------- content scripts & offscreen */
 
-chrome.runtime.onMessage.addListener((msg: ContentToBg | OffscreenToBg | AppRequest, sender, sendResponse) => {
-  if ('app' in msg) {
-    // Only Grabby's own pages ask (never a web page's content script).
-    if (sender.id !== chrome.runtime.id || sender.tab?.url?.startsWith('http') || !sender.url?.startsWith(chrome.runtime.getURL(''))) return;
-    onAppRequest(msg).then(sendResponse, (e) => {
-      console.warn('[grabby] request failed', msg.app, e);
-      sendResponse(null);
-    });
-    return true;
-  }
+chrome.runtime.onMessage.addListener((msg: ContentToBg | OffscreenToBg, sender, sendResponse) => {
   if ('target' in msg) {
     if (msg.target !== 'bg') return;
     if (msg.type === 'sink-check') {
@@ -540,9 +427,6 @@ chrome.runtime.onMessage.addListener((msg: ContentToBg | OffscreenToBg | AppRequ
         sendResponse(ok);
       })();
       return true;
-    case 'later':
-      void keepForLater(tabId, sender.tab, msg.src);
-      break;
     case 'page-jobs': {
       // The newest download of each kind for the video on screen (a YouTube tab changes video).
       const here = sender.tab.url ?? '';

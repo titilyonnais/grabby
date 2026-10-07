@@ -11,9 +11,8 @@ import { DEFAULT_SETTINGS, getSettings, type Settings } from '../shared/settings
 import { holdOf, playbackCap, type Hold } from '../shared/schedule';
 import type { Job, JobMode, JobStatus, MediaItem } from '../shared/types';
 import { fetchTextAs, sweepHeaderRules, withPageHeaders } from './headers';
-import { addHistory, saveTranscript } from './history';
+import { addHistory } from './history';
 import { sizeMatches } from '../shared/verify';
-import type { Transcript } from '../shared/transcript';
 import { notifyFinished } from './notify';
 import { scheduleOffscreenClose, sendOffscreen } from './offscreen-client';
 import { buildPlan, imageClip, joinedParts, PlanError, validClip } from './plan';
@@ -158,7 +157,6 @@ export class JobManager {
   /** Plans of jobs that may be resumed (also in storage, for after a restart). */
   private plans = new Map<string, Plan>();
   /** What is said in files being saved: kept with their library entry once saved. */
-  private transcripts = new Map<string, Transcript>();
   private listeners: (() => void)[] = [];
   /** "Quand télécharger": the time window, Wi-Fi only, the speed limit (kept in step with the settings). */
   private gate: Pick<Settings, 'scheduleOn' | 'scheduleFrom' | 'scheduleTo' | 'wifiOnly' | 'rateLimit' | 'parallel' | 'verify'> = DEFAULT_SETTINGS;
@@ -946,16 +944,6 @@ export class JobManager {
       .catch((e) => console.warn('[grabby] subtitles not saved', e));
   }
 
-  /** A text file next to the video ("Title.summary.txt"). */
-  private async saveText(job: Job, text: string, tag: string, settings: Settings) {
-    const bytes = new TextEncoder().encode(`\ufeff${text}`);
-    let bin = '';
-    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-    await chrome.downloads
-      .download({ url: `data:text/plain;charset=utf-8;base64,${btoa(bin)}`, filename: this.filename(job, `${tag.replace(/[^\p{L}\p{N}-]/gu, '')}.txt`, settings), conflictAction: 'uniquify' })
-      .catch((e) => console.warn('[grabby] text not saved', e));
-  }
-
   private async direct(job: Job, url: string, ext: string, settings: Settings) {
     const filename = this.filename(job, ext, settings);
     this.releases.set(job.id, await withPageHeaders(job.pageUrl, [url]));
@@ -1248,7 +1236,6 @@ export class JobManager {
       const filename = msg.name ? pieceFilename(whole, msg.name, msg.ext) : whole;
       if (this.gone(job.id)) return;
       this.update(job.id, { status: 'saving', progress: 1, bytes: msg.size, total: msg.size, totalApprox: false, speed: 0, filename });
-      if (msg.transcript) this.transcripts.set(job.id, msg.transcript);
       try {
         // The other pieces first: the job is over (and its files let go) once the first one is saved.
         for (const p of msg.pieces ?? []) {
@@ -1260,7 +1247,6 @@ export class JobManager {
         this.update(job.id, { downloadId });
         this.startPolling();
         if (msg.subtitles) await this.saveSubtitles(job, msg.subtitles, settings);
-        for (const n of msg.notes ?? []) await this.saveText(job, n.text, n.tag, settings);
       } catch {
         this.fail(job.id, 'unknown');
       }
@@ -1320,9 +1306,6 @@ export class JobManager {
       if (this.gate.verify && !job.blob && job.total && !job.totalApprox && !sizeMatches(size, job.total)) return this.madeAgain(job, d.id);
       this.update(job.id, { status: 'done', progress: 1, speed: 0, bytes: size });
       const thumbnail = this.items.get(`${job.tabId}:${job.mediaId}`)?.thumbnail ?? job.thumbnail;
-      const transcript = this.transcripts.get(job.id);
-      this.transcripts.delete(job.id);
-      if (transcript) await saveTranscript(job.id, transcript);
       await addHistory({
         id: job.id,
         filename: job.filename,
@@ -1336,7 +1319,6 @@ export class JobManager {
         ...(job.mode === 'video' && job.quality ? { quality: job.quality } : {}),
         mode: job.mode,
         ...(job.format ? { format: job.format } : {}),
-        ...(transcript ? { text: true } : {}),
       });
       void notifyFinished(this.jobs.get(job.id) ?? job);
       await this.cleanup(job.id);

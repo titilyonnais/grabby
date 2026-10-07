@@ -124,7 +124,6 @@
   --surface: #1d1d21;
 }
 
-
 /* ------------------------------------------------------------------- base */
 *,
 *::before,
@@ -451,6 +450,22 @@ p {
   font-size: 13px;
 }
 
+/* In a card, a choice in segments is as tall as every other choice there (48). */
+.card .seg--small {
+  padding: 4px;
+}
+
+.card .seg--small .seg__thumb {
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc((100% - 8px) / var(--n, 2));
+}
+
+.card .seg--small button {
+  height: 40px;
+}
+
 /* ---------------------------------------------------------------- content */
 .content {
   flex: 1;
@@ -528,8 +543,9 @@ p {
   --i: 0;
   display: flex;
   flex-direction: column;
-  padding: 8px;
-  border-radius: var(--r-card);
+  padding: 12px;
+  /* Concentric with what it holds (thumbnail, panels): their radius plus the padding. */
+  border-radius: calc(var(--r-inner) + 12px);
   background: var(--surface);
   transition:
     background-color 160ms var(--ease),
@@ -662,8 +678,6 @@ p {
   opacity: 0.86;
 }
 
-
-
 .card__cancel:active {
   transform: scale(0.86);
   transition-duration: 140ms, 90ms;
@@ -787,10 +801,10 @@ p {
 
 /*
  * A row is small: its thumbnail would turn into a capsule with the big card's radius.
- * Thumbnail 14, 8 from the edge → row 22 (still concentric).
+ * Thumbnail 14, 12 from the edge → row 26 (still concentric).
  */
 .card:not(.card--open) {
-  border-radius: 22px;
+  border-radius: 26px;
 }
 
 .card:not(.card--open) .thumb {
@@ -835,56 +849,6 @@ p {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.subs__apart {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  height: 44px;
-  padding: 0 10px 0 20px;
-  border-radius: var(--r-pill);
-  background: var(--bg);
-  box-shadow: inset 0 0 0 1px var(--line);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  animation: drawer-in var(--t-gentle) var(--ease-out);
-}
-
-.subs__apart:has(:disabled) {
-  cursor: default;
-  opacity: 0.6;
-}
-
-/* ------------------------------------------------------------- cut a clip */
-.trim-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  align-self: flex-start;
-  height: 36px;
-  padding: 0 14px 0 12px;
-  border-radius: var(--r-pill);
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 600;
-  transition:
-    color 140ms var(--ease),
-    background-color 140ms var(--ease),
-    transform var(--t-bouncy) var(--spring-bouncy);
-}
-
-.trim-toggle:hover,
-.trim-toggle[aria-expanded='true'] {
-  color: var(--text);
-  background: var(--bg);
-}
-
-.trim-toggle:active {
-  transform: scale(0.95);
-  transition-duration: 140ms, 140ms, 90ms;
 }
 
 .trim {
@@ -1156,8 +1120,9 @@ p {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 44px;
-  padding: 0 10px 0 20px;
+  /* As tall as the pickers next to it (48): every choice of a card the same height. */
+  min-height: 48px;
+  padding: 0 12px 0 20px;
   border-radius: var(--r-pill);
   background: var(--bg);
   box-shadow: inset 0 0 0 1px var(--line);
@@ -1472,7 +1437,6 @@ p {
 .meter--busy::before {
   transform: none;
 }
-
 
 .meter__label {
   position: absolute;
@@ -3157,12 +3121,6 @@ label.row-setting:hover {
   font-weight: 600;
 }
 
-.trim-toggle--done,
-.trim-toggle:disabled {
-  color: #22b07d;
-  cursor: default;
-}
-
 /* ------------------------------------------------------ « Diagnostic » */
 .diag {
   display: flex;
@@ -3210,165 +3168,9 @@ label.row-setting:hover {
   margin: 0;
 }
 
-/* ------------------------------------------------------------- local AI */
-.tag--ai {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
-  color: var(--text);
-  white-space: nowrap;
-}
-
-.finish__title .tag--ai {
-  margin-left: auto;
-}
-
-.option--ai {
-  gap: 12px;
-}
-
-.option__text {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.option__title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.option__sub {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.35;
-}
-
-/*
- * « IA locale »: under its switch, inside the same group, on the same edges as the rows above
- * (16 px on the left, 12 px on the right). Each thing it does: its name and its state on one
- * line, who does it under them; ready is green.
- */
-.ai {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 4px 12px 12px 16px;
-}
-
-.ai__list {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.ai__row {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 10px 0;
-}
-
-.ai__row + .ai__row {
-  box-shadow: inset 0 1px 0 var(--line);
-}
-
-.ai__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px 12px;
-}
-
-.ai__chips {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 4px;
-  min-width: 0;
-}
-
-.ai__chip {
-  display: inline-flex;
-  align-items: center;
-  height: 22px;
-  padding: 0 9px;
-  border-radius: var(--r-pill);
-  background: var(--surface-2);
-  color: var(--muted);
-  font-size: 11.5px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.ai__chip--on {
-  background: color-mix(in srgb, #22b07d 16%, transparent);
-  color: #22b07d;
-}
-
-.ai__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.ai__result {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0;
-  color: var(--muted);
-  font-size: 12.5px;
-  line-height: 1.4;
-}
-
-.ai__bar {
-  --p: 0;
-  height: 4px;
-  border-radius: 999px;
-  background: linear-gradient(to right, var(--accent) calc(var(--p) * 100%), var(--surface-2) 0);
-  transition: background 300ms var(--ease);
-}
-
-/* A quiet button: words only, a surface when pointed at. */
-.btn--ghost {
-  background: transparent;
-  color: var(--muted);
-}
-
-.btn--ghost:hover {
-  background: var(--surface-2);
-  color: var(--text);
-}
-
 /* How many are waiting, on a header button. */
 .icon-btn {
   position: relative;
-}
-
-.icon-btn__count {
-  position: absolute;
-  top: 2px;
-  right: 1px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-size: 10.5px;
-  font-weight: 700;
-  line-height: 16px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-  box-shadow: 0 0 0 2px var(--bg);
-  animation: pop-in var(--t-bouncy) var(--spring-bouncy);
-  box-sizing: border-box;
 }
 
 /* ----------------------------------------------------- guided tour */
@@ -3672,86 +3474,6 @@ label.row-setting:hover {
   padding: 0 4px;
 }
 
-/* ------------------------------------------------- retouches et IA (1.10) */
-/*
- * What else can be done (Extrait, Retouches, Plus tard, Suivre la chaîne): pills the size of
- * their words, drawn like the menus above them (same fill, same outline), 8 px apart, from the
- * left edge of the card's content; what does not fit goes to the next line.
- */
-.card__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.card__actions .trim-toggle {
-  flex: none;
-  align-self: auto;
-  gap: 6px;
-  padding: 0 14px 0 12px;
-  color: var(--text);
-  background: var(--bg);
-  box-shadow: inset 0 0 0 1px var(--line);
-}
-
-.card__actions .trim-toggle:hover,
-.card__actions .trim-toggle[aria-expanded='true'] {
-  background: var(--bg);
-  box-shadow: inset 0 0 0 1px var(--line-strong);
-}
-
-.card__actions .trim-toggle--done,
-.card__actions .trim-toggle:disabled {
-  color: #22b07d;
-  box-shadow: inset 0 0 0 1px var(--line);
-}
-
-/* A message about one of them (« Suivre la chaîne » refused): on its own line under the row. */
-.card__actions .card__note {
-  flex-basis: 100%;
-  margin: 0;
-}
-
-/*
- * In a video's « Plus d'options »: equal columns across the whole width (two by two when there
- * are four), each word centred. What a button says may change (« Fermer », a number of
- * retouches): its column does not, so nothing moves and nothing goes to the next line.
- */
-.card__actions--even {
-  display: grid;
-  grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr));
-}
-
-.card__actions--even .trim-toggle {
-  justify-content: center;
-  min-width: 0;
-  gap: 6px;
-  padding: 0 6px;
-}
-
-.trim-toggle__label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* How many retouches are on: a small round mark where the icon was. */
-.trim-toggle__count {
-  flex: none;
-  display: grid;
-  place-items: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
-  border-radius: var(--r-pill);
-  background: var(--accent);
-  color: var(--on-accent, #fff);
-  font-size: 11px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
 .preview {
   width: 100%;
   max-height: 210px;
@@ -3771,62 +3493,15 @@ label.row-setting:hover {
   animation: drawer-in var(--t-gentle) var(--ease-out);
 }
 
-.finish__group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.finish__group + .finish__group {
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
-
-.finish__title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  padding: 0 8px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--muted);
-}
-
 .finish .option {
   background: var(--surface);
   box-shadow: none;
   animation: none;
 }
 
-.finish .trim-toggle:hover,
-.finish .trim-toggle[aria-expanded='true'] {
-  background: var(--surface);
-}
-
 .option--off {
   opacity: 0.55;
   cursor: default;
-}
-
-.consent {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px 14px;
-  border-radius: var(--r-small);
-  background: var(--surface);
-  font-size: 12.5px;
-  line-height: 1.45;
-}
-
-.consent p {
-  margin: 0;
-}
-
-.hint--warn {
-  color: var(--focus);
 }
 
 /* Cropping: the frame kept is clear, the rest of the picture dimmed. */
@@ -3836,18 +3511,26 @@ label.row-setting:hover {
   gap: 10px;
 }
 
+/*
+ * The picture sits 14 px inside its rounded stage: the frame's corners (and their handles)
+ * never meet the stage's rounded corners, so nothing of them is ever cut off.
+ */
 .crop__stage {
-  position: relative;
-  width: 100%;
   overflow: hidden;
+  padding: 14px;
   border-radius: var(--r-small);
-  background: var(--surface-2);
+  background: #000;
   touch-action: none;
   cursor: crosshair;
   user-select: none;
 }
 
-.crop__stage img,
+.crop__pic {
+  position: relative;
+  width: 100%;
+}
+
+.crop__pic img,
 .crop__blank {
   display: block;
   width: 100%;
@@ -3856,9 +3539,13 @@ label.row-setting:hover {
   pointer-events: none;
 }
 
+.crop__blank {
+  background: var(--surface-2);
+}
+
 .crop__frame {
   position: absolute;
-  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6);
   outline: 2px solid #fff;
   outline-offset: -1px;
   cursor: move;
@@ -3868,8 +3555,17 @@ label.row-setting:hover {
   outline-color: var(--accent);
 }
 
+/* A round handle on each corner, with a bigger area to catch the finger or the pointer. */
 .crop__handle {
   position: absolute;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+}
+
+.crop__handle::after {
+  content: '';
   width: 16px;
   height: 16px;
   border-radius: 50%;
@@ -3877,10 +3573,27 @@ label.row-setting:hover {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
 }
 
-.crop__handle--nw { left: -8px; top: -8px; cursor: nwse-resize; }
-.crop__handle--ne { right: -8px; top: -8px; cursor: nesw-resize; }
-.crop__handle--sw { left: -8px; bottom: -8px; cursor: nesw-resize; }
-.crop__handle--se { right: -8px; bottom: -8px; cursor: nwse-resize; }
+.crop__handle--nw { left: -14px; top: -14px; cursor: nwse-resize; }
+.crop__handle--ne { right: -14px; top: -14px; cursor: nesw-resize; }
+.crop__handle--sw { left: -14px; bottom: -14px; cursor: nesw-resize; }
+.crop__handle--se { right: -14px; bottom: -14px; cursor: nwse-resize; }
+
+/* « Rotation » and « Miroir » shown on the video's picture as they are chosen. */
+.pic-preview {
+  display: grid;
+  place-items: center;
+  height: 176px;
+  border-radius: var(--r-small);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.pic-preview__img {
+  display: block;
+  border-radius: 10px;
+  object-fit: cover;
+  transition: transform var(--t-gentle) var(--spring-gentle);
+}
 
 .crop__tools {
   display: flex;
@@ -3890,6 +3603,10 @@ label.row-setting:hover {
 
 .crop__tools .seg {
   flex: 1;
+}
+
+.crop__tools .btn {
+  height: 48px;
 }
 
 /* A button beside a 48 px menu (Qualité, Format, Tri): the same height, tops and bottoms aligned. */
@@ -3970,7 +3687,20 @@ label.row-setting:hover {
   border-radius: var(--r-inner);
   background: var(--bg);
   box-shadow: inset 0 0 0 1px var(--line);
-  animation: drawer-in var(--t-gentle) var(--ease-out);
+}
+
+/* What unfolds under a line (see Collapse.tsx): its own parts one under the other. */
+.collapse {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Unfolded as a whole: its parts don't play their own entrance on top of it. */
+.collapse > .trim,
+.collapse > .option,
+.collapse > .crop {
+  animation: none;
 }
 
 .adv__section {
@@ -4005,8 +3735,8 @@ label.row-setting:hover {
   align-items: center;
   gap: 10px;
   width: 100%;
-  min-height: 44px;
-  padding: 0 12px 0 16px;
+  min-height: 48px;
+  padding: 0 12px 0 20px;
   border-radius: var(--r-pill);
   background: var(--surface);
   font-size: 13px;
@@ -4025,18 +3755,19 @@ label.row-setting:hover {
 }
 
 .adv__pair {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
 .adv__chip {
   display: inline-flex;
   align-items: center;
-  align-self: flex-start;
-  gap: 6px;
-  height: 36px;
-  padding: 0 14px 0 12px;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  height: 48px;
+  padding: 0 14px;
   border-radius: var(--r-pill);
   background: var(--surface);
   font-size: 13px;
@@ -4050,7 +3781,7 @@ label.row-setting:hover {
   box-shadow: inset 0 0 0 1px var(--line-strong);
 }
 
-/* « Télécharger », and « Plus tard » beside it: a round button of the same height. */
+/* « Télécharger »: across the card. */
 .go {
   display: flex;
   gap: 8px;
@@ -4059,19 +3790,4 @@ label.row-setting:hover {
 .go > .btn--wide {
   flex: 1;
   width: auto;
-}
-
-.go__later {
-  width: 48px;
-  height: 48px;
-}
-
-.go__later--done {
-  color: var(--accent);
-}
-
-/* Chrome refused its own AI: said once, under the list. */
-.ai__note {
-  margin: 0;
-  padding: 0 16px;
 }

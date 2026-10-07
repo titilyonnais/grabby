@@ -10,7 +10,7 @@ import { SUB_CODEC, type SubsClock } from '../shared/subtitles';
 import type { Settings } from '../shared/settings';
 import { scaleBox, scaleSource } from '../shared/scale';
 import type { JobMode, MediaItem, Variant } from '../shared/types';
-import { finishWords, type Finish } from '../shared/finish';
+import type { Finish } from '../shared/finish';
 
 /**
  * From this size a file saved as is is fetched by Grabby in several ranges at once (and can
@@ -453,8 +453,7 @@ export async function buildPlan(item: MediaItem, o: PlanOptions): Promise<Plan> 
 /** What is done to the file afterwards needs ffmpeg: never a file saved as it is. */
 function withFinish(plan: Plan, item: MediaItem, o: PlanOptions): Plan {
   if (!o.finish || plan.image) return plan;
-  const i18n = typeof chrome !== 'undefined' ? chrome.i18n : undefined;
-  let out: Plan = { ...plan, finish: o.finish, ...(o.settings.chromeAi ? { chromeAi: true } : {}), ...(i18n ? { words: finishWords((k, s) => i18n.getMessage(k, s), i18n.getUILanguage()) } : {}) };
+  let out: Plan = { ...plan, finish: o.finish };
   if (out.kind === 'file' && (out.direct || out.raw)) {
     if ((item.size ?? 0) > RAW_THRESHOLD) throw new PlanError('too_large');
     out = { ...out, raw: false };

@@ -11,7 +11,6 @@ interface Step {
 
 const STEPS: Step[] = [
   { target: '[data-tour="tabs"]', icon: 'film', key: 'tourPage' },
-  { target: '[data-tour="app"]', icon: 'grid', key: 'tourApp' },
   { target: '[data-tour="settings"]', icon: 'settings', key: 'tourSettings' },
   { icon: 'sparkle', key: 'tourMore' },
 ];

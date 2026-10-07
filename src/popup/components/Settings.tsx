@@ -9,7 +9,6 @@ import { Icon, type IconName } from './Icon';
 import { Segmented } from './Segmented';
 import { Select } from './Select';
 import { InstallStatus } from './Update';
-import { AiPanel } from './AiPanel';
 import type { InstallState } from '../../shared/messages';
 
 interface Props {
@@ -180,7 +179,7 @@ function Help({ warn, onOpen }: { warn: boolean; onOpen: () => void }) {
 }
 
 /** The settings' sections, in the order of the menu (two columns of tiles: no scrolling). */
-const CATEGORIES = ['look', 'formats', 'files', 'downloads', 'keys', 'pages', 'updates'] as const;
+const CATEGORIES = ['look', 'formats', 'files', 'downloads', 'keys', 'updates'] as const;
 type Category = (typeof CATEGORIES)[number];
 
 const CATEGORY_ICONS: Record<Category, IconName> = {
@@ -189,7 +188,6 @@ const CATEGORY_ICONS: Record<Category, IconName> = {
   files: 'folder',
   downloads: 'download',
   keys: 'keyboard',
-  pages: 'sparkle',
   updates: 'gift',
 };
 
@@ -208,8 +206,6 @@ function summary(c: Category, s: S, keys: string | null): string {
         .join(', ');
     case 'keys':
       return [keys || t('set_sum_nokeys'), t(s.quickMode === 'audio' ? 'set_quick_audio' : 'set_quick_video')].join(', ');
-    case 'pages':
-      return t(s.aiModels ? 'set_sum_ai_on' : 'set_sum_ai_off');
     case 'updates':
       return [s.sync ? t('set_sum_sync_on') : '', s.updateCheck ? t('set_sum_updates_on') : t('set_sum_updates_off')].filter(Boolean).join(', ');
   }
@@ -454,13 +450,6 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
         </div>
       </Group>
     ),
-    pages: () => (
-      <Group index={0}>
-        <Toggle label={t('set_ai')} hint={t('set_ai_hint')} checked={settings.aiModels} onChange={(aiModels) => onChange({ aiModels })} />
-        <Toggle label={t('set_chrome_ai')} hint={t('set_chrome_ai_hint')} checked={settings.chromeAi} onChange={(chromeAi) => onChange({ chromeAi })} />
-        <AiPanel allowed={settings.aiModels} chromeAi={settings.chromeAi} onChromeOff={() => onChange({ chromeAi: false })} />
-      </Group>
-    ),
     updates: () => (
       <Group index={0}>
         <Toggle label={t('set_sync')} hint={t('set_sync_hint')} checked={settings.sync} onChange={(sync) => onChange({ sync })} />
@@ -518,17 +507,8 @@ export function Settings({ class: className, settings, browserAsks, onChange, on
                 </button>
               ))}
             </nav>
-            {/* Grabby elsewhere: its full page, next to the page, the tour again. */}
+            {/* Grabby elsewhere: next to the page; the tour again. */}
             <div class="smenu__more">
-              <button
-                class="btn btn--soft btn--small"
-                onClick={() => {
-                  void chrome.runtime.sendMessage({ app: 'open-app', section: 'library' }).catch(() => {});
-                  window.close();
-                }}
-              >
-                {t('set_app_open')}
-              </button>
               {chrome.sidePanel && !document.documentElement.hasAttribute('data-side') && (
                 <button class="btn btn--soft btn--small" onClick={() => void openSidePanel()}>
                   {t('set_side_open')}

@@ -1,18 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { checkFile, mp4Boxes, sizeMatches } from '../../src/shared/verify';
-import { editedTranscript, exportTranscript, spokenHits, transcriptOf, type Transcript } from '../../src/shared/transcript';
-import { nextTime, withLater } from '../../src/shared/later';
 import { fromSynced, staleKeys, SYNC_PREFIX, toSynced } from '../../src/shared/sync';
 import { DEFAULT_SETTINGS, type Settings } from '../../src/shared/settings';
 import { omniboxRequest } from '../../src/shared/batch';
-import { libraryNumbers, weekOf } from '../../src/shared/stats';
-import { crc32, imageNames, keepImages, largestFromSrcset, zipStore } from '../../src/shared/images';
 import { savedBefore, youTubeIdOf } from '../../src/shared/saved';
 import { browserName, reportOf, systemName } from '../../src/shared/report';
-import { feedLinkIn, feedUrl, parsePodcast } from '../../src/shared/feeds';
 import { audioFilters, CLEAN_SOUND, cleanEdit, encodeAttempts } from '../../src/shared/finish';
-import { collectionsOf, searchLibrary } from '../../src/app/sections/Library';
-import { clockOf, resumeAt } from '../../src/app/sections/Player';
 import type { HistoryEntry, Job } from '../../src/shared/types';
 
 /* ------------------------------------------------------------ helpers */
@@ -81,82 +74,29 @@ describe('checkFile', () => {
   });
 });
 
-/* -------------------------------------------- « Chercher ce qui est dit », export */
-describe('transcripts', () => {
-  const said: Transcript = {
-    cues: [
-      { start: 1, end: 3, text: 'Bonjour à tous' },
-      { start: 3.5, end: 6, text: "Aujourd'hui on parle d'énergie" },
-      { start: 6, end: 9, text: 'solaire et du vent' },
-    ],
-  };
-  it('keeps the words as said, the transcription first, without tags', () => {
-    const t = transcriptOf([
-      { cues: [{ start: 0, end: 1, text: 'translated' }], made: 'translated', lang: 'en' },
-      { cues: [{ start: 0, end: 1, text: '<i>dit</i>  ici' }], made: 'transcribed', lang: 'fr' },
-    ])!;
-    expect(t).toEqual({ lang: 'fr', ai: true, cues: [{ start: 0, end: 1, text: 'dit ici' }] });
-    expect(transcriptOf([])).toBeUndefined();
-  });
-  it('finds a phrase without accents, even over two lines', () => {
-    expect(spokenHits(said, 'energie')).toEqual([{ at: 3.5, text: "Aujourd'hui on parle d'énergie" }]);
-    expect(spokenHits(said, 'énergie solaire').map((h) => h.at)).toEqual([3.5]);
-    expect(spokenHits(said, 'x')).toEqual([]);
-  });
-  it('exports subtitles, text and Markdown', () => {
-    expect(exportTranscript(said, 'srt')).toContain('2\n00:00:03,500 --> 00:00:06,000\nAujourd');
-    expect(exportTranscript(said, 'txt', 'Titre')).toBe("Titre\n\n[0:01] Bonjour à tous\n[0:03] Aujourd'hui on parle d'énergie\n[0:06] solaire et du vent\n");
-    expect(exportTranscript(said, 'md', 'Titre')).toMatch(/^# Titre\n\n\*\*\[0:01\]\*\* Bonjour/);
-  });
-  it('edits lines: moved, trimmed, the empty ones gone', () => {
-    const t = editedTranscript(said, [{ start: 1, end: 3, text: '  Salut  ' }, { start: 3.5, end: 6, text: '' }, { start: 0.2, end: 1, text: 'avant' }], -0.5);
-    expect(t.cues).toEqual([
-      { start: 0.5, end: 2.5, text: 'Salut' },
-      { start: 0, end: 0.5, text: 'avant' },
-    ]);
-  });
-});
-
-/* --------------------------------------------------- « À télécharger plus tard » */
-describe('later', () => {
-  it('keeps a page once, the latest first', () => {
-    let list = withLater([], { url: 'https://a.test/1', title: 'Un', mode: 'auto' }, 1);
-    list = withLater(list, { url: 'https://a.test/2', title: 'Deux', mode: 'audio' }, 2);
-    list = withLater(list, { url: 'https://a.test/1', title: 'Un encore', mode: 'auto' }, 3);
-    expect(list.map((l) => l.title)).toEqual(['Un encore', 'Deux']);
-    expect(list[0]!.added).toBe(3);
-  });
-  it('plans the next time of day', () => {
-    const now = new Date(2026, 9, 6, 22, 30);
-    expect(new Date(nextTime(23 * 60, now)).getDate()).toBe(6);
-    expect(new Date(nextTime(2 * 60, now)).getDate()).toBe(7);
-    expect(new Date(nextTime(22 * 60 + 30, now)).getDate()).toBe(7);
-  });
-});
-
 /* ----------------------------------------------------- « Réglages synchronisés » */
 describe('sync', () => {
-  const s: Settings = { ...DEFAULT_SETTINGS, sync: true, tourDone: true, rules: Array.from({ length: 120 }, (_, i) => ({ id: `r${i}`, site: `site${i}.example`, mode: 'audio' as const, quality: 'best', subs: [], folder: 'Dossier '.repeat(4) })) };
-  it('leaves what is of this computer out and cuts the rules in pieces', () => {
+  const s: Settings = { ...DEFAULT_SETTINGS, sync: true, tourDone: true };
+  it('leaves what is of this computer out, in one piece', () => {
     const out = toSynced(s);
+    expect(Object.keys(out)).toEqual([`${SYNC_PREFIX}settings`]);
     const plain = out[`${SYNC_PREFIX}settings`] as Record<string, unknown>;
     expect(plain.sync).toBeUndefined();
     expect(plain.tourDone).toBeUndefined();
-    expect(plain.rules).toBeUndefined();
-    const n = out[`${SYNC_PREFIX}rules.n`] as number;
-    expect(n).toBeGreaterThan(1);
-    for (let i = 0; i < n; i++) expect(JSON.stringify(out[`${SYNC_PREFIX}rules.${i}`]).length).toBeLessThanOrEqual(7000);
+    expect(plain.theme).toBe(s.theme);
   });
-  it('comes back whole, and tells the pieces no longer used', () => {
-    const out = toSynced(s);
-    const back = fromSynced(out)!;
-    expect(back.rules).toHaveLength(120);
+  it('comes back whole, without what Grabby no longer has', () => {
+    const back = fromSynced(toSynced(s))!;
     expect(back.sync).toBeUndefined();
     expect(back.theme).toBe(s.theme);
     expect(fromSynced({})).toBeUndefined();
-    const fewer = toSynced({ ...s, rules: [] });
-    expect(staleKeys(out, fewer).every((k) => k.startsWith(`${SYNC_PREFIX}rules.`))).toBe(true);
-    expect(staleKeys(out, fewer).length).toBe(out[`${SYNC_PREFIX}rules.n`]);
+    // Synced by an older version: its rules per site and AI choices stay out.
+    expect(fromSynced({ [`${SYNC_PREFIX}settings`]: { theme: s.theme, rules: [{ site: 'a.test' }], aiModels: true, chromeAi: true, sync: true } })).toEqual({ theme: s.theme });
+  });
+  it('tells the rule pieces of older versions as no longer used', () => {
+    const before = { [`${SYNC_PREFIX}settings`]: {}, [`${SYNC_PREFIX}rules.n`]: 2, [`${SYNC_PREFIX}rules.0`]: [], [`${SYNC_PREFIX}rules.1`]: [], other: 1 };
+    expect(staleKeys(before, toSynced(s)).sort()).toEqual([`${SYNC_PREFIX}rules.0`, `${SYNC_PREFIX}rules.1`, `${SYNC_PREFIX}rules.n`]);
+    expect(staleKeys(toSynced(s), toSynced(s))).toEqual([]);
   });
 });
 
@@ -166,82 +106,6 @@ describe('omniboxRequest', () => {
     expect(omniboxRequest('son youtu.be/abcdefghijk')).toEqual({ urls: ['https://youtu.be/abcdefghijk'], mode: 'audio' });
     expect(omniboxRequest('https://a.test/x https://b.test/y').urls).toHaveLength(2);
     expect(omniboxRequest('hello').urls).toEqual([]);
-  });
-});
-
-/* ------------------------------------------------------------ statistics */
-describe('libraryNumbers', () => {
-  const now = new Date(2026, 9, 7, 18).getTime();
-  const day = (d: number, h = 20) => new Date(2026, 9, d, h).getTime();
-  const list = [
-    entry({ date: day(7), pageUrl: 'https://www.youtube.com/watch?v=1', filename: 'a.mp4', size: 100 }),
-    entry({ date: day(6), pageUrl: 'https://www.youtube.com/watch?v=2', filename: 'b.m4a', size: 50, mode: 'audio' }),
-    entry({ date: day(5), pageUrl: 'https://vimeo.com/3', filename: 'c.png', size: 10 }),
-    entry({ date: day(1, 9), pageUrl: 'https://vimeo.com/4', filename: 'd.mp4', size: 40 }),
-    entry({ date: new Date(2026, 7, 1).getTime(), pageUrl: 'file:///x', filename: 'e.mp4', size: 1 }),
-  ];
-  const n = libraryNumbers(list, now, 12);
-  it('counts files, room, kinds, sites and formats', () => {
-    expect(n.files).toBe(5);
-    expect(n.bytes).toBe(201);
-    expect(n.kinds.audio).toEqual({ n: 1, bytes: 50 });
-    expect(n.kinds.image.n).toBe(1);
-    expect(n.sites.map((s) => s.site)).toEqual(['youtube.com', 'vimeo.com']);
-    expect(n.formats[0]).toEqual({ format: 'mp4', n: 3 });
-    expect(n.hour).toBe(20);
-  });
-  it('counts the weeks and the days in a row', () => {
-    expect(n.week).toBe(3);
-    expect(n.perWeek).toHaveLength(12);
-    expect(n.perWeek[11]).toBe(3);
-    expect(n.perWeek[10]).toBe(1);
-    expect(n.streak).toEqual({ best: 3, now: 3 });
-    expect(new Date(weekOf(now)).getDay()).toBe(1);
-  });
-});
-
-/* ------------------------------------------------------ « Toutes les images » */
-describe('images', () => {
-  it('takes the biggest picture of a srcset', () => {
-    expect(largestFromSrcset('a.jpg 480w, b.jpg 1080w, c.jpg 720w', 'https://x.test/p/')).toBe('https://x.test/p/b.jpg');
-    expect(largestFromSrcset('a.jpg 1x, b.jpg 2x', 'https://x.test/')).toBe('https://x.test/b.jpg');
-  });
-  it('keeps real pictures once each, not the tiny ones', () => {
-    const kept = keepImages([
-      { url: 'https://x.test/a.jpg', w: 800, h: 600 },
-      { url: 'https://x.test/a.jpg', w: 0, h: 0 },
-      { url: 'https://x.test/icon.png', w: 16, h: 16 },
-      { url: 'javascript:alert(1)', w: 0, h: 0 },
-      { url: 'data:image/png;base64,AAAA', w: 100, h: 100 },
-    ]);
-    expect(kept.map((i) => i.url)).toEqual(['https://x.test/a.jpg', 'data:image/png;base64,AAAA']);
-    expect(kept[0]!.w).toBe(800);
-  });
-  it('names files once each', () => {
-    expect(imageNames([{ url: 'https://x.test/photo.JPEG' }, { url: 'https://y.test/photo.jpeg?x=1' }, { url: 'data:image/png;base64,AA', type: 'image/png' }, { url: 'https://z.test/', type: 'image/webp' }])).toEqual([
-      'photo.jpg',
-      'photo (2).jpg',
-      'image-3.png',
-      'image-4.webp',
-    ]);
-  });
-  it('makes a .zip any unzip tool reads', () => {
-    expect(crc32(enc.encode('123456789'))).toBe(0xcbf43926);
-    const zip = zipStore([
-      { name: 'a.txt', data: enc.encode('hello') },
-      { name: 'é.txt', data: enc.encode('world!') },
-    ]);
-    const view = new DataView(zip.buffer);
-    expect(view.getUint32(0, true)).toBe(0x04034b50);
-    const end = zip.length - 22;
-    expect(view.getUint32(end, true)).toBe(0x06054b50);
-    expect(view.getUint16(end + 10, true)).toBe(2);
-    const dirAt = view.getUint32(end + 16, true);
-    expect(view.getUint32(dirAt, true)).toBe(0x02014b50);
-    expect(view.getUint32(dirAt + 16, true)).toBe(crc32(enc.encode('hello')));
-    // The second file's header is where the directory says.
-    const second = dirAt + 46 + 5;
-    expect(view.getUint32(second + 42, true)).toBe(30 + 5 + 5);
   });
 });
 
@@ -284,41 +148,6 @@ describe('report', () => {
   });
 });
 
-/* ------------------------------------------------------------- podcasts */
-describe('parsePodcast', () => {
-  const rss = `<?xml version="1.0"?><rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel>
-    <title><![CDATA[Le podcast]]></title><link>https://pod.test/</link><itunes:image href="https://pod.test/cover.jpg"/>
-    <item><title>Épisode 2</title><guid>ep-2</guid><pubDate>Tue, 06 Oct 2026 08:00:00 GMT</pubDate>
-      <enclosure url="https://cdn.pod.test/ep2.mp3?x=1" type="audio/mpeg" length="1"/><link>https://pod.test/2</link></item>
-    <item><title>Épisode 1</title><pubDate>Mon, 05 Oct 2026 08:00:00 GMT</pubDate><enclosure url="https://cdn.pod.test/ep1.m4a" type="audio/x-m4a"/></item>
-    <item><title>Un article</title><link>https://pod.test/a</link></item>
-  </channel></rss>`;
-  it('reads a podcast: title, picture, site and episodes with their files', () => {
-    const p = parsePodcast(rss, 'https://pod.test/feed.xml')!;
-    expect(p.title).toBe('Le podcast');
-    expect(p.image).toBe('https://pod.test/cover.jpg');
-    expect(p.site).toBe('https://pod.test/');
-    expect(p.entries.map((e) => e.title)).toEqual(['Épisode 2', 'Épisode 1']);
-    expect(p.entries[0]).toMatchObject({ id: 'ep-2', url: 'https://cdn.pod.test/ep2.mp3?x=1', link: 'https://pod.test/2', audio: true });
-    expect(p.entries[1]!.id).toBe('https://cdn.pod.test/ep1.m4a');
-    expect(feedUrl('feed', 'https://pod.test/feed.xml')).toBe('https://pod.test/feed.xml');
-  });
-  it('reads Atom enclosures, and leaves feeds without files', () => {
-    const atom = `<feed xmlns="http://www.w3.org/2005/Atom"><title>Vidéos</title><entry><id>tag:1</id><title>Une</title><updated>2026-10-06T00:00:00Z</updated>
-      <link rel="enclosure" href="https://v.test/1.mp4" type="video/mp4"/><link href="https://v.test/1"/></entry></feed>`;
-    const p = parsePodcast(atom)!;
-    expect(p.entries[0]).toMatchObject({ id: 'tag:1', url: 'https://v.test/1.mp4', link: 'https://v.test/1' });
-    expect(p.entries[0]!.audio).toBeUndefined();
-    expect(parsePodcast('<rss><channel><title>Blog</title><item><title>x</title></item></channel></rss>')).toBeNull();
-    expect(parsePodcast('<html>no</html>')).toBeNull();
-  });
-  it('finds the feed a page names', () => {
-    const html = '<head><link rel="alternate" type="application/rss+xml" title="RSS" href="/feed?a=1&amp;b=2"></head>';
-    expect(feedLinkIn(html, 'https://pod.test/show')).toBe('https://pod.test/feed?a=1&b=2');
-    expect(feedLinkIn('<link rel="stylesheet" href="/a.css">', 'https://pod.test/')).toBeUndefined();
-  });
-});
-
 /* -------------------------------------------- « Son plus propre », faster encoding */
 describe('finish 2.0', () => {
   it('keeps « son plus propre » unless the sound is taken away', () => {
@@ -338,35 +167,6 @@ describe('finish 2.0', () => {
     expect(sized[0]!.args.join(' ')).toContain('-preset veryfast');
     const plain = encodeAttempts({ input: 'in.mp4', outBase: 'out', ext: 'mp4', audioOnly: false, edit: { flip: true } });
     expect(plain[0]!.args.join(' ')).toContain('-c:a copy');
-  });
-});
-
-/* -------------------------------------------------------------- library */
-describe('library', () => {
-  const a = entry({ id: 'a', title: 'Recette de crêpes', tags: ['Cuisine', 'Favoris'], text: true });
-  const b = entry({ id: 'b', title: 'Concert', tags: ['Cuisine'] });
-  const c = entry({ id: 'c', title: 'Autre' });
-  it('lists collections, the biggest first', () => {
-    expect(collectionsOf([a, b, c])).toEqual([
-      { name: 'Cuisine', n: 2 },
-      { name: 'Favoris', n: 1 },
-    ]);
-  });
-  it('finds files by title and by what is said in them', () => {
-    const texts = { c: { cues: [{ start: 65, end: 70, text: 'on ajoute la farine' }] } };
-    const { shown, hits } = searchLibrary([a, b, c], 'farine', texts);
-    expect(shown.map((e) => e.id)).toEqual(['c']);
-    expect(hits.get('c')).toEqual([{ at: 65, text: 'on ajoute la farine' }]);
-    expect(searchLibrary([a, b, c], 'crepes', texts).shown.map((e) => e.id)).toEqual(['a']);
-    expect(searchLibrary([a, b], '', texts).shown).toHaveLength(2);
-  });
-  it('takes up where it was left, not at the very start or end', () => {
-    expect(resumeAt(120, 600)).toBe(120);
-    expect(resumeAt(3, 600)).toBeUndefined();
-    expect(resumeAt(595, 600)).toBeUndefined();
-    expect(resumeAt(undefined, 600)).toBeUndefined();
-    expect(clockOf(65)).toBe('1:05');
-    expect(clockOf(3725)).toBe('1:02:05');
   });
 });
 

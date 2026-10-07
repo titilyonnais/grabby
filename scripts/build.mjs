@@ -16,10 +16,6 @@ function shared() {
       __VERSION__: JSON.stringify(pkg.version),
     },
     oxc: { jsx: { runtime: 'automatic', importSource: 'preact' } },
-    resolve: {
-      // ONNX Runtime without WebGPU, its loader shipped next to it (dist/ort): one small runtime.
-      alias: [{ find: /^onnxruntime-web\/(webgpu|wasm)$/, replacement: resolve(root, 'node_modules/onnxruntime-web/dist/ort.wasm.min.mjs') }],
-    },
   };
 }
 
@@ -45,7 +41,6 @@ async function buildAll() {
         input: {
           popup: resolve(root, 'src/pages/popup.html'),
           sidepanel: resolve(root, 'src/pages/sidepanel.html'),
-          app: resolve(root, 'src/pages/app.html'),
           offscreen: resolve(root, 'src/pages/offscreen.html'),
           'capture-sink': resolve(root, 'src/pages/capture-sink.html'),
         },
@@ -84,10 +79,6 @@ async function buildAll() {
   await mkdir(resolve(out, 'ffmpeg'), { recursive: true });
   await cp(resolve(core, 'ffmpeg-core.js'), resolve(out, 'ffmpeg/ffmpeg-core.js'));
   await cp(resolve(core, 'ffmpeg-core.wasm'), resolve(out, 'ffmpeg/ffmpeg-core.wasm'));
-  // ONNX Runtime for the local AI (transcription, translation): Grabby's own copy, never fetched.
-  const ort = resolve(root, 'node_modules/onnxruntime-web/dist');
-  await mkdir(resolve(out, 'ort'), { recursive: true });
-  for (const f of ['ort-wasm-simd-threaded.mjs', 'ort-wasm-simd-threaded.wasm']) await cp(resolve(ort, f), resolve(out, `ort/${f}`));
   for (const f of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) {
     await cp(resolve(root, f), resolve(out, f)).catch(() => {});
   }

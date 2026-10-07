@@ -206,7 +206,7 @@ export interface Job {
   startNow?: boolean;
   /** A video of a YouTube playlist or channel: enough to find it again. */
   entry?: YtEntry;
-  /** What is done to the file once it is made (editor, size, AI). */
+  /** What is done to the file once it is made (editor, size, chapters). */
   finish?: Finish;
   /** A live stream recorded until stopped: at most this many minutes. */
   live?: number;
@@ -218,8 +218,8 @@ export interface Job {
   thumbnail?: string;
 }
 
-/** The steps after a file is made: the model downloaded, subtitles written or translated… */
-export type JobStep = 'model' | 'transcribe' | 'translate' | 'summary' | 'encode' | 'split';
+/** The steps after a file is made: made again (editor, size), cut in chapters. */
+export type JobStep = 'encode' | 'split';
 
 export interface HistoryEntry {
   id: string;
@@ -240,7 +240,7 @@ export interface HistoryEntry {
   format?: OutputFormat;
   /** Set when the state is built: the file was moved, deleted or erased from the browser's list. */
   missing?: boolean;
-  /** What is said in it is kept (see transcript.ts): searchable, exportable. */
+  /** Before 2.5: what was said in it was kept (the library's search). */
   text?: boolean;
   /** Marked as a favorite. */
   fav?: boolean;

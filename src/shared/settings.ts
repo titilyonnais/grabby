@@ -1,6 +1,5 @@
 import type { AudioFormat, VideoFormat } from './plan';
 import type { FolderMode } from './filename';
-import type { Rule } from './rules';
 
 /** Grabby's own color (buttons, bars, the round button on videos). */
 export const ACCENTS = ['coral', 'blue', 'violet', 'green', 'amber', 'pink'] as const;
@@ -38,24 +37,13 @@ export interface Settings {
   normalize: boolean;
   /** YouTube: the parts marked as sponsored (SponsorBlock) left out of the file. */
   skipSponsors: boolean;
-  /** Automatic choices per site (see rules.ts). */
-  rules: Rule[];
   /** A Grabby button over the videos of the pages. */
   overlayButton: boolean;
-  /** The user agreed to download the local AI's models (transcription, translation). */
-  aiModels: boolean;
-  /**
-   * Chrome's own AI (its translator, Gemini Nano's summarizer) may be used. Off by default:
-   * merely asking Chrome whether it has it writes a warning in the extension's errors when
-   * Chrome has it turned off (« The feature flag gating model execution was disabled »), so
-   * Grabby never asks unless told to.
-   */
-  chromeAi: boolean;
   /** How many downloads run at the same time (the others wait their turn). */
   parallel: number;
   /** Every file read again once made: a damaged one is made again. */
   verify: boolean;
-  /** Settings and rules follow the browser's account (the browser's own sync). */
+  /** Settings follow the browser's account (the browser's own sync). */
   sync: boolean;
   /** The guided tour was seen (or skipped). */
   tourDone: boolean;
@@ -81,10 +69,7 @@ export const DEFAULT_SETTINGS: Settings = {
   quickMode: 'video',
   normalize: false,
   skipSponsors: false,
-  rules: [],
   overlayButton: true,
-  aiModels: false,
-  chromeAi: false,
   parallel: 2,
   verify: true,
   sync: false,
@@ -97,12 +82,13 @@ const KEY = 'settings';
 
 export async function getSettings(): Promise<Settings> {
   const res = await chrome.storage.local.get(KEY);
-  const stored = (res[KEY] as Partial<Settings>) ?? {};
+  // What Grabby no longer has (its AI, the rules per site of the full page) is left behind.
+  const { aiModels: _a, chromeAi: _c, rules: _r, ...stored } = (res[KEY] as Partial<Settings> & Record<'aiModels' | 'chromeAi' | 'rules', unknown>) ?? {};
   // Set before 1.9 as "in a Grabby folder".
   const folder = stored.folder ?? (stored.subfolder ? 'grabby' : 'none');
   const accent = (ACCENTS as readonly string[]).includes(stored.accent as string) ? stored.accent! : DEFAULT_SETTINGS.accent;
   const parallel = Math.min(4, Math.max(1, Math.round(Number(stored.parallel) || DEFAULT_SETTINGS.parallel)));
-  return { ...DEFAULT_SETTINGS, ...stored, folder, accent, parallel, rules: Array.isArray(stored.rules) ? stored.rules : [] };
+  return { ...DEFAULT_SETTINGS, ...stored, folder, accent, parallel };
 }
 
 let writing: Promise<unknown> = Promise.resolve();

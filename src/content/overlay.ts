@@ -150,7 +150,6 @@ const YT_ICONS = {
   chevron: { s: 'M6 9.5l6 6 6-6' },
   audio: { s: 'M9 17.5V5.5l10-2v12M9 17.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0Zm10-2a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0Z' },
   photo: { s: 'M3 8.5a2 2 0 0 1 2-2h2.3l1.5-2.5h6.4l1.5 2.5H19a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8.5ZM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z' },
-  later: { s: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 7v5l3.5 2' },
   open: { s: 'M14 4h6v6M20 4l-8.5 8.5M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5' },
   check: { s: 'M5 12.5l4.5 4.5L19 7.5' },
   failed: { s: 'M12 7.5V13m0 3.5v.01M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z' },
@@ -185,7 +184,7 @@ const quiet = (el: Element) => {
 /**
  * Under YouTube's player, right after the thumbs: « Télécharger | ⌄ », a two-part pill like the
  * thumbs. « Télécharger » saves the video at once (and shows its progress); the arrow opens a
- * menu like YouTube's: the qualities, the sound alone, a photo, later, and Grabby's window.
+ * menu like YouTube's: the qualities, the sound alone, a photo, and Grabby's window.
  */
 function ytRowIn(row: Element, video: () => HTMLVideoElement | null): YtRow {
   const el = document.createElement('grabby-yt');
@@ -363,7 +362,6 @@ function ytRowIn(row: Element, video: () => HTMLVideoElement | null): YtRow {
     box.append(
       item(YT_ICONS.audio, say('overlayAudio'), media ? media.audioFormat.toUpperCase() : '', () => start('audio')),
       item(YT_ICONS.photo, say('overlayPhoto'), '', () => void shoot(video())),
-      item(YT_ICONS.later, say('overlayLater'), '', () => void send({ type: 'later' })),
       divider(),
       item(YT_ICONS.open, say('ytOpenGrabby'), '', () => void send({ type: 'open-grabby' })),
     );

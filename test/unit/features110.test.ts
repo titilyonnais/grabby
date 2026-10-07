@@ -11,7 +11,6 @@ import {
   encodeAttempts,
   hasSoundIn,
   heightIn,
-  needsAi,
   needsEncode,
   pieceArgs,
   pieceName,
@@ -19,17 +18,10 @@ import {
   speedCues,
   videoFilters,
 } from '../../src/shared/finish';
-import { clockText, keywords, proposeChapters, sentencesOf, summarize, summaryText } from '../../src/shared/summary';
 import { baseLang, guessLang, isStopword, wordsOf } from '../../src/shared/langs';
-import { cuesFromSaid, quietCuts, SAMPLE_RATE } from '../../src/shared/speech';
-import { pairModel, TRANSLATE_TARGETS, translationRoute } from '../../src/shared/translate';
 import { concatList, copyable, joinBox, joinEncodeArgs, liveList, livePieces, mediaInfoIn } from '../../src/shared/join';
-import { channelIdIn, feedUrl, newEntries, parseFeed, watchTarget } from '../../src/shared/feeds';
 import { parseUrls } from '../../src/shared/batch';
-import { applyRule, cleanRules, ruleFor, siteOf, subtitlesFor, variantFor, type Rule } from '../../src/shared/rules';
 import { pieceFilename } from '../../src/shared/filename';
-import { cleanHistory, cleanSettings, cleanWatches } from '../../src/background/backup';
-import type { MediaItem } from '../../src/shared/types';
 
 const VIDEO_LOG = `Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'in.mp4':
   Duration: 00:02:05.50, start: 0.000000, bitrate: 1200 kb/s
@@ -45,13 +37,11 @@ describe('cleanFinish', () => {
   it('keeps only what makes sense', () => {
     expect(cleanFinish(undefined, false)).toBeUndefined();
     expect(cleanFinish({}, false)).toBeUndefined();
+    // What the local AI did before 2.5 is left out.
     expect(cleanFinish({ compress: 25, burn: true, split: true, summary: true, transcribe: 'auto', translate: 'fr' }, false)).toEqual({
       compress: 25,
       burn: true,
       split: true,
-      summary: true,
-      transcribe: 'auto',
-      translate: 'fr',
     });
   });
   it('refuses odd values', () => {
@@ -65,12 +55,10 @@ describe('cleanFinish', () => {
     expect(cleanFinish({ edit: { speed: 10 } }, false)).toEqual({ edit: { speed: 4 } });
     expect(cleanFinish({ edit: { speed: 1 } }, false)).toBeUndefined();
   });
-  it('says what needs encoding or the AI', () => {
+  it('says what needs encoding', () => {
     expect(needsEncode({ split: true })).toBe(false);
     expect(needsEncode({ compress: 10 })).toBe(true);
     expect(needsEncode({ edit: { mute: true } })).toBe(true);
-    expect(needsAi({ burn: true })).toBe(false);
-    expect(needsAi({ summary: true })).toBe(true);
   });
 });
 
@@ -324,249 +312,9 @@ describe('languages', () => {
   });
 });
 
-describe('summary', () => {
-  const cues = [
-    { start: 0, end: 2, text: 'Bonjour à tous, aujourd’hui' },
-    { start: 2, end: 4, text: 'aujourd’hui on parle de montagne.' },
-    { start: 4, end: 6, text: 'La montagne en hiver est magnifique.' },
-    { start: 6, end: 8, text: 'Oui.' },
-  ];
-  it('makes sentences from cues', () => {
-    const s = sentencesOf(cues);
-    expect(s.map((x) => x.text)).toEqual(['Bonjour à tous, aujourd’hui on parle de montagne.', 'La montagne en hiver est magnifique.']);
-    expect(s[1]!.start).toBe(4);
-  });
-  it('finds keywords', () => {
-    expect(keywords('montagne neige montagne neige ski le le le la', 'fr')).toEqual(['montagne', 'neige']);
-  });
-  it('keeps the sentences that say the most, in order', () => {
-    const FILLER = 'abricot balcon cerise dauphin écharpe falaise girafe hibou igloo jonquille kayak lanterne mouette navire orage pinceau quartz radeau sapin tulipe'
-      .split(' ')
-      .map((w, i, all) => `${w} ${all[(i + 7) % all.length]}ette ${w}ier`);
-    const many = Array.from({ length: 20 }, (_, i) => ({
-      text: i % 4 === 0 ? 'La montagne et la neige font le ski en hiver.' : `${FILLER[i]}.`,
-      start: i * 10,
-    }));
-    const top = summarize(many, 3, 'fr');
-    expect(top).toHaveLength(3);
-    expect(top.every((s) => s.text.includes('montagne'))).toBe(true);
-    expect(top.map((s) => s.start)).toEqual([...top.map((s) => s.start)].sort((a, b) => a - b));
-  });
-  it('proposes chapters where the subject changes', () => {
-    const topics = ['cuisine recette tomate sauce cuisson', 'voiture moteur essence garage roue', 'jardin fleur arrosage graine terre'];
-    const sentences = Array.from({ length: 54 }, (_, i) => ({ text: `${topics[Math.floor(i / 18)]} encore ${topics[Math.floor(i / 18)]}`, start: i * 10 }));
-    const ch = proposeChapters(sentences, 540, 'fr');
-    expect(ch).toHaveLength(3);
-    expect(ch[0]!.start).toBe(0);
-    expect(Math.abs(ch[1]!.start - 180)).toBeLessThanOrEqual(20);
-    expect(Math.abs(ch[2]!.start - 360)).toBeLessThanOrEqual(20);
-    expect(ch[1]!.title).toMatch(/^[A-Z]/);
-    expect(proposeChapters(sentences.slice(0, 5), 100)).toEqual([]);
-  });
-  it('writes the text file', () => {
-    expect(clockText(3725)).toBe('1:02:05');
-    expect(clockText(249)).toBe('4:09');
-    const text = summaryText('Titre', {
-      summary: [{ text: 'Une phrase.', start: 65 }],
-      keywords: ['a', 'b'],
-      chapters: [{ start: 0, title: 'Début' }],
-      proposed: true,
-      words: { summary: 'Résumé', keywords: 'Mots-clés', chapters: 'Chapitres', proposed: 'Chapitres proposés' },
-    });
-    expect(text).toBe('Titre\n=====\n\nRésumé\n\n[1:05] Une phrase.\n\nMots-clés\n\na, b\n\nChapitres proposés\n\n0:00 Début\n');
-  });
-});
-
-describe('speech', () => {
-  it('cuts long recordings where it is quiet', () => {
-    const pcm = new Float32Array(SAMPLE_RATE * 60).fill(0.5);
-    // Silence around 22 s.
-    pcm.fill(0, SAMPLE_RATE * 22, SAMPLE_RATE * 22.3);
-    const cuts = quietCuts(pcm);
-    expect(cuts[0]! / SAMPLE_RATE).toBeGreaterThanOrEqual(22);
-    expect(cuts[0]! / SAMPLE_RATE).toBeLessThanOrEqual(22.3);
-    for (let i = 1; i < cuts.length; i++) expect(cuts[i]! - cuts[i - 1]!).toBeLessThanOrEqual(28 * SAMPLE_RATE);
-    expect(pcm.length - cuts[cuts.length - 1]!).toBeLessThanOrEqual(28 * SAMPLE_RATE);
-    expect(quietCuts(new Float32Array(SAMPLE_RATE * 10))).toEqual([]);
-  });
-  it('turns what was said into cues', () => {
-    const cues = cuesFromSaid([
-      {
-        offset: 30,
-        length: 28,
-        said: [
-          { text: ' Bonjour ', timestamp: [0, 2] },
-          { text: '[Musique]', timestamp: [2, 4] },
-          { text: 'Bonjour', timestamp: [2.5, 3] },
-          { text: 'Fin', timestamp: [5, null] },
-        ],
-      },
-    ]);
-    // The repeat is joined to the line before; the last one lasts until the end of the piece.
-    expect(cues).toEqual([
-      { start: 30, end: 33, text: 'Bonjour' },
-      { start: 35, end: 58, text: 'Fin' },
-    ]);
-  });
-  it('splits long lines by length', () => {
-    const long = 'mot '.repeat(60).trim();
-    const cues = cuesFromSaid([{ offset: 0, length: 30, said: [{ text: long, timestamp: [0, 20] }] }]);
-    expect(cues.length).toBeGreaterThan(2);
-    expect(cues.every((c) => c.text.length <= 84)).toBe(true);
-    expect(cues[cues.length - 1]!.end).toBeCloseTo(20);
-  });
-});
-
-describe('translation route', () => {
-  it('goes straight or through English', () => {
-    expect(translationRoute('en', 'fr')).toEqual([['en', 'fr']]);
-    expect(translationRoute('ko', 'fr')).toEqual([['ko', 'en'], ['en', 'fr']]);
-    expect(translationRoute('fr-FR', 'fr')).toBeNull();
-    expect(translationRoute(undefined, 'fr')).toBeNull();
-    expect(translationRoute('xx', 'fr')).toBeNull();
-  });
-  it('names the models', () => {
-    expect(pairModel('en', 'ja')).toBe('Xenova/opus-mt-en-jap');
-    expect(pairModel('ja', 'en')).toBe('Xenova/opus-mt-ja-en');
-    expect(TRANSLATE_TARGETS).toContain('fr');
-    expect(TRANSLATE_TARGETS).toContain('ja');
-    expect(TRANSLATE_TARGETS).not.toContain('pt');
-  });
-});
-
-describe('followed channels', () => {
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns="http://www.w3.org/2005/Atom">
- <title>Ma chaîne</title>
- <entry><yt:videoId>aaaaaaaaaaa</yt:videoId><title>Ancienne</title><published>2026-01-01T10:00:00+00:00</published></entry>
- <entry><yt:videoId>bbbbbbbbbbb</yt:videoId><title>Nouvelle &amp; belle</title><published>2026-02-01T10:00:00+00:00</published></entry>
- <entry><yt:videoId>bad</yt:videoId><title>Cassée</title></entry>
-</feed>`;
-  it('reads the feed, newest first', () => {
-    const f = parseFeed(xml)!;
-    expect(f.title).toBe('Ma chaîne');
-    expect(f.entries.map((e) => e.id)).toEqual(['bbbbbbbbbbb', 'aaaaaaaaaaa']);
-    expect(f.entries[0]!.title).toBe('Nouvelle & belle');
-    expect(parseFeed('<html>no</html>')).toBeNull();
-  });
-  it('keeps only new videos since following', () => {
-    const f = parseFeed(xml)!;
-    expect(newEntries(f.entries, [], Date.parse('2026-01-15')).map((e) => e.id)).toEqual(['bbbbbbbbbbb']);
-    expect(newEntries(f.entries, ['bbbbbbbbbbb'], 0)).toHaveLength(1);
-  });
-  it('knows what an address points at', () => {
-    const ch = 'UC' + 'x'.repeat(22);
-    expect(watchTarget(`https://www.youtube.com/channel/${ch}/videos`)).toEqual({ kind: 'channel', key: ch });
-    expect(watchTarget('youtube.com/playlist?list=PLabcdefghijkl')).toEqual({ kind: 'playlist', key: 'PLabcdefghijkl' });
-    expect(watchTarget('https://www.youtube.com/watch?v=abcdefghijk&list=RDabcdefghijk')).toEqual({ page: 'https://www.youtube.com/watch?v=abcdefghijk&list=RDabcdefghijk' });
-    expect(watchTarget('https://youtu.be/abcdefghijk')).toEqual({ page: 'https://www.youtube.com/watch?v=abcdefghijk' });
-    expect(watchTarget('https://www.youtube.com/@grabby')).toEqual({ page: 'https://www.youtube.com/@grabby' });
-    expect(watchTarget('https://vimeo.com/123')).toBeNull();
-    expect(watchTarget('https://www.youtube.com/feed/history')).toBeNull();
-    expect(feedUrl('channel', ch)).toBe(`https://www.youtube.com/feeds/videos.xml?channel_id=${ch}`);
-  });
-  it('reads the channel id of a page', () => {
-    const ch = 'UC' + 'y'.repeat(22);
-    expect(channelIdIn(`<meta itemprop="identifier" content="${ch}">`)).toBe(ch);
-    expect(channelIdIn(`..."externalId":"${ch}"...`)).toBe(ch);
-    expect(channelIdIn('<html></html>')).toBeNull();
-  });
-});
-
 describe('pasted addresses', () => {
   it('finds each address once, in order', () => {
     expect(parseUrls('https://a.test/1\nfoo https://b.test/2, (https://a.test/1) "http://c.test/x." ftp://d.test')).toEqual(['https://a.test/1', 'https://b.test/2', 'http://c.test/x']);
     expect(parseUrls('')).toEqual([]);
-  });
-});
-
-const media = (over: Partial<MediaItem>): MediaItem => ({
-  id: 'x',
-  tabId: 1,
-  frameUrl: 'https://site.test/',
-  pageUrl: 'https://site.test/watch',
-  kind: 'hls',
-  url: 'https://cdn.test/master.m3u8',
-  title: 't',
-  variants: [
-    { id: 'v1080', label: '1080p', url: 'u1', height: 1080, bandwidth: 5e6 },
-    { id: 'v720', label: '720p', url: 'u2', height: 720, bandwidth: 3e6 },
-    { id: 'v360', label: '360p', url: 'u3', height: 360, bandwidth: 8e5 },
-  ],
-  audioTracks: [],
-  protection: 'none',
-  live: false,
-  detectedAt: 0,
-  ...over,
-});
-
-describe('automatic rules', () => {
-  const rule = (over: Partial<Rule>): Rule => ({ id: 'r', site: '', mode: 'video', quality: 'best', subs: [], folder: '', ...over });
-  it('cleans what the user types as a site', () => {
-    expect(siteOf('https://www.YouTube.com/watch?v=1')).toBe('youtube.com');
-    expect(siteOf('  vimeo.com ')).toBe('vimeo.com');
-    expect(siteOf('')).toBe('');
-  });
-  it('picks the most precise rule', () => {
-    const rules = [rule({ id: 'all' }), rule({ id: 'yt', site: 'youtube.com' }), rule({ id: 'm', site: 'm.youtube.com' })];
-    expect(ruleFor(rules, 'https://m.youtube.com/watch')?.id).toBe('m');
-    expect(ruleFor(rules, 'https://www.youtube.com/watch')?.id).toBe('yt');
-    expect(ruleFor(rules, 'https://vimeo.com/1')?.id).toBe('all');
-    expect(ruleFor([rule({ id: 'yt', site: 'youtube.com' })], 'https://notyoutube.com/')).toBeUndefined();
-  });
-  it('picks a quality among those there are', () => {
-    const v = media({}).variants;
-    expect(variantFor(v, 'best')?.id).toBe('v1080');
-    expect(variantFor(v, 'smallest')?.id).toBe('v360');
-    expect(variantFor(v, '480')?.id).toBe('v360');
-    expect(variantFor(v, '720')?.id).toBe('v720');
-    expect(variantFor([{ id: 'big', label: '4K', url: 'u', height: 2160 }], '360')?.id).toBe('big');
-    expect(variantFor([], 'best')).toBeUndefined();
-  });
-  it('picks written subtitles before automatic ones', () => {
-    const tracks = [
-      { id: 'auto', lang: 'fr', label: 'fr auto', url: 'a', auto: true },
-      { id: 'own', lang: 'fr-FR', label: 'fr', url: 'b' },
-      { id: 'tr', lang: 'en', tlang: 'de', label: 'de', url: 'c' },
-    ];
-    expect(subtitlesFor(tracks as never, ['fr', 'de', 'es'])).toEqual(['own', 'tr']);
-  });
-  it('applies a rule, within what the video allows', () => {
-    const fb = { video: 'mp4', audio: 'mp3' } as const;
-    expect(applyRule(media({}), rule({ quality: '720', format: 'mkv', folder: ' Vidéos ' }), fb)).toEqual({ mode: 'video', variantId: 'v720', format: 'mkv', subtitles: [], folder: 'Vidéos' });
-    expect(applyRule(media({}), rule({ mode: 'audio', format: 'mkv' }), fb)).toEqual({ mode: 'audio', format: 'mp3', subtitles: [] });
-    expect(applyRule(media({ formats: ['mp4'] }), rule({ format: 'webm' }), fb).format).toBe('mp4');
-    expect(applyRule(media({}), undefined, fb)).toEqual({ mode: 'video', variantId: 'v1080', format: 'mp4', subtitles: [] });
-  });
-  it('reads rules back safely', () => {
-    const r = cleanRules([{ site: 'https://www.Vimeo.com', mode: 'audio', quality: 'huge', subs: ['fr', '<x>', 'en-US'], folder: 'A', format: 'MP3!' }, null, 'x']);
-    expect(r).toHaveLength(1);
-    expect(r[0]).toMatchObject({ site: 'vimeo.com', mode: 'audio', quality: 'best', subs: ['fr', 'en-US'], folder: 'A' });
-    expect(r[0]!.format).toBeUndefined();
-    expect(cleanRules('nope')).toEqual([]);
-  });
-});
-
-describe('backup', () => {
-  it('keeps only known settings of the right kind', () => {
-    const s = cleanSettings({ overlayButton: false, aiModels: 'yes', nope: 1, firstRunAck: true, rules: [{ site: 'a.test' }] });
-    expect(s.overlayButton).toBe(false);
-    expect('aiModels' in s).toBe(false);
-    expect('nope' in s).toBe(false);
-    expect('firstRunAck' in s).toBe(false);
-    expect(s.rules).toHaveLength(1);
-    expect(cleanSettings(null)).toEqual({});
-  });
-  it('reads history without odd addresses or pictures', () => {
-    const h = cleanHistory([
-      { id: '1', filename: 'a.mp4', title: 'A', pageUrl: 'javascript:alert(1)', thumbnail: 'javascript:x', size: -1, mode: 'audio', format: 'mp3', downloadId: 4 },
-      { id: '2', title: 'no file', pageUrl: '' },
-    ]);
-    expect(h).toEqual([{ id: '1', filename: 'a.mp4', title: 'A', pageUrl: '', size: 0, date: 0, mode: 'audio', format: 'mp3' }]);
-  });
-  it('reads followed channels safely', () => {
-    const w = cleanWatches([{ kind: 'channel', key: 'UCabc', seen: ['aaaaaaaaaaa', 'bad'], since: 5 }, { kind: 'other', key: 'x' }, { kind: 'playlist', key: 'a/b' }]);
-    expect(w).toHaveLength(1);
-    expect(w[0]).toMatchObject({ id: 'UCabc', kind: 'channel', key: 'UCabc', title: 'UCabc', mode: 'video', seen: ['aaaaaaaaaaa'], since: 5, got: 0 });
   });
 });

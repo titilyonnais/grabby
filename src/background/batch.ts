@@ -7,7 +7,7 @@ import { parseUrls, type BatchItem, type BatchMode } from '../shared/batch';
 import { uid } from '../shared/ids';
 import { getSettings } from '../shared/settings';
 import type { JobManager } from './jobs';
-import { pickFor, startWithRules } from './quick';
+import { pickFor, startQuick } from './quick';
 import type { Registry } from './registry';
 import { visibleItems } from './visible';
 
@@ -174,7 +174,7 @@ export class Batch {
         this.giveUp(i);
         return;
       }
-      const job = await startWithRules(this.jobs, tabId, item, await getSettings(), i.mode === 'auto' ? undefined : i.mode);
+      const job = await startQuick(this.jobs, tabId, item, await getSettings(), i.mode === 'auto' ? undefined : i.mode);
       i.title = item.title;
       delete i.until;
       delete i.found;

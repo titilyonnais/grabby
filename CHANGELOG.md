@@ -13,6 +13,84 @@ Chaque version a les rubriques utiles parmi : **Ajouté**, **Modifié**, **Corri
 
 ## [Non publié]
 
+## [3.0.0] — 2026-10-07
+
+Grabby revient à l'essentiel : **télécharger des vidéos**. La page complète (l'icône aux
+quatre carrés) et toute l'IA sont retirées, avec ce qui en dépendait. La carte gagne en
+air (12 px de marge), chaque choix fait la même hauteur (48 px), tout ce qui se déplie se
+replie avec la même animation, et le recadrage, la rotation et le miroir sont refaits.
+
+### Supprimé
+- **La page complète** et son bouton aux quatre carrés en haut de la popup, avec tout ce
+  qu'elle contenait :
+  - la **bibliothèque** (lecteur, recherche dans ce qui est dit, favoris, collections) et
+    les **statistiques** ;
+  - la **liste d'adresses** à coller (le mot-clé `gb` dans la barre d'adresse et le clic
+    droit sur un lien, eux, restent) ;
+  - **Plus tard** : le bouton rond à côté de Télécharger, le compteur en haut de la popup,
+    « Plus tard » dans le menu ⌄ de YouTube et dans le clic droit, et la liste elle-même ;
+  - les **chaînes, playlists et podcasts suivis** (et le bouton « Suivre la chaîne » sous
+    une playlist) : plus aucune requête toutes les heures à leurs flux ;
+  - **Toutes les images de la page** (le bouton en haut de la popup et le clic droit) ;
+  - l'**atelier** (fichiers de l'ordinateur), **Assembler**, la **sauvegarde** des réglages
+    dans un fichier ;
+  - les **règles automatiques par site** : les téléchargements sans popup (clic droit,
+    raccourci, pilule YouTube, `gb`) prennent la meilleure qualité dans tes formats
+    préférés, en vidéo ou en son comme réglé pour le raccourci.
+- **Toute l'IA** :
+  - la rubrique **Réglages, IA locale** (modèles, test, suppression) et le réglage
+    **IA de Chrome** ;
+  - la transcription (Whisper), la traduction (Opus-MT) et le résumé ;
+  - ONNX Runtime et transformers.js ne sont plus dans le paquet : **14 Mo de moins**.
+- Le texte de ce qui est dit dans chaque fichier n'est plus gardé (il ne servait qu'à la
+  recherche de la bibliothèque).
+- Les réglages et les listes devenus inutiles (règles, IA, chaînes suivies, Plus tard) sont
+  effacés à la mise à jour, de même que leurs minuteries ; les fichiers de l'ancienne page
+  complète (`app.html`, `ort/`) sont retirés du dossier par la mise à jour en un clic.
+
+### Modifié
+- **Les cartes** ont **12 px** de marge intérieure au lieu de 8. Leurs coins suivent
+  (36 px ouvertes, 26 px repliées), pour rester concentriques avec la miniature.
+- **Chaque choix d'une carte fait 48 px de haut**, comme les listes (Qualité, Format,
+  Vitesse…) :
+  - les interrupteurs (« Son plus propre », « Sans le son », « Miroir », « Garder les
+    chapitres », « Un fichier par chapitre »…) passaient de 44 à 48 px ;
+  - la ligne **Extrait**, les boutons **Recadrer** et **Format vertical** (maintenant côte à
+    côte, à parts égales), les choix en segments (**Rotation**, forme du cadre, sorte
+    d'image JPEG) et **Réinitialiser** du recadrage aussi.
+- **Tout ce qui se déplie se replie** avec la même animation, à l'envers : **Extrait**,
+  **Options avancées** et **Recadrer**. Avant, la fermeture était instantanée.
+- **« Miroir (gauche ↔ droite) »** s'appelle maintenant simplement **« Miroir »**.
+- **Rotation et miroir se voient** : dès que tu en choisis un, l'image de la vidéo s'affiche
+  tournée et/ou retournée sous les réglages, exactement comme sera le fichier.
+- **Le recadrage** :
+  - l'image est posée à 14 px du bord de son cadre arrondi : les **poignées des coins** ne
+    sont plus coupées par l'arrondi, même quand le cadre prend toute l'image ;
+  - des poignées plus faciles à attraper (zone de 28 px autour du rond) ;
+  - le cadre suit la **vraie forme de la vidéo** quand elle est connue. Sur YouTube, la
+    miniature est en 4:3 avec des bandes noires : le cadre se calait sur elle, et le
+    recadrage obtenu était décalé par rapport à la vidéo.
+- **Réglages** : 6 rubriques au lieu de 7 (la rubrique IA est partie) ; sous la liste,
+  **Panneau latéral** et **Revoir la visite**. La visite guidée n'a plus d'étape « page
+  complète ».
+
+### Corrigé
+- **La popup qui ne s'ouvrait plus** après avoir touché aux réglages, avec deux erreurs
+  dans `brave://extensions` :
+  - « **Blocked aria-hidden on an element because its descendant retained focus** » :
+    en ouvrant les réglages, l'écran de derrière était masqué (`aria-hidden`) alors que
+    l'engrenage, dedans, gardait le focus. Il est maintenant seulement rendu inactif
+    (`inert`), ce que Chrome accepte ;
+  - « **The feature flag gating model execution was disabled** » : il venait de l'IA de
+    Chrome, interrogée par la rubrique IA quand « IA de Chrome » était activé. L'IA étant
+    retirée, Grabby ne lui demande plus jamais rien.
+
+  Vérifié dans Brave avec un vrai historique, des téléchargements et des réglages réels :
+  la popup s'ouvre à chaque fois.
+- **Rotation et miroir qui « ne marchaient pas »** : ils étaient bien appliqués au fichier,
+  mais rien ne le montrait dans la carte. L'aperçu ci-dessus le montre maintenant, et un
+  test vérifie le fichier obtenu (90°, miroir : 360 × 640 au lieu de 640 × 360).
+
 ## [2.4.0] — 2026-10-07
 
 Une carte de téléchargement rangée, sur tes retours : l'essentiel en vue (qualité,
@@ -1560,7 +1638,8 @@ Première version.
 - Capture YouTube expérimentale.
 - Interface en français et en anglais, thème clair et sombre.
 
-[Non publié]: https://github.com/titilyonnais/grabby/compare/v2.4.0...HEAD
+[Non publié]: https://github.com/titilyonnais/grabby/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/titilyonnais/grabby/compare/v2.4.0...v3.0.0
 [2.4.0]: https://github.com/titilyonnais/grabby/compare/v2.3.3...v2.4.0
 [2.3.3]: https://github.com/titilyonnais/grabby/compare/v2.3.2...v2.3.3
 [2.3.2]: https://github.com/titilyonnais/grabby/compare/v2.3.1...v2.3.2

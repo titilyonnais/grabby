@@ -20,14 +20,6 @@ import { useGrabby } from './store';
 import { applyLook, rememberTheme } from './theme';
 
 const prefersDark = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
-/** In the browser's side panel: the page stays open when the full page opens. */
-const inSidePanel = () => 'side' in document.documentElement.dataset;
-
-/** The full page, on a section (and about this tab). */
-function openApp(section?: string, tabId?: number) {
-  void chrome.runtime.sendMessage({ app: 'open-app', ...(section ? { section } : {}), ...(tabId !== undefined && tabId >= 0 ? { tabId } : {}) }).catch(() => {});
-  if (!inSidePanel()) window.close();
-}
 /** How long the settings take to go away (groups, then title, then the page) before they leave the DOM. */
 const SETTINGS_OUT_MS = 490;
 const TABS = ['page', 'history'] as const;
@@ -136,6 +128,10 @@ export function App() {
     setTab(next);
   };
   const openSettings = () => {
+    // The gear lets go of the focus first (the settings take it once shown): the screen
+    // behind is then hidden with nothing focused in it. Hiding a focused element is refused
+    // by Chrome (« Blocked aria-hidden on an element because its descendant retained focus »).
+    (document.activeElement as HTMLElement | null)?.blur();
     // Reopened while still sliding away: it stays.
     clearTimeout(closing.current);
     setSettingsClosing(false);
@@ -168,23 +164,6 @@ export function App() {
             Grabby
           </span>
           <span class="top__tools">
-            {/* What can be done with the page itself, next to the rest. */}
-            {state && /^https?:/i.test(state.pageUrl ?? '') && !state.blocked && (
-              <button class="icon-btn" aria-label={t('pageImages')} title={t('pageImages')} onClick={() => openApp('images', state.tabId)}>
-                <Icon name="image" />
-              </button>
-            )}
-            {state?.later?.length ? (
-              <button class="icon-btn" aria-label={t('pageLater', String(state.later.length))} title={t('pageLater', String(state.later.length))} onClick={() => openApp('later')}>
-                <Icon name="later" />
-                <span key={state.later.length} class="icon-btn__count">
-                  {state.later.length}
-                </span>
-              </button>
-            ) : null}
-            <button data-tour="app" class="icon-btn" aria-label={t('openApp')} title={t('openApp')} onClick={() => openApp()}>
-              <Icon name="grid" />
-            </button>
             <button ref={gear} data-tour="settings" class="icon-btn" aria-label={t('openSettings')} title={t('openSettings')} onClick={openSettings}>
               <Icon name="settings" />
             </button>
@@ -239,7 +218,7 @@ export function App() {
                   {state.update && <UpdateNotice release={state.update} install={state.install} send={send} />}
                   <OtherJobs jobs={rows} queue={queue} all={active} send={send} />
                   {/* A playlist or a channel page: its videos first. Under a video being watched, the list it belongs to comes after it, folded. */}
-                  {state.ytList && !state.blocked && !items.length && <Playlist key={state.ytList.title} list={state.ytList} pageUrl={state.pageUrl} preferred={prefs} send={send} />}
+                  {state.ytList && !state.blocked && !items.length && <Playlist key={state.ytList.title} list={state.ytList} preferred={prefs} send={send} />}
                   {state.blocked === 'restricted' ? (
                     <StateCard title={t('restrictedTitle')} body={t('restrictedBody')} />
                   ) : !items.length ? (
@@ -261,8 +240,6 @@ export function App() {
                           open={i.id === openCard}
                           onToggle={() => setOpenId(i.id === openCard ? '' : i.id)}
                           preferred={prefs}
-                          rules={settings!.rules}
-                          ai={{ allowed: settings!.aiModels, allow: () => send({ type: 'settings', patch: { aiModels: true } }) }}
                           send={send}
                           select={
                             picked
@@ -288,7 +265,7 @@ export function App() {
                     </section>
                   )}
                   {state.ytList && !state.blocked && items.length > 0 && !picked && (
-                    <Playlist key={state.ytList.title} list={state.ytList} pageUrl={state.pageUrl} preferred={prefs} send={send} compact />
+                    <Playlist key={state.ytList.title} list={state.ytList} preferred={prefs} send={send} compact />
                   )}
                 </>
               )}

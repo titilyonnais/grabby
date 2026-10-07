@@ -14,21 +14,8 @@ public repository this package was built from, plus the sources listed below.
 | Preact | 11 | MIT | https://github.com/preactjs/preact |
 | Instrument Sans (font) | variable | SIL Open Font License 1.1 | https://github.com/Instrument/instrument-sans |
 | Noto Sans (font, used to burn subtitles into the picture) | Regular | SIL Open Font License 1.1 | https://github.com/notofonts/latin-greek-cyrillic |
-| transformers.js (`@huggingface/transformers`) | 4.3.0 | Apache-2.0 | https://github.com/huggingface/transformers.js |
-| ONNX Runtime Web (`onnxruntime-web`, WebAssembly build) | 1.31.0-dev | MIT | https://github.com/microsoft/onnxruntime |
 
 License texts shipped in the package: `licenses/GPL-2.0.txt`, `licenses/MIT-Preact.txt`,
-`licenses/OFL-InstrumentSans.txt`, `licenses/OFL-NotoSans.txt`, `licenses/Apache-2.0.txt`,
-`licenses/MIT-onnxruntime.txt`.
-
-## AI models (not in the package)
-
-The local AI features download model weights **only when the user agrees**, once, from
-Hugging Face. They are data (network weights), not code, and keep their own licenses:
-
-| Model | Used for | License | Source |
-|---|---|---|---|
-| Whisper base (OpenAI), ONNX conversion | Transcription | Apache-2.0 | https://huggingface.co/openai/whisper-base — https://huggingface.co/onnx-community/whisper-base |
-| Opus-MT (Helsinki-NLP), one model per language pair, ONNX conversions | Translation | Apache-2.0 | https://huggingface.co/Helsinki-NLP — https://huggingface.co/Xenova |
+`licenses/OFL-InstrumentSans.txt`, `licenses/OFL-NotoSans.txt`.
 
 FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project.

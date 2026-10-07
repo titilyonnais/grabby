@@ -1,5 +1,5 @@
 import type { SheetLayout } from './sheet';
-import type { Finish, FinishWords } from './finish';
+import type { Finish } from './finish';
 /** A byte range is inclusive: [start, end]. */
 export interface SegRef {
   url: string;
@@ -113,10 +113,6 @@ export interface Plan {
   image?: { at?: number; sheet?: SheetLayout };
   /** What is done to the file once it is made. */
   finish?: Finish;
-  /** The words the processing writes, in the browser's language. */
-  words?: FinishWords;
-  /** Chrome's own translator and summarizer may be asked (the user turned them on). */
-  chromeAi?: boolean;
   /** A live stream, recorded until stopped or for at most `max` seconds. */
   live?: { max: number };
 }

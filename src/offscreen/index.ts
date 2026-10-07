@@ -5,7 +5,6 @@
 import { checkFile, sizeMatches } from '../shared/verify';
 /** Files bigger than this are not read again whole (memory): their size is checked instead. */
 const VERIFY_MAX = 400 * 1024 * 1024;
-import { transcriptOf } from '../shared/transcript';
 import type { BgToOffscreen, OffscreenToBg } from '../shared/messages';
 import { planSubs, type Chapter, type Clip, type ErrorCode, type OutputFormat, type Plan, type PlanSubs, type SegRef, type TrackPlan } from '../shared/plan';
 import { clipChapters, ffmetadata, partChapters, spanChapters } from '../shared/chapters';
@@ -545,7 +544,6 @@ async function run(jobId: string, plan: Plan, verify = false) {
     let apart: { srt: string; lang?: string }[] = [];
     /** Every subtitle track, on the clock of what is saved (for what is done afterwards). */
     const texts: TextTrack[] = [];
-    let notes: { text: string; tag: string }[] = [];
     let pieces: { blobUrl: string; name: string }[] = [];
     let firstName: string | undefined;
 
@@ -726,13 +724,12 @@ async function run(jobId: string, plan: Plan, verify = false) {
             apart.push({ srt, ...(s.lang ? { lang: s.lang } : {}) });
           }
         }
-        // What is done to the file afterwards: AI, editor, size, one file per chapter.
+        // What is done to the file afterwards: editor, size, one file per chapter.
         if (plan.finish) {
           const fin = await finishFile(f, dir, made, { plan, texts, apart, signal, report: (step, p) => rep.send('processing', p, false, step) });
           made = fin;
           apart = fin.apart;
           texts.splice(0, texts.length, ...fin.texts);
-          notes = fin.notes;
           firstName = fin.name;
           for (const p of fin.pieces ?? []) {
             const bytes = await f.read(p.path);
@@ -761,8 +758,6 @@ async function run(jobId: string, plan: Plan, verify = false) {
       size: result.blob.size,
       ...(apart.length ? { subtitles: apart } : {}),
       ...(pieces.length ? { pieces, ...(firstName ? { name: firstName } : {}) } : {}),
-      ...(notes.length ? { notes } : {}),
-      ...(transcriptOf(texts) ? { transcript: transcriptOf(texts)! } : {}),
     });
   } catch (e) {
     if (ff) await ff.rmdir(dir).catch(() => {});

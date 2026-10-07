@@ -1,16 +1,10 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { COMPRESS_SIZES, COMPRESSIBLE_AUDIO, ROTATIONS, SPEEDS, canBurn, cleanCrop, type Crop, type Finish, type Rotation } from '../../shared/finish';
-import { languageName } from '../../shared/sublabels';
-import { PAIR_MB, TRANSLATE_TARGETS, WHISPER_MB } from '../../shared/translate';
+import { COMPRESS_SIZES, COMPRESSIBLE_AUDIO, ROTATIONS, SPEEDS, cleanCrop, type Crop, type Finish, type Rotation } from '../../shared/finish';
 import { size, t, uiLang } from '../i18n';
+import { Collapse } from './Collapse';
 import { Icon } from './Icon';
 import { Segmented } from './Segmented';
 import { Select, type SelectOption } from './Select';
-
-/** Languages offered for what is said (Whisper knows many more; these are the common ones). */
-const SPOKEN = ['fr', 'en', 'es', 'de', 'it', 'pt', 'nl', 'ru', 'uk', 'pl', 'tr', 'ar', 'zh', 'ja', 'ko', 'hi', 'sv', 'da', 'fi', 'cs', 'ro', 'hu', 'vi', 'id'];
-
-const name = (code: string) => languageName(code, uiLang());
 
 /** Picture shapes the crop can keep (width / height); 0: free. */
 const SHAPES: [string, number][] = [
@@ -25,9 +19,11 @@ const SHAPES: [string, number][] = [
  * Cropping on the video's picture: a frame to move and resize (or draw anew), and the usual
  * shapes. Values are shares of the picture, so they fit any quality.
  */
-function CropBox({ picture, crop, onChange, start }: { picture?: string; crop?: Crop; onChange: (c: Crop | undefined) => void; start?: string }) {
+function CropBox({ picture, videoAspect, crop, onChange, start }: { picture?: string; videoAspect?: number; crop?: Crop; onChange: (c: Crop | undefined) => void; start?: string }) {
   const box = useRef<HTMLDivElement>(null);
-  const [aspect, setAspect] = useState(16 / 9);
+  // The video's own shape when it is known (a thumbnail can be another: YouTube's are 4:3
+  // with black bands), else the picture's.
+  const [aspect, setAspect] = useState(videoAspect ?? 16 / 9);
   const [shape, setShape] = useState(start ?? 'free');
   // A shape asked for on opening (« Format vertical »): framed once the picture's own shape is known.
   const started = useRef(!start);
@@ -102,47 +98,42 @@ function CropBox({ picture, crop, onChange, start }: { picture?: string; crop?: 
   };
   return (
     <div class="crop">
-      <div
-        ref={box}
-        class="crop__stage"
-        style={{ aspectRatio: String(aspect) }}
-        onPointerDown={down('draw')}
-        onPointerMove={move}
-        onPointerUp={up}
-        onPointerCancel={up}
-      >
-        {picture ? (
-          <img
-            src={picture}
-            alt=""
-            referrerpolicy="no-referrer"
-            draggable={false}
-            onLoad={(e) => {
-              const i = e.currentTarget;
-              if (!i.naturalWidth || !i.naturalHeight) return;
-              setAspect(i.naturalWidth / i.naturalHeight);
-              if (!started.current) {
-                started.current = true;
-                pick(start!, i.naturalWidth / i.naturalHeight);
-              }
-            }}
-          />
-        ) : (
-          <span class="crop__blank" />
-        )}
-        <div
-          class="crop__frame"
-          role="slider"
-          tabIndex={0}
-          aria-label={t('cropFrame')}
-          aria-valuetext={`${Math.round(c.w * 100)} % × ${Math.round(c.h * 100)} %`}
-          style={{ left: `${c.x * 100}%`, top: `${c.y * 100}%`, width: `${c.w * 100}%`, height: `${c.h * 100}%` }}
-          onPointerDown={down('move')}
-          onKeyDown={nudge}
-        >
-          {(['nw', 'ne', 'sw', 'se'] as const).map((k) => (
-            <span key={k} class={`crop__handle crop__handle--${k}`} onPointerDown={down(k)} />
-          ))}
+      <div class="crop__stage" onPointerDown={down('draw')} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
+        <div ref={box} class="crop__pic" style={{ aspectRatio: String(aspect) }}>
+          {picture ? (
+            <img
+              src={picture}
+              alt=""
+              referrerpolicy="no-referrer"
+              draggable={false}
+              onLoad={(e) => {
+                const i = e.currentTarget;
+                if (!i.naturalWidth || !i.naturalHeight) return;
+                const own = videoAspect ?? i.naturalWidth / i.naturalHeight;
+                setAspect(own);
+                if (!started.current) {
+                  started.current = true;
+                  pick(start!, own);
+                }
+              }}
+            />
+          ) : (
+            <span class="crop__blank" />
+          )}
+          <div
+            class="crop__frame"
+            role="slider"
+            tabIndex={0}
+            aria-label={t('cropFrame')}
+            aria-valuetext={`${Math.round(c.w * 100)} % × ${Math.round(c.h * 100)} %`}
+            style={{ left: `${c.x * 100}%`, top: `${c.y * 100}%`, width: `${c.w * 100}%`, height: `${c.h * 100}%` }}
+            onPointerDown={down('move')}
+            onKeyDown={nudge}
+          >
+            {(['nw', 'ne', 'sw', 'se'] as const).map((k) => (
+              <span key={k} class={`crop__handle crop__handle--${k}`} onPointerDown={down(k)} />
+            ))}
+          </div>
         </div>
       </div>
       <div class="crop__tools">
@@ -151,167 +142,6 @@ function CropBox({ picture, crop, onChange, start }: { picture?: string; crop?: 
           {t('cropReset')}
         </button>
       </div>
-    </div>
-  );
-}
-
-interface Props {
-  value: Finish;
-  onChange: (f: Finish) => void;
-  /** A sound file (no picture to edit). */
-  audio: boolean;
-  format: string;
-  picture?: string;
-  /** Subtitles chosen in the card. */
-  subsChosen: boolean;
-  /** The video has chapters of its own. */
-  chapters: number;
-  /** The user agreed to download the AI models. */
-  aiAllowed: boolean;
-  onAllowAi: () => void;
-}
-
-/** "Retouches et IA" of the workshop (a file of the computer): everything, AI included. */
-export function FinishPanel({ value: f, onChange, audio, format, picture, subsChosen, chapters, aiAllowed, onAllowAi }: Props) {
-  const [cropping, setCropping] = useState(!!f.edit?.crop);
-  // « Format vertical »: the crop opens on a 9:16 frame, to move where the action is.
-  const [cropStart, setCropStart] = useState<string | undefined>();
-  const edit = f.edit ?? {};
-  const setEdit = (patch: Partial<NonNullable<Finish['edit']>>) => {
-    const next = { ...edit, ...patch };
-    for (const k of Object.keys(next) as (keyof typeof next)[]) if (next[k] === undefined || next[k] === false || (k === 'speed' && next[k] === 1) || (k === 'rotate' && next[k] === 0)) delete next[k];
-    const { edit: _old, ...rest } = f;
-    onChange(Object.keys(next).length ? { ...rest, edit: next } : rest);
-  };
-  const set = <K extends keyof Finish>(k: K, v: Finish[K] | undefined) => {
-    const { [k]: _old, ...rest } = f;
-    onChange(v === undefined || v === false || v === '' ? rest : { ...rest, [k]: v });
-  };
-  const speedOptions: SelectOption<string>[] = SPEEDS.map((s) => ({ value: String(s), label: `${new Intl.NumberFormat(uiLang()).format(s)}×`, ...(s === 1 ? { detail: t('speedNormal') } : {}) }));
-  const sizeOptions: SelectOption<string>[] = [
-    { value: '', label: t('compressNone') },
-    ...COMPRESS_SIZES.map((mb) => ({ value: String(mb), label: size(mb * 1024 * 1024), detail: t(`compress_${mb}`) })),
-  ];
-  const canCompress = !audio || COMPRESSIBLE_AUDIO.has(format);
-  const spokenOptions: SelectOption<string>[] = [
-    { value: '', label: t('aiOff') },
-    { value: 'auto', label: t('aiDetect') },
-    ...SPOKEN.map((l) => ({ value: l, label: name(l), group: t('aiSpokenGroup') })),
-  ];
-  const targetOptions: SelectOption<string>[] = [{ value: '', label: t('aiOff') }, ...TRANSLATE_TARGETS.map((l) => ({ value: l, label: name(l) }))];
-  const hasText = subsChosen || !!f.transcribe;
-  const needsModels = !!(f.transcribe || f.translate) && !aiAllowed;
-  return (
-    <div class="finish">
-      {!audio && (
-        <section class="finish__group" aria-label={t('finishPicture')}>
-          <h3 class="finish__title">{t('finishPicture')}</h3>
-          <div class="card__actions">
-            <button class="trim-toggle" aria-expanded={cropping} onClick={() => setCropping((v) => !v)}>
-              <Icon name="crop" size={16} />
-              {edit.crop ? t('cropOn') : t('cropOpen')}
-            </button>
-            <button
-              class="trim-toggle"
-              title={t('verticalHint')}
-              onClick={() => {
-                setCropStart('9:16');
-                setCropping(true);
-                setEdit({ crop: undefined });
-              }}
-            >
-              <Icon name="vertical" size={16} />
-              {t('verticalOpen')}
-            </button>
-          </div>
-          {cropping && (
-            <CropBox
-              key={cropStart ?? 'free'}
-              {...(picture ? { picture } : {})}
-              {...(edit.crop ? { crop: edit.crop } : {})}
-              {...(cropStart ? { start: cropStart } : {})}
-              onChange={(crop) => setEdit({ crop })}
-            />
-          )}
-          <Segmented
-            label={t('rotateLabel')}
-            value={String(edit.rotate ?? 0)}
-            options={ROTATIONS.map((r) => [String(r), r ? `${r}°` : t('rotateNone')] as [string, string])}
-            onChange={(v) => setEdit({ rotate: Number(v) as Rotation })}
-          />
-          <label class="option">
-            <span>{t('flipLabel')}</span>
-            <input class="switch" type="checkbox" role="switch" checked={!!edit.flip} onChange={(e) => setEdit({ flip: e.currentTarget.checked })} />
-          </label>
-        </section>
-      )}
-      <section class="finish__group" aria-label={t('finishSound')}>
-        <h3 class="finish__title">{t('finishSound')}</h3>
-        <div class="pickers">
-          <Select label={t('speedLabel')} value={String(edit.speed ?? 1)} options={speedOptions} onChange={(v) => setEdit({ speed: Number(v) })} />
-          {canCompress && <Select label={t('compressLabel')} value={String(f.compress ?? '')} options={sizeOptions} onChange={(v) => set('compress', v ? Number(v) : undefined)} />}
-        </div>
-        <label class={`option${edit.mute ? ' option--off' : ''}`}>
-          <span>
-            {t('cleanLabel')}
-            <span class="option__detail">{t('cleanDetail')}</span>
-          </span>
-          <input class="switch" type="checkbox" role="switch" disabled={!!edit.mute} checked={!!edit.clean && !edit.mute} onChange={(e) => setEdit({ clean: e.currentTarget.checked })} />
-        </label>
-        {!audio && (
-          <label class="option">
-            <span>{t('muteLabel')}</span>
-            <input class="switch" type="checkbox" role="switch" checked={!!edit.mute} onChange={(e) => setEdit({ mute: e.currentTarget.checked })} />
-          </label>
-        )}
-      </section>
-      <section class="finish__group" aria-label={t('finishAi')}>
-        <h3 class="finish__title">
-          <Icon name="sparkle" size={15} />
-          {t('finishAi')}
-          <span class="tag tag--ai">{t('aiTag')}</span>
-        </h3>
-        <p class="hint">{t('aiWhere')}</p>
-        <div class="pickers">
-          <Select label={t('transcribeLabel')} value={f.transcribe ?? ''} options={spokenOptions} onChange={(v) => set('transcribe', v || undefined)} />
-          <Select label={t('translateLabel')} value={f.translate ?? ''} options={targetOptions} onChange={(v) => set('translate', v || undefined)} />
-        </div>
-        {needsModels && (
-          <div class="consent" role="note">
-            <p>{t('aiConsent', [String(WHISPER_MB), String(PAIR_MB)])}</p>
-            <button class="btn btn--primary btn--small" onClick={onAllowAi}>
-              {t('aiAllow')}
-            </button>
-          </div>
-        )}
-        {f.translate && !hasText && <p class="hint">{t('translateNeedsText')}</p>}
-        <label class={`option${hasText ? '' : ' option--off'}`}>
-          <span>
-            {t('summaryLabel')}
-            <span class="option__detail">{t('summaryDetail')}</span>
-          </span>
-          <input class="switch" type="checkbox" role="switch" disabled={!hasText} checked={!!f.summary && hasText} onChange={(e) => set('summary', e.currentTarget.checked)} />
-        </label>
-      </section>
-      <section class="finish__group" aria-label={t('finishFile')}>
-        <h3 class="finish__title">{t('finishFile')}</h3>
-        {!audio && (
-          <label class={`option${hasText || f.translate ? '' : ' option--off'}`}>
-            <span>{t('burnLabel')}</span>
-            <input class="switch" type="checkbox" role="switch" disabled={!hasText} checked={!!f.burn && hasText} onChange={(e) => set('burn', e.currentTarget.checked)} />
-          </label>
-        )}
-        {!audio && f.burn && f.translate && !canBurn(f.translate) && <p class="hint hint--warn">{t('burnScript', name(f.translate))}</p>}
-        <label class={`option${chapters || f.summary ? '' : ' option--off'}`}>
-          <span>
-            {t('splitLabel')}
-            <span class="option__detail">{chapters ? t('chaptersCount', String(chapters)) : t('splitProposed')}</span>
-          </span>
-          <input class="switch" type="checkbox" role="switch" disabled={!chapters && !f.summary} checked={!!f.split && (!!chapters || !!f.summary)} onChange={(e) => set('split', e.currentTarget.checked)} />
-        </label>
-      </section>
-      {(f.edit || f.compress || f.burn) && <p class="hint">{t('finishSlow')}</p>}
-      {(f.transcribe || f.translate || f.summary) && <p class="hint">{t('finishLocal')}</p>}
     </div>
   );
 }
@@ -333,17 +163,18 @@ function editor({ value: f, onChange }: Edits) {
   };
   const set = <K extends keyof Finish>(k: K, v: Finish[K] | undefined) => {
     const { [k]: _old, ...rest } = f;
-    onChange(v === undefined || v === false || v === '' ? rest : { ...rest, [k]: v });
+    onChange(v === undefined || v === false ? rest : { ...rest, [k]: v });
   };
   return { edit, setEdit, set };
 }
 
 /** « Image »: crop (free, or the vertical 9:16 of phones), turn, mirror. */
-export function PictureEdits({ picture, ...props }: Edits & { picture?: string }) {
+export function PictureEdits({ picture, videoAspect, ...props }: Edits & { picture?: string; videoAspect?: number }) {
   const { edit, setEdit } = editor(props);
   const [cropping, setCropping] = useState(!!edit.crop);
   // « Format vertical »: the crop opens on a 9:16 frame, to move where the action is.
   const [cropStart, setCropStart] = useState<string | undefined>();
+  const turned = !!edit.rotate || !!edit.flip;
   return (
     <>
       <div class="adv__pair">
@@ -364,15 +195,16 @@ export function PictureEdits({ picture, ...props }: Edits & { picture?: string }
           {t('verticalOpen')}
         </button>
       </div>
-      {cropping && (
+      <Collapse open={cropping}>
         <CropBox
           key={cropStart ?? 'free'}
           {...(picture ? { picture } : {})}
+          {...(videoAspect ? { videoAspect } : {})}
           {...(edit.crop ? { crop: edit.crop } : {})}
           {...(cropStart ? { start: cropStart } : {})}
           onChange={(crop) => setEdit({ crop })}
         />
-      )}
+      </Collapse>
       <Segmented
         label={t('rotateLabel')}
         value={String(edit.rotate ?? 0)}
@@ -383,6 +215,23 @@ export function PictureEdits({ picture, ...props }: Edits & { picture?: string }
         <span>{t('flipLabel')}</span>
         <input class="switch" type="checkbox" role="switch" checked={!!edit.flip} onChange={(e) => setEdit({ flip: e.currentTarget.checked })} />
       </label>
+      {/* What « Rotation » and « Miroir » do, on the video's picture, as they are chosen. */}
+      <Collapse open={turned && !!picture}>
+        <div class="pic-preview" aria-hidden="true">
+          <img
+            class="pic-preview__img"
+            src={picture}
+            alt=""
+            referrerpolicy="no-referrer"
+            // Turned first, then mirrored, as the file is made (never taller than the box, turned or not).
+            style={{
+              aspectRatio: String(videoAspect ?? 16 / 9),
+              width: `${Math.round(Math.min(168, 150 * (videoAspect ?? 16 / 9)))}px`,
+              transform: `scaleX(${edit.flip ? -1 : 1}) rotate(${edit.rotate ?? 0}deg)`,
+            }}
+          />
+        </div>
+      </Collapse>
     </>
   );
 }
@@ -436,5 +285,5 @@ export function FileEdits({ audio, format, chapters, ...props }: Edits & { audio
 
 /** How many things the panel will do (shown on its button). */
 export function finishCount(f: Finish): number {
-  return Object.keys(f.edit ?? {}).length + (['compress', 'burn', 'split', 'transcribe', 'translate', 'summary'] as const).filter((k) => f[k]).length;
+  return Object.keys(f.edit ?? {}).length + (['compress', 'burn', 'split'] as const).filter((k) => f[k]).length;
 }

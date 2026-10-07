@@ -11,10 +11,7 @@ export const MENU_WORDS: Record<string, [string, string]> = {
   media_audio: ['Télécharger seulement le son', 'Download the sound only'],
   link: ['Télécharger la vidéo de ce lien', 'Download the video of this link'],
   link_audio: ['Télécharger le son de ce lien', 'Download the sound of this link'],
-  link_later: ['Mettre ce lien de côté pour plus tard', 'Keep this link for later'],
   page: ['Télécharger la vidéo de la page', "Download the page's video"],
-  page_later: ['Mettre cette vidéo de côté pour plus tard', 'Keep this video for later'],
-  images: ['Toutes les images de la page…', 'All the pictures of the page…'],
 };
 
 const MENUS: [string, Contexts][] = [
@@ -22,10 +19,7 @@ const MENUS: [string, Contexts][] = [
   ['media_audio', ['video', 'audio']],
   ['link', ['link']],
   ['link_audio', ['link']],
-  ['link_later', ['link']],
   ['page', ['page', 'frame', 'image']],
-  ['page_later', ['page', 'frame', 'image']],
-  ['images', ['page', 'frame', 'image']],
 ];
 
 export function menuTitle(id: string): string {

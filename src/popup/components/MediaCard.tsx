@@ -8,7 +8,6 @@ import { AUDIO_FORMATS, CHAPTER_FORMATS, FORMAT_NAMES, IMAGE_FORMATS, isAudioFor
 import type { DownloadExtra, PopupToBg } from '../../shared/messages';
 import type { AudioFormat, Clip, OutputFormat, VideoFormat } from '../../shared/plan';
 import { canShrink, scaleChoices, SHRUNK_FORMATS } from '../../shared/scale';
-import { applyRule, ruleFor, type Rule } from '../../shared/rules';
 import { SHEET_EVERY, sheetCount } from '../../shared/sheet';
 import type { HistoryEntry, Job, MediaItem, Variant } from '../../shared/types';
 import { relativeTime, size, t, uiLang } from '../i18n';
@@ -18,10 +17,9 @@ import { canFinish, canPause, isActive, JobBar } from './JobBar';
 import { Segmented } from './Segmented';
 import { Select, type SelectOption } from './Select';
 import { Moment, Trim } from './Trim';
+import { Collapse } from './Collapse';
 import { FileEdits, finishCount, PictureEdits, SoundEdits } from './Finish';
 import type { Finish } from '../../shared/finish';
-
-/** The local AI in the subtitles' list: subtitles made from what is said, or translated. */
 
 /** The longest animated picture (GIF, WebP), in seconds. */
 const MAX_ANIMATION = 30;
@@ -46,12 +44,18 @@ interface Props {
   send: (m: PopupToBg) => void;
   /** "Download all": the card is a row with a round tick instead of its choices. */
   select?: { on: boolean; toggle: () => void } | undefined;
-  /** The user's automatic rules: the site's one makes the first choices. */
-  rules?: Rule[];
-  /** The local AI: whether its models may be downloaded, and agreeing to it. */
-  ai?: { allowed: boolean; allow: () => void };
   /** « Déjà téléchargé »: the file saved from it before, still there. */
   saved?: HistoryEntry | undefined;
+}
+
+/**
+ * The video's own shape (width / height), from a quality that tells its size. Else none: the
+ * picture's is taken, except YouTube's thumbnails (4:3, black bands above and below a 16:9 video).
+ */
+function videoAspect(item: MediaItem): number | undefined {
+  const sized = item.variants.find((v) => v.width && v.height);
+  if (sized) return sized.width! / sized.height!;
+  return item.thumbnail && /(^|\.)ytimg\.com\//.test(item.thumbnail) && !/\/shorts\//.test(item.pageUrl) ? 16 / 9 : undefined;
 }
 
 /** What a download makes, when a card has several: "Vidéo, MP4", "Son, M4A". */
@@ -171,22 +175,17 @@ function AdvSection({ title, children }: { title: string; children: ComponentChi
   );
 }
 
-export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen, onToggle: toggleOpen, index, preferred, send, select, rules, ai, saved }: Props) {
-  // The site's rule: its quality, format and subtitles are chosen already (still changeable).
-  const rule = ruleFor(rules, item.pageUrl);
-  const ruled = rule ? applyRule(item, rule, preferred) : undefined;
+export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen, onToggle: toggleOpen, index, preferred, send, select, saved }: Props) {
   const open = wantOpen && !select;
   const onToggle = select ? select.toggle : toggleOpen;
   const card = useUnfold<HTMLElement>(open);
   // A quality the source offers (its id), or a smaller one Grabby makes ("scale:360").
-  const [quality, setQuality] = useState<string | undefined>(ruled?.variantId ?? item.variants[0]?.id);
+  const [quality, setQuality] = useState<string | undefined>(item.variants[0]?.id);
   const shrinkTo = canShrink(item) ? scaleChoices(item.variants) : [];
   const scale = quality?.startsWith(SCALE_PREFIX) ? Number(quality.slice(SCALE_PREFIX.length)) : undefined;
   const variantId = scale ? undefined : quality;
   const videoFormats = item.audioOnly ? [] : scale ? SHRUNK_FORMATS : (item.formats ?? videoFormatsFor(''));
-  const initial: OutputFormat = ruled?.format && (ruled.mode === 'audio' || videoFormats.includes(ruled.format as VideoFormat))
-    ? ruled.format
-    : item.audioOnly
+  const initial: OutputFormat = item.audioOnly
     ? preferred.audio
     : videoFormats.includes(preferred.video)
       ? preferred.video
@@ -216,8 +215,6 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
   const [liveMinutes, setLiveMinutes] = useState(120);
   // "Aperçu": a file plays here; anything else in the page's own player.
   const [previewing, setPreviewing] = useState(false);
-  // « Plus tard »: kept aside (the button says so).
-  const [kept, setKept] = useState(false);
   const image = isImageFormat(format);
   const whole = (c: Clip) => !!item.duration && c.start <= 0 && c.end >= Math.floor(item.duration);
   const chosen = trimming && parts ? parts.filter((c) => !whole(c) || parts.length > 1) : [];
@@ -281,7 +278,6 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
   const chaptersOffered = !!item.chapters?.length && !image && CHAPTER_FORMATS.has(format);
   // « Options avancées »: for a video or a sound (a picture has its own choices).
   const hasMore = !image;
-  const canLater = /^https?:/i.test(item.pageUrl);
   // What a JPEG can be: a sheet needs the length, a thumbnail a picture of the video.
   const stills: ['frame' | 'sheet' | 'thumb', string][] = [
     ['frame', t('stillFrame')],
@@ -325,7 +321,6 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
       mode: audio ? ('audio' as const) : ('video' as const),
       ...(!audio && variantId ? { variantId } : {}),
       format,
-      ...(ruled?.folder ? { folder: ruled.folder } : {}),
     };
     const extra: DownloadExtra = {
       ...(finishSent ? { finish: finishSent } : {}),
@@ -503,20 +498,22 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
               )}
               {/* A live: its options are the retouches. */}
               {!showJob && <AdvancedToggle open={advanced} on={advOn} onToggle={() => setAdvanced((v) => !v)} />}
-              {!showJob && advanced && (
-                <div class="adv">
-                  <AdvSection title={t('advSound')}>
-                    <SoundEdits value={finish} onChange={setFinish} audio={audio} />
-                  </AdvSection>
-                  {!audio && (
-                    <AdvSection title={t('advPicture')}>
-                      <PictureEdits value={finish} onChange={setFinish} {...(item.thumbnail ? { picture: item.thumbnail } : {})} />
+              {!showJob && (
+                <Collapse open={advanced} gap={12}>
+                  <div class="adv">
+                    <AdvSection title={t('advSound')}>
+                      <SoundEdits value={finish} onChange={setFinish} audio={audio} />
                     </AdvSection>
-                  )}
-                  <AdvSection title={t('advFile')}>
-                    <FileEdits value={finish} onChange={setFinish} audio={audio} format={format} chapters={0} />
-                  </AdvSection>
-                </div>
+                    {!audio && (
+                      <AdvSection title={t('advPicture')}>
+                        <PictureEdits value={finish} onChange={setFinish} {...(item.thumbnail ? { picture: item.thumbnail } : {})} {...(videoAspect(item) ? { videoAspect: videoAspect(item)! } : {})} />
+                      </AdvSection>
+                    )}
+                    <AdvSection title={t('advFile')}>
+                      <FileEdits value={finish} onChange={setFinish} audio={audio} format={format} chapters={0} />
+                    </AdvSection>
+                  </div>
+                </Collapse>
               )}
               {showJob ? (
                 <JobStack job={job} others={others} send={send} listed={(j) => inQueue.includes(j.id)} />
@@ -565,74 +562,78 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
                * open, a list in four parts: the extract, the sound, the picture, the file.
                */}
               {!showJob && hasMore && <AdvancedToggle open={advanced} on={advOn} onToggle={() => setAdvanced((v) => !v)} />}
-              {!showJob && hasMore && advanced && (
-                <div class="adv">
-                  {clippable && (
-                    <AdvSection title={t('advCut')}>
-                      <button class={`adv__row${trimming ? ' adv__row--open' : ''}`} aria-expanded={trimming} onClick={() => setTrimming((v) => !v)}>
-                        <Icon name="scissors" size={16} />
-                        <span class="adv__row-title">{t('trimOpen')}</span>
-                        <span class="adv__row-value">{cutSaid || t('advWhole')}</span>
-                        <Icon name="chevron" size={16} />
-                      </button>
-                      {trimming && <Trim key="parts" duration={item.duration!} parts={parts} onChange={setParts} />}
-                      {trimming && chosen.length > 1 && (
+              {!showJob && hasMore && (
+                <Collapse open={advanced} gap={12}>
+                  <div class="adv">
+                    {clippable && (
+                      <AdvSection title={t('advCut')}>
+                        <button class={`adv__row${trimming ? ' adv__row--open' : ''}`} aria-expanded={trimming} onClick={() => setTrimming((v) => !v)}>
+                          <Icon name="scissors" size={16} />
+                          <span class="adv__row-title">{t('trimOpen')}</span>
+                          <span class="adv__row-value">{cutSaid || t('advWhole')}</span>
+                          <Icon name="chevron" size={16} />
+                        </button>
+                        <Collapse open={trimming}>
+                          <Trim key="parts" duration={item.duration!} parts={parts} onChange={setParts} />
+                          {chosen.length > 1 && (
+                            <label class="option">
+                              <span>{t('partsJoined')}</span>
+                              <input class="switch" type="checkbox" role="switch" checked={joined} onChange={(e) => setJoined(e.currentTarget.checked)} />
+                            </label>
+                          )}
+                          {!item.audioOnly && cut && (
+                            <button class="adv__chip" aria-expanded={previewUrl ? previewing : undefined} onClick={preview} title={previewUrl ? t('previewHere') : t('previewInPage')}>
+                              <Icon name={previewing ? 'close' : 'play'} size={16} />
+                              {previewing ? t('previewStop') : t('preview')}
+                            </button>
+                          )}
+                          {previewing && previewUrl && cut && (
+                            <video
+                              class="preview"
+                              key={`${previewUrl}#${previewSpan.start}-${previewSpan.end ?? ''}`}
+                              src={`${previewUrl}#t=${previewSpan.start}`}
+                              controls
+                              autoplay
+                              playsInline
+                              // The extract, in a loop.
+                              onTimeUpdate={(e) => {
+                                const v = e.currentTarget;
+                                if (previewSpan.end !== undefined && v.currentTime >= previewSpan.end) v.currentTime = previewSpan.start;
+                              }}
+                              onError={() => {
+                                // The site won't play it here: in its own page instead.
+                                setPreviewing(false);
+                                previewInPage(item, previewSpan.start, previewSpan.end);
+                              }}
+                            />
+                          )}
+                        </Collapse>
+                      </AdvSection>
+                    )}
+                    <AdvSection title={t('advSound')}>
+                      {audiosOffered && <Select label={t('audioLabel')} value="" values={audioSel} summary={audioSummary} options={audioOptions} onChange={toggleAudio} />}
+                      <SoundEdits value={finish} onChange={setFinish} audio={audio} />
+                    </AdvSection>
+                    {!audio && (
+                      <AdvSection title={t('advPicture')}>
+                        <PictureEdits value={finish} onChange={setFinish} {...(item.thumbnail ? { picture: item.thumbnail } : {})} {...(videoAspect(item) ? { videoAspect: videoAspect(item)! } : {})} />
+                      </AdvSection>
+                    )}
+                    <AdvSection title={t('advFile')}>
+                      {chaptersOffered && (
                         <label class="option">
-                          <span>{t('partsJoined')}</span>
-                          <input class="switch" type="checkbox" role="switch" checked={joined} onChange={(e) => setJoined(e.currentTarget.checked)} />
+                          <span>
+                            {t('chaptersLabel')}
+                            <span class="option__detail">{t('chaptersCount', String(item.chapters!.length))}</span>
+                          </span>
+                          <input class="switch" type="checkbox" role="switch" checked={chapters} onChange={(e) => setChapters(e.currentTarget.checked)} />
                         </label>
                       )}
-                      {trimming && !item.audioOnly && cut && (
-                        <button class="adv__chip" aria-expanded={previewUrl ? previewing : undefined} onClick={preview} title={previewUrl ? t('previewHere') : t('previewInPage')}>
-                          <Icon name={previewing ? 'close' : 'play'} size={16} />
-                          {previewing ? t('previewStop') : t('preview')}
-                        </button>
-                      )}
-                      {previewing && previewUrl && cut && (
-                        <video
-                          class="preview"
-                          key={`${previewUrl}#${previewSpan.start}-${previewSpan.end ?? ''}`}
-                          src={`${previewUrl}#t=${previewSpan.start}`}
-                          controls
-                          autoplay
-                          playsInline
-                          // The extract, in a loop.
-                          onTimeUpdate={(e) => {
-                            const v = e.currentTarget;
-                            if (previewSpan.end !== undefined && v.currentTime >= previewSpan.end) v.currentTime = previewSpan.start;
-                          }}
-                          onError={() => {
-                            // The site won't play it here: in its own page instead.
-                            setPreviewing(false);
-                            previewInPage(item, previewSpan.start, previewSpan.end);
-                          }}
-                        />
-                      )}
+                      <FileEdits value={finish} onChange={setFinish} audio={audio} format={format} chapters={item.chapters?.length ?? 0} />
                     </AdvSection>
-                  )}
-                  <AdvSection title={t('advSound')}>
-                    {audiosOffered && <Select label={t('audioLabel')} value="" values={audioSel} summary={audioSummary} options={audioOptions} onChange={toggleAudio} />}
-                    <SoundEdits value={finish} onChange={setFinish} audio={audio} />
-                  </AdvSection>
-                  {!audio && (
-                    <AdvSection title={t('advPicture')}>
-                      <PictureEdits value={finish} onChange={setFinish} {...(item.thumbnail ? { picture: item.thumbnail } : {})} />
-                    </AdvSection>
-                  )}
-                  <AdvSection title={t('advFile')}>
-                    {chaptersOffered && (
-                      <label class="option">
-                        <span>
-                          {t('chaptersLabel')}
-                          <span class="option__detail">{t('chaptersCount', String(item.chapters!.length))}</span>
-                        </span>
-                        <input class="switch" type="checkbox" role="switch" checked={chapters} onChange={(e) => setChapters(e.currentTarget.checked)} />
-                      </label>
-                    )}
-                    <FileEdits value={finish} onChange={setFinish} audio={audio} format={format} chapters={item.chapters?.length ?? 0} />
-                  </AdvSection>
-                  {(finish.edit || finish.compress) && <p class="hint">{t('finishSlow')}</p>}
-                </div>
+                    {(finish.edit || finish.compress) && <p class="hint">{t('finishSlow')}</p>}
+                  </div>
+                </Collapse>
               )}
               {!showJob && item.kind === 'capture' && !hidden && <p class="hint">{t('captureHint')}</p>}
               {showJob ? (
@@ -646,24 +647,8 @@ export function MediaCard({ item, job, others = [], inQueue = [], open: wantOpen
                     <Icon name={image ? 'image' : item.kind === 'capture' && !hidden ? 'record' : audio ? 'audio' : 'download'} />
                     {buttonLabel}
                   </button>
-                  {/* « Plus tard »: kept aside, to download later (the button says so once done). */}
-                  {canLater && !image && (
-                    <button
-                      class={`btn btn--soft btn--icon go__later${kept ? ' go__later--done' : ''}`}
-                      disabled={kept}
-                      title={kept ? t('laterKept') : t('laterAddHint')}
-                      aria-label={kept ? t('laterKept') : t('laterAdd')}
-                      onClick={() => {
-                        send({ type: 'later-add', mediaId: item.id, mode: audio ? 'audio' : 'auto' });
-                        setKept(true);
-                      }}
-                    >
-                      <Icon name={kept ? 'check' : 'later'} size={20} />
-                    </button>
-                  )}
                 </div>
               )}
-              {rule && !showJob && <p class="hint">{t('ruleApplied', rule.site || t('ruleEverySite'))}</p>}
               {scale && !audio && !image && !showJob && <p class="hint">{t('shrinkHint')}</p>}
               {chosen.length > 0 && !audio && !image && !showJob && <p class="hint">{t('trimHint')}</p>}
               {image && !showJob && (

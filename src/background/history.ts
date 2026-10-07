@@ -1,4 +1,3 @@
-import { editedTranscript, type Transcript } from '../shared/transcript';
 import type { HistoryEntry } from '../shared/types';
 
 /** What is said in a saved file, kept apart (the history stays light). */
@@ -54,12 +53,6 @@ export async function keepThumb(id: string, url: string): Promise<void> {
 }
 
 /** The kept pictures of these entries. */
-export async function allThumbs(ids: string[]): Promise<Record<string, string>> {
-  if (!ids.length) return {};
-  const got = await chrome.storage.local.get(ids.map(THUMB));
-  return Object.fromEntries(ids.flatMap((id) => (typeof got[THUMB(id)] === 'string' ? [[id, got[THUMB(id)] as string]] : [])));
-}
-
 /** Taken out of the library (the files stay). Their texts stay a little: « Annuler » puts them back. */
 export async function removeHistory(ids: string[]): Promise<HistoryEntry[]> {
   const list = await getHistory();
@@ -113,29 +106,6 @@ export async function markHistory(
   });
   await chrome.storage.local.set({ [KEY]: list });
   presence = null;
-}
-
-export async function saveTranscript(id: string, t: Transcript): Promise<void> {
-  await chrome.storage.local.set({ [TEXT(id)]: t });
-}
-
-/** Edited in the library: kept for an entry still there, checked again here. */
-export async function saveEditedTranscript(id: string, t: Transcript): Promise<boolean> {
-  if (!(await getHistory()).some((e) => e.id === id) || !t || !Array.isArray(t.cues)) return false;
-  const clean = editedTranscript(t, t.cues);
-  await chrome.storage.local.set({ [TEXT(id)]: clean });
-  return true;
-}
-
-export async function getTranscript(id: string): Promise<Transcript | undefined> {
-  return (await chrome.storage.local.get(TEXT(id)))[TEXT(id)] as Transcript | undefined;
-}
-
-/** Every kept text, for the library's search. */
-export async function allTranscripts(ids: string[]): Promise<Record<string, Transcript>> {
-  if (!ids.length) return {};
-  const got = await chrome.storage.local.get(ids.map(TEXT));
-  return Object.fromEntries(ids.flatMap((id) => (got[TEXT(id)] ? [[id, got[TEXT(id)] as Transcript]] : [])));
 }
 
 export async function clearHistory(): Promise<void> {

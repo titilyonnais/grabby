@@ -17,20 +17,24 @@
 
 ---
 
-<!-- release:2.4.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
-## Nouveautés de la version 2.4.0
+<!-- release:3.0.0 — mettre à jour ce bloc à chaque version (vérifié par npm run release:check) -->
+## Nouveautés de la version 3.0.0
 
-- **Une carte de téléchargement rangée** : en vue, la qualité, le format, **Télécharger**
-  et à côté un bouton rond **Plus tard**. Tout le reste est dans **Options avancées**, en
-  quatre parties : **Découper** (extrait), **Son** (langue, vitesse, son plus net, sans
-  son), **Image** (recadrer, vertical, pivoter, miroir) et **Fichier** (chapitres, taille).
-  Repliée, la ligne dit ce qui est activé dedans.
-- **Retirés** : les sous-titres (et ce qui en dépendait : incruster, transcrire, traduire,
-  résumé), le badge « Lecteur / Fichier », et le bouton carré « Arrêter et enregistrer »
-  (gardé pour les directs seulement).
-- **Nouvelles icônes** lecture, pause et croix pendant un téléchargement.
-- **YouTube** : une vraie animation au clic (« Préparation… », puis le remplissage), la
-  barre ne dépasse plus de la pilule, et le menu ⌄ montre les résolutions tout de suite.
+- **Retour à l'essentiel : télécharger des vidéos.** La page complète (l'icône aux quatre
+  carrés) est retirée avec la bibliothèque, les statistiques, Plus tard, les chaînes
+  suivies, les images de la page, l'atelier, Assembler, la sauvegarde et les règles par
+  site. **Toute l'IA** aussi (IA locale et IA de Chrome) : 14 Mo de moins.
+- **Cartes plus aérées** (12 px de marge) et **chaque choix à 48 px** de haut,
+  interrupteurs, boutons et segments compris.
+- **Extrait, Options avancées et Recadrer se replient** avec la même animation qu'à
+  l'ouverture.
+- **Image** : poignées du recadrage jamais coupées, cadre calé sur la vraie forme de la
+  vidéo, **aperçu** de la rotation et du **Miroir** (son nouveau nom).
+- **Corrigé** : les deux erreurs de la popup (« aria-hidden » et « feature flag gating
+  model execution »).
+
+**Rappel de la 2.4.0** : carte rangée avec **Options avancées** en quatre parties,
+sous-titres retirés, pilule YouTube animée qui ne déborde plus.
 
 **Rappel de la 2.3.3** : plus d'erreur « menu items must have a title », la pilule revient
 à « Télécharger » après une annulation, « Photo de l'image affichée » répond toujours.
@@ -263,10 +267,6 @@ Le détail de chaque version est dans le [journal des modifications](CHANGELOG.m
   extraits réunis dans un fichier (un chapitre chacun) ou un fichier par extrait ; pour un
   flux, seuls les segments des extraits sont téléchargés, pour un enregistrement seules ces
   parties sont lues.
-- **Sous-titres**, une ou plusieurs langues, intégrés à la vidéo ou en `.srt` à côté : flux
-  HLS et DASH (WebVTT, TTML, et les deux dans des segments MP4), fichiers `<track>` des
-  pages, sous-titres chargés par les lecteurs, et ceux de YouTube (générés automatiquement
-  ou traduits dans la langue du navigateur).
 - **Plusieurs langues audio** d'un flux HLS ou DASH, chacune une piste de la vidéo.
 - **Chapitres** (description YouTube, `<track kind="chapters">`) écrits dans le fichier.
 - **Images** tirées de la vidéo : JPEG au moment choisi, GIF ou WebP animés d'un passage.
@@ -279,28 +279,13 @@ Le détail de chaque version est dans le [journal des modifications](CHANGELOG.m
 - **Directs** : flux HLS de n'importe quel site (morceau par morceau, sans réencodage) et
   directs YouTube (depuis le lecteur de la page), jusqu'à ce que tu arrêtes ou à une durée
   maximale.
-- **Retouches** : recadrer, tourner, miroir, vitesse de 0,5× à 2×, sans le son,
-  **compresser à une taille** (10, 25, 50 ou 100 Mo), **sous-titres incrustés** dans
-  l'image, **un fichier par chapitre** ; **aperçu** de l'extrait avant de télécharger.
-- **IA locale** (modèles téléchargés une fois, avec ton accord ; rien n'est envoyé) :
-  **transcription** de ce qui est dit (Whisper, langue détectée ou choisie), **traduction**
-  des sous-titres (Opus-MT, ou le traducteur de Chrome si tu actives **IA de Chrome**),
-  **résumé, mots-clés et chapitres proposés**.
-- **Règles automatiques** par site (vidéo ou son, format, qualité, sous-titres, dossier),
-  suivies aussi par le clic droit, le raccourci, le bouton sur les vidéos et la liste
-  d'adresses.
+- **Retouches** : recadrer, tourner, miroir, vitesse de 0,5× à 2×, son plus propre, sans
+  le son, **compresser à une taille** (10, 25, 50 ou 100 Mo), **un fichier par chapitre** ;
+  **aperçu** de l'extrait avant de télécharger.
 - **Sous le lecteur YouTube**, une pilule **Télécharger | ⌄** identique aux boutons de
   YouTube, juste après le pouce levé / pouce baissé ; ⌄ ouvre le choix de la qualité, du son
-  seul, de la photo, de Plus tard et de Grabby. Rien n'est jamais dessiné sur les vidéos ni
+  seul, de la photo et de Grabby. Rien n'est jamais dessiné sur les vidéos ni
   sur les miniatures.
-- **Page complète** : **bibliothèque** (recherche dans ce qui est dit, lecteur avec vitesse,
-  boucle A-B, image par image, reprise, texte synchronisé, éditeur de sous-titres et
-  export ; favoris, collections, sélection multiple, Annuler), **statistiques**, **liste
-  d'adresses** ouvertes deux par deux en arrière-plan, **plus tard** (vidéos mises de côté,
-  à l'heure choisie), **chaînes et podcasts suivis** (nouvelles vidéos et épisodes
-  enregistrés seuls), **images de la page** en .zip, **atelier** pour les fichiers de
-  l'ordinateur, **assembler** des vidéos ou des sons bout à bout, **sauvegarde** des
-  réglages dans un fichier.
 - **Panneau latéral** : la même fenêtre, ouverte à côté de la page.
 - **Fichiers vérifiés** : chaque fichier est relu avant d'être enregistré, refait une fois
   s'il est abîmé ; une erreur explique quoi faire et donne un rapport à copier.
@@ -309,7 +294,7 @@ Le détail de chaque version est dans le [journal des modifications](CHANGELOG.m
 - **Prévenir des nouvelles versions**, si tu l'actives : une question par jour à GitHub ;
   **Mettre à jour** les installe en un clic (Windows, avec l'assistant).
 - **Clic droit, barre d'adresse et raccourcis** : un menu « Grabby » au clic droit
-  (vidéo, son, lien, plus tard, toutes les images), `gb` + un lien dans la barre
+  (cette vidéo, son son, un lien), `gb` + un lien dans la barre
   d'adresse, Alt+Maj+G pour ouvrir Grabby, Alt+Maj+D pour télécharger la vidéo de la page
   (ou son son seul, au choix), Alt+Maj+S pour une photo de la vidéo.
 - **Vrais titres et miniatures** : métadonnées de la page, sinon une image de la vidéo.
@@ -332,8 +317,8 @@ Le détail de chaque version est dans le [journal des modifications](CHANGELOG.m
 |---|---|
 | **DRM et chiffrement** | Netflix, Prime Video, Disney+, Paramount+, myCanal, contenus payants… Contourner une mesure technique de protection est illégal (art. L.335-3-1 CPI, directive 2001/29/CE, DMCA §1201). Grabby détecte ces contenus (EME, `EXT-X-KEY`, `ContentProtection`, fichiers chiffrés) et les affiche « Protégé ». Pour regarder hors connexion, utilise le téléchargement intégré aux applications officielles. |
 | **Directs DASH** | Les directs HLS et YouTube s'enregistrent ; un direct au format DASH est signalé mais pas enregistré. |
-| **Réencodage pour changer de format** | Trop lent dans un navigateur : seuls les formats compatibles avec la source sont proposés. L'image n'est réencodée que si tu le demandes : qualité plus petite (groupe « Réduire »), retouches, taille à tenir ou sous-titres incrustés. |
-| **IA dans le nuage** | Aucune : la transcription, la traduction et le résumé tournent dans ton navigateur. Rien n'est envoyé à un service d'IA. |
+| **Réencodage pour changer de format** | Trop lent dans un navigateur : seuls les formats compatibles avec la source sont proposés. L'image n'est réencodée que si tu le demandes : qualité plus petite (groupe « Réduire »), retouches ou taille à tenir. |
+| **IA, bibliothèque, chaînes suivies…** | Grabby fait une chose : télécharger des vidéos. Depuis la 3.0.0, plus d'IA, plus de page complète (bibliothèque, statistiques, atelier, règles, liste « Plus tard »…). |
 
 > Télécharge uniquement des vidéos que tu as le droit de conserver (les tiennes, sous licence
 > libre ou avec l'accord de l'auteur) et respecte les conditions d'utilisation des sites.
@@ -342,8 +327,7 @@ Le détail de chaque version est dans le [journal des modifications](CHANGELOG.m
 
 Grabby propose les qualités réellement disponibles sur YouTube (jusqu'en 4K/8K) avec leur
 taille, en MP4, WebM ou MKV, ou l'audio seul (avec titre, chaîne et pochette), avec ses
-sous-titres (traduits compris) et ses chapitres si tu en choisis, ou une image JPEG, GIF ou
-WebP. Une playlist ou les vidéos d'une chaîne se téléchargent en une fois.
+chapitres si tu le choisis, ou une image JPEG, GIF ou WebP. Une playlist ou les vidéos d'une chaîne se téléchargent en une fois.
 L'enregistrement se fait dans un lecteur caché : la vidéo que tu regardes n'est pas touchée
 et tu peux quitter la page. Il se met en pause, reprend après une coupure ou un redémarrage,
 et peut se limiter à un ou plusieurs extraits. Si tu l'actives, les passages
@@ -420,12 +404,10 @@ npm run zip        # → release/grabby-vX.Y.Z.zip
    page a été fermée, Grabby la rouvre dans un onglet en arrière-plan le temps de finir.
 
 **Avant de télécharger**, la carte ouverte montre l'essentiel : qualité, format et
-**Télécharger**. Le reste est rangé dans **Plus d'options** ; sa ligne dit ce qui est activé
-(« sous-titres, extrait, 2 retouches »), pour que rien de choisi ne passe inaperçu :
+**Télécharger**. Le reste est rangé dans **Options avancées** ; sa ligne dit ce qui est
+activé (« 0:12 → 1:30, 2 retouches »), pour que rien de choisi ne passe inaperçu. Chaque
+partie se déplie et se replie avec la même animation :
 
-- **Sous-titres** (quand la vidéo en a) : coche une ou plusieurs langues ; elles sont mises
-  dans la vidéo, ou dans des fichiers `.srt` à part si tu coches l'option (toujours à part
-  en TS et AVI, qui ne savent pas les garder, et pour un fichier enregistré tel quel).
 - **Langue audio** (quand le flux en propose plusieurs) : coche celles à garder, chacune
   devient une piste de la vidéo.
 - **Garder les chapitres** (quand la vidéo en a) : ils sont écrits dans le fichier.
@@ -442,19 +424,13 @@ npm run zip        # → release/grabby-vX.Y.Z.zip
 - **Lire l'extrait** (une fois un extrait coupé) : le lit en boucle dans la popup ; pour un
   flux (YouTube…), c'est le lecteur de la page qui le lit en boucle, jusqu'à ce que tu
   ailles ailleurs dans la vidéo.
-- **Retouches et IA** : un panneau pour ce qui est fait au fichier une fois téléchargé. Ses
-  choix restent quand il est replié (son bouton dit combien) :
+- **Retouches**, faites au fichier une fois téléchargé :
   - **Image** : **Recadrer** (un cadre à déplacer sur l'image, formes libre, 16:9, 1:1,
-    9:16, 4:3), **Rotation** (90°, 180°, 270°), **Miroir** ;
-  - **Vitesse et taille** : **Vitesse** de 0,5× à 2×, **Taille du fichier** (10, 25, 50 ou
-    100 Mo), **Sans le son** ;
-  - **IA locale** : **Transcrire** (la langue parlée, ou détectée), **Traduire en**,
-    **Résumé et mots-clés** (un fichier texte à côté). La première fois, Grabby demande
-    l'accord pour télécharger les modèles (environ 77 Mo, puis 107 Mo par paire de
-    langues). La transcription et la traduction sont aussi dans le menu **Sous-titres** de
-    la carte, et une vidéo sans sous-titres propose **Créer les sous-titres** ;
-  - **Sous-titres et chapitres** : **Incruster les sous-titres dans l'image**, **Un fichier
-    par chapitre** (dans un dossier au nom de la vidéo, numérotés).
+    9:16, 4:3), **Format vertical**, **Rotation** (90°, 180°, 270°) et **Miroir**, montrés
+    sur l'image de la vidéo au moment où tu les choisis ;
+  - **Son** : **Vitesse** de 0,5× à 2×, **Son plus propre**, **Sans le son** ;
+  - **Fichier** : **Un fichier par chapitre** (dans un dossier au nom de la vidéo,
+    numérotés), **Taille du fichier** (10, 25, 50 ou 100 Mo).
 
   Les retouches de l'image refont la vidéo en H.264 : compte à peu près sa durée.
 
@@ -482,36 +458,19 @@ fichier**, de le **montrer dans son dossier**, de **retélécharger** (la page s
 derrière et le téléchargement repart tout seul, dans la même qualité et le même format) ou
 d'ouvrir la page.
 
-Sans ouvrir Grabby : **clic droit** → **Grabby** (cette vidéo, son son, un lien, plus tard,
-toutes les images), **Alt+Maj+D** pour la vidéo principale de la page, **Alt+Maj+S** pour
+Sans ouvrir Grabby : **clic droit** → **Grabby** (cette vidéo, son son, un lien), **Alt+Maj+D** pour la vidéo principale de la page, **Alt+Maj+S** pour
 une photo de la vidéo (raccourcis modifiables dans `chrome://extensions/shortcuts`),
 `gb` puis un ou plusieurs liens dans la barre d'adresse (`gb son …` pour le son seul),
 ou, sur YouTube, la pilule **Télécharger | ⌄** sous le lecteur (⌄ : qualité, son seul, photo,
-Plus tard, Ouvrir Grabby).
+Ouvrir Grabby).
 
-**Page complète** (bouton en grille en haut de la popup) :
-
-| Section | Ce qu'elle fait |
-|---|---|
-| Bibliothèque | Tout ce que Grabby a enregistré, en grille : place prise par type, filtres par type, site, favoris et collections, recherche dans les titres **et dans ce qui est dit**, sélection multiple, Annuler après une suppression, raccourcis clavier ; lecteur intégré avec vitesse, boucle A-B, image par image, photo, reprise, texte synchronisé, éditeur de sous-titres et export .txt/.srt/.md (après avoir autorisé « Accès aux URL de fichier » pour Grabby) |
-| Statistiques | Fichiers et place prise, les 7 derniers jours, un graphique sur 12 semaines, les sites, les types et les formats ; compté sur ton ordinateur |
-| Liste d'adresses | Colle des adresses (ou un texte qui en contient) : chaque page s'ouvre en arrière-plan, deux à la fois, sa vidéo est téléchargée selon tes règles (ou en vidéo, ou en son), puis l'onglet se ferme |
-| Plus tard | Les vidéos mises de côté (bulle, clic droit, carte) : Tout télécharger, une par une, ou Programmer une heure |
-| Chaînes et podcasts | Les chaînes et playlists YouTube, les podcasts et flux RSS/Atom suivis : leurs nouvelles vidéos et épisodes sont enregistrés tout seuls (vérification toutes les heures) ; Vérifier maintenant, Ne plus suivre |
-| Images de la page | Les images d'une page (grandes versions comprises), un filtre de taille, la sélection, puis un .zip ou une par une |
-| Atelier | Une vidéo ou un son de ton ordinateur, avec les mêmes retouches et la même IA, et un aperçu en direct ; un fichier `.srt`/`.vtt` à incruster ou traduire |
-| Assembler | Plusieurs fichiers mis bout à bout dans l'ordre choisi : copiés tels quels s'ils se ressemblent, sinon refaits en H.264 à la taille du premier |
-| Règles automatiques | Pour un site ou tous : vidéo ou son, format, qualité, langues de sous-titres, dossier |
-| Sauvegarde | Réglages, règles, historique et chaînes suivies dans un fichier JSON ; la restauration ajoute sans rien perdre |
-
-**Réglages** (icône à droite de la lune/du soleil), en 7 rubriques sans défilement :
-Général, Formats, Noms et dossiers, Téléchargements, Raccourcis, IA locale, Synchro et
-mises à jour.
+**Réglages** (l'icône en haut à droite de la popup), en 6 rubriques sans défilement :
+Général, Formats, Noms et dossiers, Téléchargements, Raccourcis, Synchro et mises à jour.
 
 | Réglage | Effet |
 |---|---|
 | Thème | Auto, clair ou sombre |
-| Couleur, contraste élevé | Six couleurs pour Grabby (fenêtre, page complète, bulle de fin de téléchargement) ; textes et bordures plus marqués |
+| Couleur, contraste élevé | Six couleurs pour Grabby (fenêtre, bulle de fin de téléchargement) ; textes et bordures plus marqués |
 | Format vidéo / Format audio | Format proposé par défaut dans les listes |
 | Me prévenir à la fin | Bulle dans la page et notification système (un clic ouvre le fichier) |
 | Égaliser le volume des fichiers son | Chaque fichier son au même niveau (−14 LUFS) ; le son est réencodé |
@@ -526,10 +485,8 @@ mises à jour.
 | Raccourci clavier | La touche qui télécharge sans ouvrir Grabby (Changer ouvre la page des raccourcis) et ce qu'elle prend : la vidéo ou le son seul |
 | Retirer les passages sponsorisés | YouTube : coupe les sponsors et l'autopromotion repérés par SponsorBlock (désactivé par défaut) |
 | Boutons sous les vidéos YouTube | « Télécharger » et son menu d'options sous le lecteur YouTube (activé par défaut) |
-| Page complète, Panneau latéral, Revoir la visite | Trois boutons sous la liste des rubriques |
-| Réglages synchronisés | Réglages et règles suivent ton compte de navigateur sur tes autres ordinateurs (désactivé par défaut) |
-| IA locale | Autorise le téléchargement unique des modèles (désactivé par défaut) ; montre chaque modèle, s'il est prêt et sa taille, avec Tester la transcription et Supprimer les modèles |
-| IA de Chrome | Laisse Grabby essayer d'abord le traducteur et le résumeur intégrés à Chrome (désactivé par défaut : demander à Chrome suffit à lui faire écrire un avertissement quand il a coupé son IA ; si c'est le cas, le réglage se désactive tout seul) |
+| Panneau latéral, Revoir la visite | Deux boutons sous la liste des rubriques |
+| Réglages synchronisés | Tes réglages suivent ton compte de navigateur sur tes autres ordinateurs (désactivé par défaut) |
 | Prévenir des nouvelles versions | Une fois par jour, demande à GitHub la dernière version (désactivé par défaut) |
 | Installer la dernière version | Bouton Mettre à jour : télécharge, vérifie et installe la dernière version (Windows, avec l'assistant) |
 
@@ -606,10 +563,7 @@ Aucun compte, aucune statistique, aucun serveur : rien ne quitte ton appareil. G
 fait de requête de lui-même que si tu l'actives ou le demandes : la vérification
 quotidienne des nouvelles versions auprès de GitHub, la mise à jour quand tu cliques sur
 Mettre à jour, la question à SponsorBlock (sans dire quelle vidéo) si tu retires les
-passages sponsorisés, le flux public des chaînes YouTube que tu suis, et le
-téléchargement unique des modèles d'IA depuis Hugging Face si tu l'acceptes. L'IA travaille
-ensuite sur ton ordinateur : ni le son, ni les sous-titres, ni le résumé ne sont envoyés.
-Détails dans
+passages sponsorisés. Détails dans
 la [politique de confidentialité](docs/PRIVACY.md) et
 [à quoi sert chaque autorisation](docs/PERMISSIONS.md).
 
@@ -634,8 +588,8 @@ sur un serveur local :
 - capture d'un lecteur MSE (MP4, et WebM → MP4), pages restreintes ;
 - pause et reprise, coupure réseau et redémarrage du navigateur (téléchargements et
   enregistrements), extraits de flux, de fichiers et d'enregistrements ;
-- sous-titres HLS et DASH (WebVTT, TTML, `wvtt` et `stpp` en MP4), `<track>` d'un fichier
-  et d'un lecteur enregistré, intégrés ou en `.srt`.
+- retouches (rotation, miroir, vitesse, recadrage, taille), un fichier par chapitre ;
+- chaque choix de la carte à 48 px, et aucune erreur dans aucun écran.
 
 **Vérifications sur de vrais sites** (Brave, sans fenêtre visible ; `HEADED=1` pour la voir) :
 
@@ -676,9 +630,8 @@ service worker ─ detector  webRequest (lecture seule) → classify → probe (
                │           format, étiquettes
                ├ jobs      file d'attente, plage horaire et Wi-Fi, pause/reprise (alarms),
                │           en-têtes Referer (DNR), downloads ; quick : clic droit, raccourcis,
-               │           bouton sur les vidéos, règles automatiques
-               ├ batch     liste d'adresses (deux onglets à la fois) ; watch : chaînes suivies
-               │           (flux RSS public, toutes les heures) ; backup : sauvegarde
+               │           bouton sur les vidéos
+               ├ batch     liens de la barre d'adresse et du clic droit (deux onglets à la fois)
                ├ updates   nouvelles versions (GitHub, seulement si activé)
                └ badge     nombre de vidéos, progression, ✓ / !
               │
@@ -689,19 +642,15 @@ offscreen ─ fetcher        morceaux en parallèle (pacer : 2 à 16 connexions)
           │                raccord des sessions d'un enregistrement (pistes remises en
           │                ordre), sous-titres (WebVTT, SRT, TTML, wvtt/stpp, YouTube) → SRT
           ├ live           directs HLS : liste relue, nouveaux morceaux rangés au fil de l'eau
-          ├ finish         après l'assemblage : IA, résumé, retouches (H.264), découpage
-          ├ ai/worker      transformers.js + ONNX Runtime (inclus) : Whisper, Opus-MT
-          └ youtube-player lecteur YouTube caché (sous-titres choisis activés)
-popup (Preact) ─ liste, listes qualité/format, retouches et IA, progression, historique, réglages
-app (Preact)   ─ page complète : bibliothèque, adresses, chaînes, atelier, assembler,
-                 règles, sauvegarde (ffmpeg.wasm et IA dans la page)
+          ├ finish         après l'assemblage : retouches (H.264), découpage par chapitre
+          └ youtube-player lecteur YouTube caché
+popup (Preact) ─ liste, qualité/format, options avancées, progression, historique, réglages
 ```
 
 ## Licences
 
 Code source sous licence **MIT** ([LICENSE](LICENSE)). Les paquets distribués embarquent
 `ffmpeg-core` (**GPL-2.0-or-later**) : ils sont donc distribués dans leur ensemble sous GPL.
-Ils incluent aussi transformers.js (Apache-2.0), ONNX Runtime Web (MIT) et la police
-Noto Sans (SIL Open Font License 1.1) ; les modèles d'IA téléchargés à la demande gardent
-leur licence (Whisper et Opus-MT : Apache-2.0).
+Ils incluent aussi Preact (MIT) et les polices Instrument Sans et Noto Sans (SIL Open Font
+License 1.1).
 Détails : [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

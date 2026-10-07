@@ -1,8 +1,7 @@
 /**
  * What is done to a file once it is made: the little editor (crop, turn, speed, sound off),
- * a size to fit in, subtitles written into the picture, one file per chapter, and what the
- * local AI adds (subtitles from what is said, translated, a summary). The ffmpeg arguments
- * are built here, so they can be checked without a browser.
+ * a size to fit in, subtitles written into the picture, one file per chapter. The ffmpeg
+ * arguments are built here, so they can be checked without a browser.
  */
 import type { Chapter } from './plan';
 import type { Cue } from './subtitles';
@@ -39,24 +38,6 @@ export interface Finish {
   burn?: boolean;
   /** One file per chapter. */
   split?: boolean;
-  /** Subtitles written from what is said, in this language ('auto': the model finds it). */
-  transcribe?: string;
-  /** Subtitles translated into this language. */
-  translate?: string;
-  /** A summary, keywords and proposed chapters, in a text file. */
-  summary?: boolean;
-}
-
-/** The words the processing writes (the offscreen document can't read the extension's messages). */
-export const FINISH_WORDS = ['summaryTitle', 'summaryHead', 'summaryKeywords', 'summaryChapters', 'summaryProposed', 'summaryTag', 'aiTranscript', 'aiTranslated'] as const;
-export type FinishWord = (typeof FINISH_WORDS)[number];
-export type FinishWords = Record<FinishWord, string> & { lang: string };
-
-/** The words in the browser's language ("$1" stays in those that take a value). */
-export function finishWords(get: (key: string, subs?: string[]) => string, lang: string): FinishWords {
-  const out = { lang } as FinishWords;
-  for (const k of FINISH_WORDS) out[k] = get(k, ['$1']) || k;
-  return out;
 }
 
 export const COMPRESS_SIZES = [10, 25, 50, 100] as const;
@@ -64,7 +45,6 @@ export const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 export const ROTATIONS: Rotation[] = [0, 90, 180, 270];
 
 const share = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : undefined);
-const lang = (v: unknown): string | undefined => (typeof v === 'string' && /^([a-z]{2,3}(-[A-Za-z0-9]{2,8})*|auto)$/.test(v) ? v : undefined);
 
 /** A crop worth doing: inside the picture, at least a tenth of it, and not all of it. */
 export function cleanCrop(input: unknown): Crop | undefined {
@@ -107,22 +87,12 @@ export function cleanFinish(input: unknown, audioOnly: boolean): Finish | undefi
   if (typeof f.compress === 'number' && Number.isFinite(f.compress) && f.compress >= 1 && f.compress <= 4000) out.compress = Math.round(f.compress);
   if (f.burn === true && !audioOnly) out.burn = true;
   if (f.split === true) out.split = true;
-  const spoken = lang(f.transcribe);
-  if (spoken) out.transcribe = spoken;
-  const target = lang(f.translate);
-  if (target && target !== 'auto') out.translate = target;
-  if (f.summary === true) out.summary = true;
   return Object.keys(out).length ? out : undefined;
 }
 
 /** The picture or the sound has to be made again (slow): editing, a size, burned subtitles. */
 export function needsEncode(f: Finish | undefined): boolean {
   return !!(f?.edit || f?.compress || f?.burn);
-}
-
-/** Uses the local AI. */
-export function needsAi(f: Finish | undefined): boolean {
-  return !!(f?.transcribe || f?.translate || f?.summary);
 }
 
 /** Changing the speed of the sound: atempo takes 0.5 to 2, so steps are chained. */

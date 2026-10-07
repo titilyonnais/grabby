@@ -35,7 +35,7 @@ async function pull(): Promise<boolean> {
 }
 
 /**
- * « Réglages synchronisés »: on, the settings and rules go to the browser's synced storage and
+ * « Réglages synchronisés »: on, the settings go to the browser's synced storage and
  * come back from the user's other computers. Turned on here while another computer already
  * synced: that one's settings are taken.
  */

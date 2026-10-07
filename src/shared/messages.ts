@@ -2,10 +2,6 @@ import type { HistoryEntry, Job, JobMode, JobStatus, JobStep, MediaItem } from '
 import type { Chapter, Clip, ErrorCode, OutputFormat, Plan, SubsChoice, VideoFormat } from './plan';
 import type { Release } from './release';
 import type { YtList } from './ytlist';
-import type { BatchItem, BatchMode } from './batch';
-import type { Watch } from './feeds';
-import type { LaterItem } from './later';
-import type { Transcript } from './transcript';
 import type { Finish } from './finish';
 
 /** What a download asks for besides the quality and the format. */
@@ -27,7 +23,7 @@ export interface DownloadExtra {
   sheet?: number;
   /** A folder of the downloads folder chosen by a rule ("Musique"). */
   folder?: string;
-  /** What is done to the file once it is made: edits, compression, AI. */
+  /** What is done to the file once it is made: edits, compression, one file per chapter. */
   finish?: Finish;
   /** A live stream: recorded until stopped (or this many minutes). */
   live?: number;
@@ -108,8 +104,6 @@ export type ContentToBg =
   | { type: 'grab'; src?: string; mode?: 'video' | 'audio'; variantId?: string }
   /** « Photo »: the picture on screen, read by the page (`dataUrl`) or to be cut from a screenshot (`rect`, CSS pixels). */
   | { type: 'snap'; dataUrl?: string; rect?: { x: number; y: number; w: number; h: number }; dpr?: number; time?: number; noFrame?: boolean }
-  /** « Plus tard »: the video (or the page) kept aside, to be downloaded later. */
-  | { type: 'later'; src?: string }
   /** YouTube's buttons under the player: the downloads of this video, to show their progress. */
   | { type: 'page-jobs' }
   /** YouTube's menu under the player: the qualities of the video on screen (answered with PageMedia | null). */
@@ -129,8 +123,6 @@ export interface PageMedia {
 /* ---------- service worker → content script ---------- */
 export type BgToContent =
   | { type: 'scan' }
-  /** « Toutes les images »: the pictures of the page (answered with PageImage[]). */
-  | { type: 'images' }
   /** « Capture instantanée »: a photo of the video on screen (the keyboard shortcut). */
   | { type: 'photo' }
   /** `session`: which recording session of the job (0 first); `from`: where it starts again. */
@@ -161,13 +153,6 @@ export interface PopupState {
   install?: InstallState;
   /** The YouTube playlist or channel on screen. */
   ytList?: YtList;
-  /** Followed channels and playlists (the full page only). */
-  watches?: Watch[];
-  /** Pasted addresses being opened (the full page only). */
-  batch?: BatchItem[];
-  /** « À télécharger plus tard », and when it goes by itself. */
-  later?: LaterItem[];
-  laterAt?: number;
 }
 
 export type PopupToBg =
@@ -203,38 +188,7 @@ export type PopupToBg =
   | { type: 'history-remove'; ids: string[] }
   | { type: 'history-restore'; entries: HistoryEntry[] }
   | { type: 'history-mark'; ids: string[]; patch: { fav?: boolean; tags?: string[]; addTag?: string; removeTag?: string } }
-  | { type: 'settings'; patch: Partial<Settings> }
-  | { type: 'batch-remove'; id: string }
-  | { type: 'batch-retry'; id: string }
-  /** `all`: also the addresses still waiting. */
-  | { type: 'batch-clear'; all: boolean }
-  | { type: 'watch-remove'; id: string }
-  | { type: 'watch-change'; id: string; patch: Partial<Pick<Watch, 'mode' | 'quality' | 'format'>> }
-  /** « Plus tard »: a video of the page kept aside, the list removed from, downloaded, or set for a time. */
-  | { type: 'later-add'; mediaId: string; mode?: BatchMode }
-  | { type: 'later-remove'; id: string }
-  | { type: 'later-launch'; ids?: string[] }
-  | { type: 'later-schedule'; at?: number };
-
-/** Asked by an extension page, answered (chrome.runtime.sendMessage). */
-export type AppRequest =
-  | { app: 'watch-add'; url: string; mode: 'video' | 'audio'; quality: string; format?: OutputFormat }
-  | { app: 'watch-check'; id?: string }
-  | { app: 'batch-add'; text: string; mode: BatchMode }
-  | { app: 'export' }
-  | { app: 'import'; data: unknown }
-  /** Opens the full page (from the popup: the popup closes). */
-  | { app: 'open-app'; section?: string; tabId?: number }
-  /** What is said in saved files (the library's search and export). */
-  | { app: 'texts'; ids: string[] }
-  /** Their pictures, kept for when there is no network. */
-  | { app: 'thumbs'; ids: string[] }
-  /** What is said in a saved file, as edited in the library. */
-  | { app: 'text-save'; id: string; text: Transcript }
-  /** The pictures of a tab's page. */
-  | { app: 'page-images'; tabId: number }
-  /** Where a finished download is on disk (the library plays it from there). */
-  | { app: 'file-paths'; ids: number[] };
+  | { type: 'settings'; patch: Partial<Settings> };
 
 export type BgToPopup = { type: 'state'; state: PopupState };
 
@@ -265,7 +219,7 @@ export type OffscreenToBg =
       progress: number;
       bytes: number;
       speed: number;
-      /** What is being done to the file (AI, editor…), once it is made. */
+      /** What is being done to the file (editor, size, chapters), once it is made. */
       step?: JobStep;
     }
   | {
@@ -280,10 +234,6 @@ export type OffscreenToBg =
       /** One file per chapter: the first one is `blobUrl` (named `name`), these are the others. */
       pieces?: { blobUrl: string; name: string }[];
       name?: string;
-      /** Text files next to it (the summary): `tag` names them ("Title.summary.txt"). */
-      notes?: { text: string; tag: string }[];
-      /** What is said in it (subtitles or transcription), on the file's clock: kept for the library's search. */
-      transcript?: Transcript;
     }
   | { target: 'bg'; type: 'job-error'; jobId: string; error: ErrorCode }
   | { target: 'bg'; type: 'job-paused'; jobId: string }
